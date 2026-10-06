@@ -9,7 +9,7 @@ unveo v0.1.0-dev
 
 Makes a judge-ready hackathon demo video from a repo: the real web app recorded in an automated browser, animated explainers for the hidden logic, a free English or Hindi voiceover, and a 1080p MP4 that fits the time limit. The output goes to `unveo-out/final.mp4`.
 
-**This build has Phase 0 (setup), Phase 1 (understand) and Phase 2 (write).** Phase 2 ends at Checkpoint B, with an approved `script.md`, a dry-run-tested `capture/steps.json` and, if needed, `shots.md`. After that, say exactly: "Your script and recording plan are approved and saved in unveo-out/. Voice, recording and rendering aren't built yet in this version of unveo."
+Four phases: **0 Setup → 1 Understand (Checkpoint A) → 2 Write (Checkpoint B) → 3 Build (Checkpoint C) → final.mp4.** Check `OUT/state.json` first: on `resume`, skip every step already marked done or approved.
 
 ## Non-negotiables
 
@@ -38,7 +38,9 @@ Makes a judge-ready hackathon demo video from a repo: the real web app recorded 
 | `--lang en\|hi` | Answers Q2 |
 | `--url <app-url>` | Sets the app URL; skips URL detection |
 | `--fresh` | Ignore a saved brief.json and ask everything again |
-| `resume` · `rerender <scene>` · `--no-capture` | Later phases (not built yet) |
+| `resume` | Continue from the first unfinished step in `OUT/state.json` |
+| `rerender <scene>` | Rebuild one scene (see "Changing one thing later") |
+| `--no-capture` | Treat every product scene as a clip the user records |
 
 ## Asking the user
 
@@ -62,7 +64,7 @@ When you ask with choices: in Claude Code, use AskUserQuestion (at most 4 option
 
 **1. Saved brief.** If `OUT/brief.json` exists and `--fresh` wasn't given, run `"<PY>" "<SKILL_DIR>/scripts/brief.py" validate`.
 - If it's valid, ask: **"Reuse your saved answers? (<limit> · <language> · <palette name> · <project name>)"**, with options *Reuse (Recommended)* · *Change something* · *Start fresh*.
-  - *Reuse:* skip to Phase 2. If `state.json` shows `script` approved, give the finish message from the top of this file instead.
+  - *Reuse:* skip to Phase 2. If `state.json` shows `script` approved, skip to Phase 3.
   - *Change something:* ask what, change only that, then re-validate.
 - If it's invalid, or the user picks *Start fresh*, continue from step 2.
 
@@ -192,4 +194,63 @@ Then ask:
 - For ⚠️ steps the user ticks: set `"approved": true` on those steps and re-run the dry run for that scene.
 - On *Approve*, run `state.py set script approved`.
 - If there are shots, tell the user they can start recording now. The files go in `OUT/clips/` with the names in shots.md.
-- Then give the finish message from the top of this file.
+- Then go on to Phase 3.
+
+## Phase 3: Build
+
+**16. Voice.** Read `<SKILL_DIR>/VOICE.md`. Add `voice.say_as` entries for acronyms first. Run `"<PY>" "<SKILL_DIR>/scripts/voice.py"`. If it reports a switch to Kokoro, tell the user in one line. Then `state.py set voice done`.
+
+**17. Timeline.** Run `"<PY>" "<SKILL_DIR>/scripts/plan_timeline.py"`.
+- **Exit 2** (over the limit):
+  1. Shorten the narration of the `longest_product_scenes` in script.md.
+  2. Re-run `script.py check`.
+  3. Run `voice.py --scene sNN` for each changed scene.
+  4. Run plan_timeline again.
+
+  That's at most 3 rounds; then ask the user what to cut.
+- When it passes, `state.py set timeline done`.
+
+**18. Record the app** (skip if there are no capture scenes). Run `"<PY>" "<SKILL_DIR>/scripts/capture.py" record`. Tell the user it records each scene in real time, so it takes about as long as those scenes.
+- **A failure:** re-run that scene once (`record --scene sNN`). If it fails again, turn it into a clip (CAPTURE.md, step 4), run `voice.py` (nothing changes), then plan_timeline.
+- **A scene that ran long** (> 1.5 s over): cut a `pause` or a `wait`, or let the narration run a little longer, then record that scene again.
+- When it's done, `state.py set capture done`.
+
+**19. Scene data.** Read `<SKILL_DIR>/ENGINE.md` and `<SKILL_DIR>/EXPLAINERS.md`. Write `OUT/film/data/<id>.json` for every `anim:` scene in timeline.json. Set explainer `beats` from the word timings in voice.json.
+
+**20. Stills.** Run `"<PY>" "<SKILL_DIR>/scripts/render.py" stills`. Fix any `page_errors` and run it again. Look at `OUT/stills/sheet.png` if you can view images, and check that the text fits, nothing overlaps, and the colours are right.
+
+**21. Checkpoint C (✅ required).** Show the sheet path and one line per still. Ask:
+> **Here's how it looks. Render the full video?**
+> Render (Recommended) · Change colors · Change some text · Re-record a scene
+
+Apply any change and redo the stills. On *Render*, run `state.py set stills approved`.
+
+**22. Fit recordings and clips.** Run `"<PY>" "<SKILL_DIR>/scripts/stitch.py" ingest`. If it exits 2 with `missing` clips, ask:
+> **These clips aren't in unveo-out/clips/ yet: <list>.**
+> I'll record them now (wait) · Use placeholder cards
+
+For placeholders, run it with `--placeholders`.
+
+**23. Render.**
+1. Run `render.py estimate` and tell the user the minutes.
+2. Run `"<PY>" "<SKILL_DIR>/scripts/render.py" final`.
+3. Run `state.py set render done`.
+
+**24. Music and mix.** Run `"<PY>" "<SKILL_DIR>/scripts/score.py"`, then `"<PY>" "<SKILL_DIR>/scripts/mix.py"`.
+
+**25. Stitch.** Run `"<PY>" "<SKILL_DIR>/scripts/stitch.py" final`.
+
+**26. QA.** Read `<SKILL_DIR>/QA.md`. Run `"<PY>" "<SKILL_DIR>/scripts/qa.py"`. Fix every failing blocking gate as QA.md says, re-run only the affected steps, then stitch and QA again. When it passes, `state.py set qa done`.
+
+**27. Done.** Open the folder (`open OUT` on macOS, `explorer OUT` on Windows, `xdg-open OUT` on Linux). Then say, filling in the values:
+`final.mp4 · <m:ss> · 1920×1080 · <LUFS> LUFS. Script: unveo-out/script.md. QA: unveo-out/qa.md.`
+Mention any `clip` scenes still showing placeholder cards.
+
+## Changing one thing later
+
+- **`rerender sNN`:**
+  - Narration changed: `voice.py --scene sNN`, then `plan_timeline.py`.
+  - Recording: `capture.py record --scene sNN`, then `stitch.py ingest`.
+  - Animation: `render.py final --scene sNN`.
+  - Then always `score.py`, `mix.py`, `stitch.py final` and `qa.py`.
+- **`resume`:** read `OUT/state.json` and continue from the first step that isn't done or approved.

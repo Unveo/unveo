@@ -4,14 +4,14 @@
   capture.py check   [--out unveo-out]             validate capture/steps.json, flag risky steps, list the plan in plain words
   capture.py dry-run [--out unveo-out] [--scene sNN]   run the steps fast, no recording; screenshots + failure details
 
-record arrives in Phase 5.
+  capture.py record  [--out unveo-out] [--scene sNN]   record each capture scene, paced to its voice clip
 """
-import argparse, difflib, json, os, re, sys, time
+import argparse, asyncio, base64, difflib, json, os, re, subprocess, sys, tempfile, time
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import emit, log, out_dir  # noqa: E402
+from common import emit, ffmpeg_exe, log, out_dir, read_json  # noqa: E402
 
 VIEWPORT = {"width": 1920, "height": 1080}
 LOGIN_PATH = re.compile(r"/(log-?in|sign-?in|auth)(/|$|\?)", re.I)
@@ -24,6 +24,14 @@ PAYMENT = re.compile(r"card|cvv|cvc|\bupi\b|checkout|payment|\bpay\b|pay now|pur
 DESTRUCTIVE = re.compile(r"delete|remove|\bsend\b|e-?mail|\bsms\b|publish|\bpost\b|transfer|withdraw|deploy|reset|cancel subscription", re.I)
 ENV = re.compile(r"\$([A-Z_][A-Z0-9_]*)")
 DEFAULT_TIMEOUT_MS = 10000
+CURSOR_JS = Path(__file__).resolve().parents[1] / "templates" / "cursor.js"
+EARLY_S, MIN_GAP_S, GLIDE_MS = 0.3, 0.4, 550
+
+
+def ctx_args(steps):
+    """1920x1080 output at the app's zoom (125% by default): a smaller CSS viewport, scaled up."""
+    z = float((steps.get("viewport") or {}).get("zoom", 1.25))
+    return {"viewport": {"width": round(1920 / z), "height": round(1080 / z)}, "device_scale_factor": z}
 
 
 # ---------- rules (no browser)
@@ -255,7 +263,7 @@ def dry_run(out, only=None):
         (sid, sc.get("steps", []), sc) for sid, sc in sorted(steps["scenes"].items()) if not only or sid == only]
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        page = browser.new_context(viewport=VIEWPORT).new_page()
+        page = browser.new_context(**ctx_args(steps)).new_page()
         for sid, lst, sc in blocks:
             t0, err, idx = time.time(), None, None
             try:
@@ -295,6 +303,202 @@ def dry_run(out, only=None):
     if failures:
         emit("capture", ok=False, user_action=True, message=f"{len(failures)} scene(s) failed the dry run", **res)
     emit("capture", message=f"dry run passed: {len(res['scenes'])} scene(s)", **res)
+
+
+# ---------- record (async, so screencast frames keep flowing while we wait for a word)
+
+def norm(w):
+    return re.sub(r"[^\w]", "", w.lower())
+
+
+def schedule(steps, words, lead_s):
+    """Seconds into the scene when each step should start: just before its 'say' word. None = right after the previous step."""
+    at, ptr = [], 0
+    for st in steps:
+        say = [norm(x) for x in str(st.get("say", "")).split() if norm(x)]
+        hit = None
+        if say:
+            for i in range(ptr, len(words)):
+                if norm(words[i]["w"]).startswith(say[0]):
+                    hit, ptr = i, i + 1
+                    break
+        at.append(max(0.0, lead_s + words[hit]["t0"] - EARLY_S) if hit is not None else None)
+    return at
+
+
+async def glide(page, loc):
+    await loc.scroll_into_view_if_needed(timeout=DEFAULT_TIMEOUT_MS)
+    box = await loc.bounding_box()
+    if box:
+        await page.evaluate("([x, y, ms]) => window.__unveoCursor && window.__unveoCursor.moveTo(x, y, ms)",
+                            [box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, GLIDE_MS])
+
+
+async def aperform(page, st, base, env):
+    to = st.get("timeout_ms", DEFAULT_TIMEOUT_MS)
+    loc = locate(page, st["target"]).first if st.get("target") else None
+    do = st["do"]
+    if do in ("click", "submit", "hover", "type", "select"):
+        await glide(page, loc)
+    if do == "goto":
+        await page.goto(urljoin(base, st["url"]), wait_until="load", timeout=to)
+    elif do in ("click", "submit"):
+        await page.evaluate("() => window.__unveoCursor && window.__unveoCursor.click()")
+        await loc.click(timeout=to)
+    elif do == "type":
+        await loc.click(timeout=to)
+        await loc.fill("", timeout=to)
+        if st.get("secret"):
+            await loc.evaluate("e => { e.style.filter = 'blur(7px)'; }")  # never show a password on screen
+        await page.keyboard.type(substitute(st["text"], env), delay=st.get("delay_ms", 55))
+    elif do == "select":
+        await loc.select_option(**({"value": st["value"]} if st.get("value") else {"label": st["label"]}), timeout=to)
+    elif do == "press":
+        await (loc.press(st["key"], timeout=to) if loc else page.keyboard.press(st["key"]))
+    elif do == "scroll":
+        if loc:
+            await loc.evaluate("e => e.scrollIntoView({behavior: 'smooth', block: 'center'})")
+            await page.wait_for_timeout(st.get("ms", 900))
+        else:
+            n = max(1, st.get("ms", 900) // 30)
+            for _ in range(n):
+                await page.mouse.wheel(0, st["by"] / n)
+                await page.wait_for_timeout(30)
+    elif do == "hover":
+        await loc.hover(timeout=to)
+    elif do == "wait":
+        w = st["for"]
+        if w == "network-idle":
+            await page.wait_for_load_state("networkidle", timeout=to)
+        elif w == "selector":
+            await loc.wait_for(state="visible", timeout=to)
+        elif w == "url":
+            await page.wait_for_url(lambda u: st["value"] in u, timeout=to)
+        elif w == "text":
+            await page.get_by_text(st["value"]).first.wait_for(state="visible", timeout=to)
+        else:
+            await page.wait_for_timeout(st["value"])
+    elif do == "pause":
+        await page.wait_for_timeout(st["ms"])
+
+
+def encode(frames, t_start, t_end, path):
+    """Timestamped JPEG frames -> constant 30 fps h264. Each frame shows until the next one arrives."""
+    with tempfile.TemporaryDirectory() as tmp:
+        lines = []
+        for i, (ts, data) in enumerate(frames):
+            f = Path(tmp) / f"{i:05d}.jpg"
+            f.write_bytes(base64.b64decode(data))
+            start = max(ts, t_start) if i else t_start
+            end = frames[i + 1][0] if i + 1 < len(frames) else t_end
+            lines += [f"file '{f}'", f"duration {max(end - start, 0.001):.4f}"]
+        lines.append(f"file '{Path(tmp) / f'{len(frames) - 1:05d}.jpg'}'")
+        (Path(tmp) / "list.txt").write_text("\n".join(lines))
+        subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(Path(tmp) / "list.txt"),
+                        "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=30,format=yuv420p",
+                        "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-t", f"{t_end - t_start:.3f}", "-an", str(path)], check=True)
+
+
+async def dismiss_banners(page):
+    for name in ("Accept", "Accept all", "Got it", "I agree"):
+        try:
+            await page.get_by_role("button", name=name, exact=True).click(timeout=300)
+        except Exception:
+            pass
+
+
+async def record_scenes(out, only):
+    from playwright.async_api import async_playwright, Error as PWError
+    o = Path(out)
+    steps = load_steps(out)
+    try:
+        timeline = read_json(o / "timeline.json")
+        voice = {c["scene"]: c for c in read_json(o / "voice" / "voice.json")["clips"]}
+    except (OSError, ValueError) as e:
+        emit("capture", ok=False, user_action=True, message=f"run voice.py and plan_timeline.py first ({e})")
+    scenes = [s for s in timeline["scenes"] if s["visual"] == "capture" and (not only or s["id"] == only)]
+    missing = [s["id"] for s in scenes if s["id"] not in steps["scenes"]]
+    if missing:
+        emit("capture", ok=False, user_action=True, message=f"steps.json has no entry for {missing}")
+    env_missing = [n for n in env_names(steps) if not os.environ.get(n)]
+    if env_missing:
+        emit("capture", ok=False, user_action=True, missing_env=env_missing,
+             message=f"Set {' and '.join(env_missing)} in your terminal first, then run again.")
+    base, results, failures = steps["base_url"], [], []
+    async with async_playwright() as p:
+        browser = await p.chromium.launch()
+        ctx = await browser.new_context(**ctx_args(steps))
+        await ctx.add_init_script(path=str(CURSOR_JS))
+        page = await ctx.new_page()
+        if steps.get("login"):
+            for st in steps["login"]["steps"]:
+                await aperform(page, st, base, os.environ)
+        first = True
+        for scene in scenes:
+            sid, sc = scene["id"], steps["scenes"][scene["id"]]
+            words = (voice.get(sid) or {}).get("words", [])
+            try:  # get to the starting page before the camera rolls
+                if sc.get("start") and page.url.rstrip("/") != urljoin(base, sc["start"]["url"]).rstrip("/"):
+                    await aperform(page, sc["start"], base, os.environ)
+                elif page.url == "about:blank":
+                    await page.goto(base, wait_until="load")
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=10000)
+                except PWError:
+                    pass
+                if first:
+                    await dismiss_banners(page)
+                    first = False
+            except PWError as e:
+                failures.append({"scene": sid, "step": "start", "error": str(e).splitlines()[0]})
+                continue
+            frames = []
+            cdp = await ctx.new_cdp_session(page)
+
+            def on_frame(f, cdp=cdp, frames=frames):
+                frames.append((f["metadata"]["timestamp"], f["data"]))
+                asyncio.ensure_future(cdp.send("Page.screencastFrameAck", {"sessionId": f["sessionId"]}))
+            cdp.on("Page.screencastFrame", on_frame)
+            await cdp.send("Page.startScreencast", {"format": "jpeg", "quality": 90, "maxWidth": 1920, "maxHeight": 1080, "everyNthFrame": 1})
+            t0, wall0 = time.monotonic(), time.time()
+            at, actions, err, last_end = schedule(sc.get("steps", []), words, scene.get("lead_s", 0.3)), [], None, 0.0
+            for i, st in enumerate(sc.get("steps", [])):
+                f = flag(st)
+                if f == "payment" or (f == "destructive" and not st.get("approved")):
+                    continue
+                want = at[i] if at[i] is not None else last_end + (MIN_GAP_S if actions else 0)
+                await asyncio.sleep(max(0.0, want - (time.monotonic() - t0)))
+                actions.append({"step": i, "at_s": round(time.monotonic() - t0, 2), "do": st["do"]})
+                try:
+                    await aperform(page, st, base, os.environ)
+                    if not same_origin(page.url, base):
+                        raise RuntimeError(f"left the app: went outside {base} to {page.url}")
+                except (PWError, RuntimeError, KeyError) as e:
+                    err = {"scene": sid, "step": i, "error": (str(e).splitlines() or [repr(e)])[0][:300]}
+                    break
+                last_end = time.monotonic() - t0
+            elapsed = time.monotonic() - t0
+            await asyncio.sleep(max(0.0, scene["dur_s"] - elapsed))
+            await page.mouse.move(1, 1)  # nudge a repaint so the hold has a fresh frame
+            await asyncio.sleep(0.05)
+            await cdp.send("Page.stopScreencast")
+            wall_end = wall0 + max(scene["dur_s"], time.monotonic() - t0)
+            await cdp.detach()
+            if not frames:
+                frames = [(wall0, base64.b64encode(await page.screenshot(type="jpeg", quality=90)).decode())]
+            path = o / "capture" / f"{sid}.mp4"
+            encode(sorted(frames), wall0, wall_end, path)
+            if err:
+                failures.append(err)
+            results.append({"scene": sid, "file": str(path), "target_s": scene["dur_s"],
+                            "recorded_s": round(wall_end - wall0, 2), "over_s": round(max(0.0, elapsed - scene["dur_s"]), 2),
+                            "actions": actions, "ok": err is None})
+        await browser.close()
+    res = {"scenes": results, "failures": failures, "outputs": [r["file"] for r in results]}
+    if failures:
+        emit("capture", ok=False, user_action=True, message=f"{len(failures)} scene(s) failed while recording", **res)
+    over = [r["scene"] for r in results if r["over_s"] > 1.5]
+    emit("capture", message=f"recorded {len(results)} scene(s)" + (f"; {over} ran long" if over else ""), **res)
 
 
 def contact_sheet(d):
@@ -354,7 +558,7 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     pr = sub.add_parser("probe")
     pr.add_argument("--url", required=True)
-    for name in ("check", "dry-run"):
+    for name in ("check", "dry-run", "record"):
         sp = sub.add_parser(name)
         sp.add_argument("--scene")
     for sp in sub.choices.values():
@@ -364,6 +568,8 @@ def main():
         probe(a.url, a.out)
     elif a.cmd == "check":
         check_cmd(a.out)
+    elif a.cmd == "record":
+        asyncio.run(record_scenes(a.out, a.scene))
     else:
         dry_run(a.out, a.scene)
 

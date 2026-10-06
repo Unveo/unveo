@@ -1,0 +1,125 @@
+"""Quality gates on the finished video (docs/12 §1) -> qa.md. Exit 0 only if every blocking gate passes.
+
+  qa.py [--out unveo-out]
+"""
+import argparse, json, os, re, subprocess, sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+from common import emit, ffmpeg_exe, out_dir, read_json  # noqa: E402
+
+FIX = {
+    "duration": "Shorten the narration (PITCH.md), re-voice, and re-run from plan_timeline.py.",
+    "format": "Re-run stitch.py final.",
+    "loudness": "Re-run mix.py, then stitch.py final.",
+    "pops": "Re-render the scene with the pop: render.py final --scene sNN, then stitch.py final.",
+    "sync": "Re-run stitch.py ingest (recordings) or render.py final (animations) for the scene, then stitch.py final.",
+    "sources": "Run script.py check and add the missing sources, or cut the sentence.",
+    "explainers": "Give every explainer data file a 'source' list of real file:line ranges.",
+    "end card": "Copy close.links from brief.json into the close scene's data, exactly.",
+    "secrets": "Delete the file that holds the password, and re-record with \"secret\": true.",
+}
+
+
+def ff_info(path):
+    return subprocess.run([ffmpeg_exe(), "-hide_banner", "-i", str(path)], capture_output=True, text=True).stderr
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--out", default="unveo-out")
+    a = ap.parse_args()
+    o = out_dir(a.out)
+    final = o / "final.mp4"
+    if not final.exists():
+        emit("qa", ok=False, user_action=True, message="final.mp4 doesn't exist yet: run stitch.py final")
+    brief = json.loads((o / "brief.json").read_text(encoding="utf-8"))
+    tl = read_json(o / "timeline.json")
+    gates = []
+    gate = lambda name, ok, detail, blocking=True: gates.append({"gate": name, "ok": bool(ok), "detail": detail, "blocking": blocking})
+
+    info = ff_info(final)
+    h, m, s = re.search(r"Duration: (\d+):(\d+):([\d.]+)", info).groups()
+    dur = int(h) * 3600 + int(m) * 60 + float(s)
+    gate("duration", dur <= brief["limit_s"] + 0.05, f"{dur:.2f} s (limit {brief['limit_s']} s)")
+    v = re.search(r"Video: (\w+).*?, (\w+)\(.*?(\d{3,4})x(\d{3,4}).*?, ([\d.]+) fps", info)
+    au = re.search(r"Audio: (\w+).*?, (\d+) Hz", info)
+    fmt_ok = bool(v and v.group(1) == "h264" and v.group(2).startswith("yuv420p") and (v.group(3), v.group(4)) == ("1920", "1080")
+                  and abs(float(v.group(5)) - 30) < 0.01 and au and au.group(1) == "aac" and au.group(2) == "48000")
+    gate("format", fmt_ok, f"{v.group(3)}x{v.group(4)}, {v.group(5)} fps, {v.group(1)} {v.group(2)}; audio {au.group(1) if au else 'none'}" if v else "unreadable")
+
+    lo = subprocess.run([ffmpeg_exe(), "-hide_banner", "-i", str(final), "-af", "ebur128=peak=true", "-f", "null", "-"],
+                        capture_output=True, text=True).stderr
+    li = re.findall(r"I:\s+(-?[\d.]+) LUFS", lo)
+    tp = re.findall(r"Peak:\s+(-?[\d.]+) dBFS", lo)
+    i_val, tp_val = (float(li[-1]) if li else None), (float(tp[-1]) if tp else None)
+    gate("loudness", i_val is not None and abs(i_val + 14) <= 1 and (tp_val is None or tp_val <= -1.0),
+         f"{i_val} LUFS, true peak {tp_val} dBTP (target -14 ± 1, peak ≤ -1)")
+
+    import render
+    hits = render.pops(final, [sc["start_s"] for sc in tl["scenes"]])
+    gate("pops", not hits, f"{len(hits)} found" + (f" at {[x['t'] for x in hits[:5]]} s" if hits else ""))
+
+    bad = []
+    for sc in tl["scenes"]:
+        seg = o / "render" / "segments" / f"{sc['id']}.mp4"
+        if seg.exists():
+            d = float(re.search(r"Duration: \d+:\d+:([\d.]+)", ff_info(seg)).group(1))
+            if abs(d - sc["dur_s"]) > 1.5 / 30:
+                bad.append(f"{sc['id']} is {d:.2f} s, timeline says {sc['dur_s']:.2f} s")
+        if sc.get("voice") and sc.get("template") != "close" and sc["dur_s"] > sc.get("voice_s", 0) + 1.0 + sc.get("lead_s", 0):
+            bad.append(f"{sc['id']} runs {sc['dur_s'] - sc['voice_s']:.1f} s past its voice")
+    gate("sync", not bad, "; ".join(bad) or "every segment matches its voice")
+
+    import script
+    res = script.check(o)
+    gate("sources", not res["errors"], "; ".join(res["errors"][:3]) or "every claim has a source")
+
+    src = brief.get("project", {}).get("source", {})
+    repo = Path(src.get("path") or src.get("clone_path") or ".")
+    probs = []
+    for sc in tl["scenes"]:
+        if str(sc.get("template") or "").startswith("explainer-"):
+            f = o / "film" / "data" / f"{sc['id']}.json"
+            data = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+            if not data.get("source"):
+                probs.append(f"{sc['id']} has no source")
+            for ref in data.get("source", []):
+                if not (repo / ref.split(":")[0]).is_file():
+                    probs.append(f"{sc['id']}: {ref} not found")
+    gate("explainers", not probs, "; ".join(probs) or "every explainer cites real code")
+
+    close = next((sc for sc in tl["scenes"] if sc.get("template") == "close"), None)
+    shown = json.loads((o / "film" / "data" / f"{close['id']}.json").read_text(encoding="utf-8")).get("links", []) if close and (o / "film" / "data" / f"{close['id']}.json").exists() else []
+    want = brief.get("close", {}).get("links", [])
+    gate("end card", [x.get("url") for x in shown] == [x.get("url") for x in want], f"shown {[x.get('url') for x in shown]}")
+
+    pw = os.environ.get("UNVEO_LOGIN_PASSWORD")
+    leaks = []
+    if pw:
+        for f in o.rglob("*"):
+            if f.is_file() and f.suffix in (".json", ".md", ".txt", ".js", ".log") and pw in f.read_text(encoding="utf-8", errors="ignore"):
+                leaks.append(str(f.relative_to(o)))
+    gate("secrets", not leaks, ", ".join(leaks) or "no password in any output")
+
+    rec = [sc for sc in tl["scenes"] if sc["segment"] == "product" and sc["visual"] in ("capture", "clip")]
+    cap = sum(1 for sc in rec if sc["visual"] == "capture")
+    gate("capture coverage", True, f"{cap} of {len(rec)} product recordings automatic", blocking=False)
+    mb = final.stat().st_size / 1e6
+    gate("size", mb < 500, f"{mb:.0f} MB", blocking=False)
+
+    ok = all(g["ok"] for g in gates if g["blocking"])
+    head = f"{'PASS' if ok else 'FAIL'} · {int(dur // 60)}:{dur % 60:04.1f} · {i_val} LUFS · {len(hits)} pops"
+    lines = [head, "", "| Gate | Result | Detail |", "|---|---|---|"]
+    lines += [f"| {g['gate']} | {'✅' if g['ok'] else ('❌' if g['blocking'] else '⚠️')} | {g['detail']} |" for g in gates]
+    fails = [g for g in gates if not g["ok"] and g["blocking"]]
+    if fails:
+        lines += ["", "## How to fix"] + [f"- **{g['gate']}**: {FIX.get(g['gate'], '')}" for g in fails]
+    (o / "qa.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    if not ok:
+        emit("qa", ok=False, user_action=True, gates=gates, message=head)
+    emit("qa", gates=gates, outputs=[str(o / "qa.md")], message=head)
+
+
+if __name__ == "__main__":
+    main()

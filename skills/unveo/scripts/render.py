@@ -1,15 +1,26 @@
-"""Render frames and sheets (docs/08).
+"""Render the animated scenes (docs/08). Every frame is window.seek(t) in headless Chromium, piped to ffmpeg.
 
-  render.py palettes [--out unveo-out]   the 6 colour schemes as stills/palettes.png (for intake Q4)
-
-stills / draft / final / scene / pops / estimate arrive in Phase 6.
+  render.py palettes                    the 6 colour schemes as stills/palettes.png (intake Q4)
+  render.py stills [--at 3,18] [--all]  stills/sheet.png: animated scenes + one frame per recorded scene (Checkpoint C)
+  render.py draft                       render/draft/sNN.mp4 at 960x540, 1 sample per frame (timing check)
+  render.py final [--chunks N] [--scene sNN]   render/segments/sNN.mp4 at 1920x1080, 30 fps, 3 subframes (motion blur)
+  render.py pops --file final.mp4       single-frame glitch scan
+  render.py estimate                    predicted minutes for the final render
+All take --out (default unveo-out). Unchanged scenes are not re-rendered.
 """
-import argparse, colorsys, json, sys
+import argparse, colorsys, json, os, re, shutil, subprocess, sys, time
 from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import emit, out_dir  # noqa: E402
+from common import emit, ffmpeg_exe, log, out_dir, read_json, sha1_of  # noqa: E402
+
+TEMPLATES = Path(__file__).resolve().parents[1] / "templates" / "film"
+FPS, SUBFRAMES, SHUTTER = 30, 3, 0.5
+MS_PER_CAPTURE = 50  # measured in M0 on a 10-core Mac
+ENCODE = ["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
+          "-color_range", "tv", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-movflags", "+faststart"]
+BT709 = "scale=in_range=pc:out_range=tv:out_color_matrix=bt709"
 
 # ---------- colour maths (WCAG 2.x contrast)
 
@@ -144,14 +155,263 @@ def palettes_cmd(out):
          message="Swatch sheet ready. Offer 'project' plus the 3 presets that best fit the field.")
 
 
+# ---------- film
+
+def prepare(out):
+    """Copy the film template next to the agent's scene data, write palette.css and timeline.js."""
+    o = Path(out)
+    film = o / "film"
+    (film / "data").mkdir(parents=True, exist_ok=True)
+    for src in TEMPLATES.rglob("*"):
+        if src.is_file():
+            dst = film / src.relative_to(TEMPLATES)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src, dst)
+    tokens = json.loads((o / "brief.json").read_text(encoding="utf-8"))["palette"]["tokens"]
+    (film / "palette.css").write_text(":root {\n" + "".join(f"  --{k}: {v};\n" for k, v in tokens.items()) + "}\n")
+    if (o / "capture" / "probe.png").exists():
+        (film / "assets").mkdir(exist_ok=True)
+        shutil.copyfile(o / "capture" / "probe.png", film / "assets" / "probe.png")
+    tl = read_json(o / "timeline.json")
+    scenes = []
+    for s in tl["scenes"]:
+        f = film / "data" / f"{s['id']}.json"
+        data = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+        tpl = s.get("template") if s["visual"] == "anim" else "placeholder"
+        if s["visual"] != "anim":
+            data = data or {"shot_id": s["id"], "what_to_record": "The recorded app plays here."}
+        scenes.append({"id": s["id"], "template": tpl or "placeholder", "dur_s": s["dur_s"], "start_s": s.get("start_s", 0),
+                       "visual": s["visual"], "data": data})
+    (film / "timeline.js").write_text("window.TIMELINE = " + json.dumps({"fps": FPS, "scenes": scenes}, ensure_ascii=False) + ";\n")
+    return film, scenes
+
+
+def scene_hash(film, sc, mode):
+    code = "".join((film / n).read_text(encoding="utf-8") for n in ("core.js", "film.js", "film.css", "palette.css"))
+    tpl = film / "scenes" / f"{sc['template']}.js"
+    return sha1_of(code, tpl.read_text(encoding="utf-8") if tpl.exists() else "", json.dumps(sc, sort_keys=True), mode)
+
+
+class Page:
+    """One headless Chromium page on the film, ready to seek."""
+
+    def __init__(self, pw, film, scene_id, width):
+        self.b = pw.chromium.launch()
+        self.pg = self.b.new_page(viewport={"width": width, "height": width * 9 // 16}, device_scale_factor=1)
+        self.errors = []
+        self.pg.on("pageerror", lambda e: self.errors.append(f"{scene_id}: {e}"))
+        self.pg.goto((film / "index.html").as_uri() + f"?scene={scene_id}&w={width}")
+        self.pg.wait_for_function("window.ready === true", timeout=60000)
+        self.pg.add_style_tag(content="*,*::before,*::after{transition:none!important;animation:none!important;caret-color:transparent!important}")
+        self.pg.evaluate("document.getAnimations().forEach(a => a.pause())")
+
+    def shot(self, t, path=None):
+        self.pg.evaluate(f"window.seek({t:.5f})")
+        self.pg.evaluate("new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))")  # let the frame paint
+        return self.pg.screenshot(path=path, type="jpeg" if not path or str(path).endswith(".jpg") else "png",
+                                  **({"quality": 95} if not path or str(path).endswith(".jpg") else {}))
+
+    def close(self):
+        self.b.close()
+
+
+def render_scene(pw, film, sc, path, width, sub):
+    """Frames 0..n-1 of one scene; with sub > 1, each frame blends `sub` captures over half a frame (180° shutter)."""
+    n = max(1, round(sc["dur_s"] * FPS))
+    offs = [(j - (sub - 1) / 2) * SHUTTER / (FPS * sub) for j in range(sub)] if sub > 1 else [0.0]
+    vf = (f"tmix=frames={sub},select='eq(mod(n\\,{sub})\\,{sub - 1})',setpts=N/{FPS}/TB," if sub > 1 else "") + BT709
+    path.parent.mkdir(parents=True, exist_ok=True)
+    enc = subprocess.Popen([ffmpeg_exe(), "-v", "error", "-y", "-f", "image2pipe", "-framerate", str(FPS * sub), "-c:v", "mjpeg",
+                            "-i", "-", "-vf", vf, "-r", str(FPS), *ENCODE, "-an", str(path)], stdin=subprocess.PIPE)
+    page = Page(pw, film, sc["id"], width)
+    try:
+        for i in range(n):
+            for o in offs:
+                enc.stdin.write(page.shot(min(sc["dur_s"] - 1e-3, max(0.0, i / FPS + o))))
+    finally:
+        page.close()
+        enc.stdin.close()
+        enc.wait()
+    if enc.returncode:
+        raise RuntimeError(f"ffmpeg failed on {sc['id']}")
+    return page.errors
+
+
+def anim_scenes(scenes, only=None):
+    return [s for s in scenes if s["visual"] == "anim" and (not only or s["id"] == only)]
+
+
+def video_cmd(out, mode, chunks=None, only=None):
+    from playwright.sync_api import sync_playwright
+    film, scenes = prepare(out)
+    o = Path(out)
+    folder = o / "render" / ("draft" if mode == "draft" else "segments")
+    folder.mkdir(parents=True, exist_ok=True)
+    hashes_f = folder / ".hashes.json"
+    hashes = json.loads(hashes_f.read_text()) if hashes_f.exists() else {}
+    todo = [s for s in anim_scenes(scenes, only)
+            if hashes.get(s["id"]) != scene_hash(film, s, mode) or not (folder / f"{s['id']}.mp4").exists()]
+    t0 = time.time()
+    chunks = max(1, min(chunks or min(4, max(1, (os.cpu_count() or 2) // 2)), len(todo) or 1))
+    errors = []
+    if chunks == 1 or len(todo) <= 1:
+        with sync_playwright() as pw:
+            for s in todo:
+                log(f"rendering {s['id']} ({s['template']}, {s['dur_s']} s)")
+                errors += render_scene(pw, film, s, folder / f"{s['id']}.mp4", 960 if mode == "draft" else 1920, 1 if mode == "draft" else SUBFRAMES)
+    else:  # greedy split by frame count, one process per chunk
+        groups = [[] for _ in range(chunks)]
+        for s in sorted(todo, key=lambda s: -s["dur_s"]):
+            min(groups, key=lambda g: sum(x["dur_s"] for x in g)).append(s)
+        procs = [subprocess.Popen([sys.executable, __file__, "_work", "--mode", mode, "--scenes", ",".join(x["id"] for x in g), "--out", str(o)],
+                                  stdout=subprocess.PIPE, text=True) for g in groups if g]
+        for p in procs:
+            outp, _ = p.communicate()
+            res = json.loads(outp.strip().splitlines()[-1])
+            if not res.get("ok"):
+                emit("render", ok=False, message=res.get("message", "a render worker failed"), page_errors=res.get("page_errors", []))
+            errors += res.get("page_errors", [])
+    if errors:
+        emit("render", ok=False, user_action=True, page_errors=errors[:20],
+             message="The film page threw errors; fix the scene data named in page_errors and render again.")
+    for s in todo:
+        hashes[s["id"]] = scene_hash(film, s, mode)
+    hashes_f.write_text(json.dumps(hashes, indent=1))
+    emit("render", rendered=[s["id"] for s in todo], seconds=round(time.time() - t0, 1),
+         outputs=[str(folder / f"{s['id']}.mp4") for s in anim_scenes(scenes, only)],
+         message=f"{mode}: rendered {len(todo)} scene(s) in {time.time() - t0:.0f} s" + ("" if todo else " (all up to date)"))
+
+
+def work_cmd(out, mode, ids):
+    from playwright.sync_api import sync_playwright
+    film = Path(out) / "film"
+    scenes = {s["id"]: s for s in json.loads((film / "timeline.js").read_text(encoding="utf-8")[len("window.TIMELINE = "):].rstrip(";\n"))["scenes"]}
+    folder = Path(out) / "render" / ("draft" if mode == "draft" else "segments")
+    errors = []
+    try:
+        with sync_playwright() as pw:
+            for sid in ids:
+                errors += render_scene(pw, film, scenes[sid], folder / f"{sid}.mp4", 960 if mode == "draft" else 1920, 1 if mode == "draft" else SUBFRAMES)
+    except Exception as e:  # report to the parent, never hang it
+        emit("render", ok=False, message=f"{ids}: {e}", page_errors=errors)
+    emit("render", page_errors=errors)
+
+
+def stills_cmd(out, at=None, every=False):
+    from playwright.sync_api import sync_playwright
+    from PIL import Image, ImageDraw, ImageFont
+    film, scenes = prepare(out)
+    o = Path(out)
+    d = o / "stills"
+    d.mkdir(exist_ok=True)
+    for old in d.glob("still-*"):
+        old.unlink()
+    picks = []  # (scene, local t)
+    if at:
+        for g in at:
+            s = next((x for x in scenes if x["start_s"] <= g < x["start_s"] + x["dur_s"]), scenes[-1])
+            picks.append((s, min(s["dur_s"] - 0.01, g - s["start_s"]) if len(scenes) > 1 or g >= s["start_s"] else g))
+    else:
+        anims = anim_scenes(scenes)
+        chosen = anims if every else [anims[round(i * (len(anims) - 1) / 3)] for i in range(min(4, len(anims)))] if anims else []
+        picks = [(s, s["dur_s"] * 0.8) for s in dict.fromkeys(s["id"] for s in chosen) for s in [next(x for x in anims if x["id"] == s)]]
+        picks += [(s, s["dur_s"] / 2) for s in scenes if s["visual"] in ("capture", "clip")]
+    files, errors = [], []
+    with sync_playwright() as pw:
+        for i, (s, t) in enumerate(picks):
+            f = d / f"still-{i:02d}-{s['id']}.png"
+            if s["visual"] == "anim":
+                page = Page(pw, film, s["id"], 1920)
+                page.shot(t, f)
+                errors += page.errors
+                page.close()
+            else:
+                src = o / ("capture" if s["visual"] == "capture" else "clips") / f"{s['id']}.mp4"
+                if s["visual"] == "clip":
+                    src = next(iter(sorted((o / "clips").glob("*"))), src) if (o / "clips").exists() else src
+                if not src.exists():
+                    continue
+                subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-ss", f"{t:.2f}", "-i", str(src), "-frames:v", "1", str(f)], check=True)
+            files.append((f, f"{s['id']} · {s['template'] or s['visual']} · {t:.1f} s"))
+    cols, w, h = 3, 640, 360
+    rows = max(1, -(-len(files) // cols))
+    sheet = Image.new("RGB", (cols * w, rows * (h + 44)), "white")
+    draw = ImageDraw.Draw(sheet)
+    for i, (f, label) in enumerate(files):
+        x, y = (i % cols) * w, (i // cols) * (h + 44)
+        sheet.paste(Image.open(f).convert("RGB").resize((w - 8, h - 8)), (x + 4, y + 4))
+        draw.text((x + 8, y + h + 8), label, fill="#111", font=ImageFont.load_default(size=22))
+    sheet.save(d / "sheet.png")
+    res = dict(stills=[str(f) for f, _ in files], page_errors=errors, outputs=[str(d / "sheet.png")])
+    if errors:
+        emit("stills", ok=False, user_action=True, message="The film page threw errors; fix the scene data named in page_errors.", **res)
+    emit("stills", message=f"{len(files)} still(s) on stills/sheet.png", **res)
+
+
+def pops(path, boundaries=(), fps=FPS):
+    """Frames that differ from both neighbours by >3x their own change (adapted from upstream render_template.py)."""
+    import numpy as np
+    raw = subprocess.run([ffmpeg_exe(), "-v", "quiet", "-i", str(path), "-vf", "scale=320:180,format=gray", "-f", "rawvideo", "-"],
+                         capture_output=True, check=True).stdout
+    fr = np.frombuffer(raw, np.uint8).reshape(-1, 180, 320).astype(np.float32)
+    dif = np.abs(np.diff(fr, axis=0)).mean(axis=(1, 2))
+    skip = {round(b * fps) + k for b in boundaries for k in (-1, 0, 1)}
+    hits = []
+    for n in range(1, len(fr) - 1):
+        a, b = dif[n - 1], dif[n]
+        across = np.abs(fr[n + 1] - fr[n - 1]).mean()
+        if min(a, b) > 2.0 and across < 0.35 * min(a, b) and n not in skip:
+            hits.append({"frame": int(n), "t": round(n / fps, 3), "diff": round(float(min(a, b)), 2)})
+    return hits
+
+
+def estimate_cmd(out):
+    tl = read_json(Path(out) / "timeline.json")
+    frames = sum(round(s["dur_s"] * FPS) for s in tl["scenes"] if s["visual"] == "anim")
+    chunks = min(4, max(1, (os.cpu_count() or 2) // 2))
+    minutes = frames * SUBFRAMES * MS_PER_CAPTURE / 1000 / chunks / 60 * 1.15
+    emit("estimate", frames=frames, chunks=chunks, minutes=round(minutes, 1),
+         message=f"About {max(1, round(minutes))} minute(s) for the final render ({frames} frames, {chunks} chunks)")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    pp = sub.add_parser("palettes")
-    pp.add_argument("--out", default="unveo-out")
+    sub.add_parser("palettes")
+    st = sub.add_parser("stills")
+    st.add_argument("--at")
+    st.add_argument("--all", action="store_true")
+    sub.add_parser("draft").add_argument("--scene")
+    fi = sub.add_parser("final")
+    fi.add_argument("--chunks", type=int)
+    fi.add_argument("--scene")
+    po = sub.add_parser("pops")
+    po.add_argument("--file")
+    sub.add_parser("estimate")
+    wk = sub.add_parser("_work")
+    wk.add_argument("--mode")
+    wk.add_argument("--scenes")
+    for sp in sub.choices.values():
+        sp.add_argument("--out", default="unveo-out")
     a = ap.parse_args()
     if a.cmd == "palettes":
         palettes_cmd(a.out)
+    elif a.cmd == "stills":
+        stills_cmd(a.out, [float(x) for x in a.at.split(",")] if a.at else None, a.all)
+    elif a.cmd == "draft":
+        video_cmd(a.out, "draft", only=a.scene)
+    elif a.cmd == "final":
+        video_cmd(a.out, "final", a.chunks, a.scene)
+    elif a.cmd == "pops":
+        f = Path(a.file or Path(a.out) / "final.mp4")
+        tl = Path(a.out) / "timeline.json"
+        bounds = [s["start_s"] for s in read_json(tl)["scenes"]] if tl.exists() else []
+        hits = pops(f, bounds)
+        emit("pops", pops=hits, message=f"{len(hits)} pop(s) found" + ("" if not hits else ": re-render those scenes"))
+    elif a.cmd == "estimate":
+        estimate_cmd(a.out)
+    else:
+        work_cmd(a.out, a.mode, a.scenes.split(","))
 
 
 if __name__ == "__main__":

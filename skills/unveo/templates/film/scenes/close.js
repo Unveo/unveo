@@ -1,0 +1,28 @@
+/* close: { title, impact_line, links: [{label, url}], extra_line } — links typeset exactly as given */
+UNVEO.scene("close", {
+  build(root, d) {
+    const { h, esc, words } = CORE;
+    root.append(h("div", "abs", null, "inset:0;background:radial-gradient(1100px 650px at 20% 20%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 70%)"));
+    root.__bg = root.lastChild;
+    root.__im = words(h("div", "abs", null, "left:120px;top:150px;width:1560px;font:650 74px/1.12 Geist;letter-spacing:-.03em"), d.impact_line || "");
+    root.append(root.__im);
+    root.__links = (d.links || []).slice(0, 3).map((l, i) => {
+      const c = h("div", "abs card", null, `left:120px;top:${560 + i * 128}px;width:1300px;height:104px;display:flex;align-items:center;gap:36px;padding:0 40px`);
+      c.innerHTML = `<div style="font:500 30px Geist;color:var(--muted);width:240px;flex:none">${esc(l.label)}</div>
+        <div class="mono link" style="font:500 38px 'Geist Mono';color:var(--accent);white-space:nowrap">${esc(l.url)}</div>`;
+      root.append(c);
+      return c;
+    });
+    root.__ti = h("div", "abs", `${esc(d.title || "")}${d.extra_line ? `<span style="color:var(--muted);font-weight:500"> · ${esc(d.extra_line)}</span>` : ""}`,
+      "left:120px;bottom:90px;font:700 34px Geist");
+    root.append(root.__ti);
+  },
+  draw(t, d, dur, root) {
+    const { p, riseWords, rise, drift, E } = CORE;
+    root.__bg.style.transform = `translate(${drift(t, 24, .45)}px, ${drift(t, 14, .35, 2)}px)`;
+    riseWords(root.__im, t, 0.15, 0.05, 0.6);
+    const t0 = Math.max(1.2, dur - 4.2);  // links arrive as the voice ends, then hold
+    root.__links.forEach((c, i) => rise(c, p(t, t0 + i * 0.18, .7, E.outExpo), 40));
+    rise(root.__ti, p(t, t0 + 0.5, .7), 16);
+  },
+});
