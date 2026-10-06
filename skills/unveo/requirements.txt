@@ -1,0 +1,7 @@
+# Tested 7 Oct 2026 on Python 3.14.7 (macOS): playwright 1.63.0, imageio-ffmpeg 0.6.0,
+# numpy 2.5.3, pillow 12.3.0, edge-tts 7.2.8
+playwright>=1.55,<2
+imageio-ffmpeg>=0.6,<1
+numpy>=1.26,<3
+pillow>=10,<13
+edge-tts>=7,<8

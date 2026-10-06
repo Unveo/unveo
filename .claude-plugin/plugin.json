@@ -1,0 +1,10 @@
+{
+  "name": "unveo",
+  "description": "Turn a hackathon project's repo into a judge-ready demo video: the real app recorded in a browser, animated explainers for the hidden logic, a free voiceover.",
+  "version": "0.1.0-dev",
+  "author": {"name": "Sambhav Jain", "email": "krsambhavjain@gmail.com"},
+  "license": "MIT",
+  "homepage": "https://github.com/Unveo/unveo",
+  "repository": "https://github.com/Unveo/unveo",
+  "keywords": ["hackathon", "demo-video", "video", "playwright", "skill"]
+}

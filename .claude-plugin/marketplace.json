@@ -1,0 +1,6 @@
+{
+  "name": "unveo",
+  "description": "Make your hackathon demo video from your repo, before the deadline.",
+  "owner": {"name": "Sambhav Jain", "email": "krsambhavjain@gmail.com"},
+  "plugins": [{"name": "unveo", "source": "./", "description": "Turn a hackathon project's repo into a judge-ready demo video: the real app recorded in a browser, animated explainers for the hidden logic, a free voiceover."}]
+}

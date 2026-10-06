@@ -1,0 +1,20 @@
+{
+  "name": "unveo",
+  "version": "0.1.0-dev",
+  "description": "Turn a hackathon project's repo into a judge-ready demo video: the real app recorded in a browser, animated explainers for the hidden logic, a free voiceover.",
+  "author": {"name": "Sambhav Jain", "email": "krsambhavjain@gmail.com"},
+  "homepage": "https://github.com/Unveo/unveo",
+  "repository": "https://github.com/Unveo/unveo",
+  "license": "MIT",
+  "keywords": ["hackathon", "demo-video", "video", "playwright", "skill"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "unveo",
+    "shortDescription": "Turn your hackathon repo into a demo video.",
+    "longDescription": "Reads your code, records the real web app, animates the hidden logic judges can't see, adds a free English or Hindi voiceover, and renders a 1080p video that fits the time limit.",
+    "developerName": "Sambhav Jain",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write", "Execute"],
+    "defaultPrompt": ["Make our hackathon demo video.", "Turn this repo into a 2 minute demo video for the judges."]
+  }
+}

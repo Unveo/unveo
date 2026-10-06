@@ -1,0 +1,11 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "unveo",
+  "version": "0.1.0-dev",
+  "description": "Turn a hackathon project's repo into a judge-ready demo video: the real app recorded in a browser, animated explainers for the hidden logic, a free voiceover.",
+  "author": {"name": "Sambhav Jain", "email": "krsambhavjain@gmail.com"},
+  "homepage": "https://github.com/Unveo/unveo",
+  "repository": "https://github.com/Unveo/unveo",
+  "license": "MIT",
+  "keywords": ["hackathon", "demo-video", "video", "playwright", "skill"]
+}
