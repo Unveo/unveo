@@ -113,6 +113,8 @@ The agent probes the top candidate with `capture.py probe`. If it fails, it trie
 
 **Linking to the screen.** For each candidate, the script takes its output names (return dict keys, assigned field names, column names) and greps for them in frontend files (`*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, `*.html`, templates). Each hit is a `ui_hit`. The agent then maps the `ui_hit` to a journey step: that step is where the explainer cuts in.
 
+**Inline code:** `<script>` and `<style>` blocks inside `.html` files are scanned as code and CSS, with line numbers kept.
+
 **Excluded:** test files (`tests/`, `test_*`, `*.test.*`, `*.spec.*`, `conftest.py`) and i18n string tables. Bare keywords (`risk`, `rank`, `score`, `weight`…) don't count as outputs, so only specific names (`work_risk_score`, `riskScore`) link code to the screen. Those links come from any matching name in the file, not just the chosen function.
 
 **Ranking** (top 10 in repo_scan.json; the agent shows at most 5):

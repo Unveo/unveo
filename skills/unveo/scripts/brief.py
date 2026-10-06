@@ -56,8 +56,11 @@ def errors(b):
         if not re.fullmatch(r"#[0-9a-f]{6}", str(tokens.get(t, "")).lower()):
             e.append(f"palette.tokens.{t} must be a #rrggbb colour")
     for i, link in enumerate(g("close", "links") or []):
-        if not URL.match(str(link.get("url", ""))):
+        url = str(link.get("url", ""))
+        if not URL.match(url):
             e.append(f"close.links[{i}].url must start with http:// or https://")
+        elif re.match(r"https?://(localhost|127\.|0\.0\.0\.0|\[::1\])", url):
+            e.append(f"close.links[{i}] is a local address ({url}); judges can't open it, so leave it off the end card")
     return e
 
 

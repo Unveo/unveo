@@ -317,14 +317,17 @@ def hidden_logic(texts, readme_text):
     ui_files = {f: t for f, t in texts.items() if Path(f).suffix in UI_EXT}
     cands = []
     for f, t in texts.items():
-        if Path(f).suffix not in CODE_EXT or TEST_FILE.search(f) or I18N_FILE.search(f):
+        html = Path(f).suffix in (".html", ".htm")
+        if html:
+            t = inline_blocks(t, "script")  # logic written straight into the page
+        if (Path(f).suffix not in CODE_EXT and not html) or TEST_FILE.search(f) or I18N_FILE.search(f) or not t.strip():
             continue
         low = t.lower()
         hits = {k: re.findall(rx, low) for k, rx in KINDS.items()}
         for k, hints in PATH_HINTS.items():
             if any(h in f.lower() for h in hints):
                 hits[k] = hits[k] + ["<path>"]
-        is_ui = Path(f).suffix in UI_EXT and not any(h in f.lower() for h in ("lib/", "services/", "utils/"))
+        is_ui = Path(f).suffix in UI_EXT and not html and not any(h in f.lower() for h in ("lib/", "services/", "utils/"))
         kind = max(hits, key=lambda k: len(hits[k]))
         if len(hits[kind]) < 2 or is_ui:
             continue
@@ -378,7 +381,9 @@ def palette(texts):
         if re.search(r"tailwind\.config|theme\.(?:ts|js)$", f):
             for m in re.finditer(rf"[\"']?([\w-]+)[\"']?\s*:\s*[\"']({HEX})[\"']", t):
                 named.append({"name": m.group(1), "hex": norm_hex(m.group(2)), "from": f"{f}:{line_of(t, m.start())}"})
-        if f.endswith((".css", ".scss")):
+        if f.endswith((".html", ".htm")):
+            t = inline_blocks(t, "style")
+        if f.endswith((".css", ".scss", ".html", ".htm")):
             for m in re.finditer(rf"--([\w-]+)\s*:\s*({HEX})", t):
                 named.append({"name": m.group(1), "hex": norm_hex(m.group(2)), "from": f"{f}:{line_of(t, m.start())}"})
             counts.update(norm_hex(h) for h in re.findall(HEX, t))
@@ -388,6 +393,19 @@ def palette(texts):
     have = {c["hex"] for c in named}
     named += [{"name": "css", "hex": h, "from": f"used {n}x in CSS"} for h, n in counts.most_common(5) if h not in have]
     return named[:24]
+
+
+def inline_blocks(html, tag):
+    """Only the inside of <script>/<style> blocks, other lines blanked so line numbers stay right."""
+    keep = [False] * (html.count("\n") + 1)
+    for m in re.finditer(rf"<{tag}\b(?![^>]*\bsrc=)[^>]*>(.*?)</{tag}>", html, re.S | re.I):
+        a, b = line_of(html, m.start(1)), line_of(html, m.end(1))
+        for i in range(a - 1, b):
+            keep[i] = True
+    lines = html.split("\n")
+    if tag == "script":  # the opening tag's line holds markup before the code
+        lines = [re.sub(r"^.*<script\b[^>]*>", "", l) for l in lines]
+    return "\n".join(l if k else "" for l, k in zip(lines, keep))
 
 
 def norm_hex(h):

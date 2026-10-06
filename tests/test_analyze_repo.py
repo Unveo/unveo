@@ -205,3 +205,11 @@ class PaletteScanTest(unittest.TestCase):
             _, _, s = scan(d)
         names = {c["name"] for c in s["palette_candidates"]}
         self.assertLessEqual({"ink", "accent"}, names)
+
+
+class InlineHtmlTest(unittest.TestCase):
+    def test_inline_script_and_style_in_html_are_scanned(self):
+        _, _, s = scan(FIX / "mini-web")
+        top = s["hidden_logic_candidates"][0]
+        self.assertEqual((top["file"], top["kind"]), ("index.html", "formula"))
+        self.assertIn("#4f46e5", {c["hex"] for c in s["palette_candidates"]})

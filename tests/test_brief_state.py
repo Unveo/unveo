@@ -57,6 +57,12 @@ class ValidateTest(unittest.TestCase):
         self.assertIn("links[0]", errs)
         self.assertIn("bad", errs)
 
+    def test_local_links_never_go_on_the_end_card(self):
+        b = good_brief(); b["close"]["links"][0]["url"] = "http://127.0.0.1:8795/"
+        self.assertTrue(any("local" in e for e in brief.errors(b)))
+        b["close"]["links"][0]["url"] = "http://localhost:5173"
+        self.assertTrue(any("local" in e for e in brief.errors(b)))
+
     def test_password_values_are_never_allowed(self):
         b = good_brief(); b["project"]["login"]["password"] = "hunter2"
         self.assertTrue(any("password" in e for e in brief.errors(b)))

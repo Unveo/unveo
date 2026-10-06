@@ -9,6 +9,8 @@ All commands use the form `"<PY>" "<SKILL_DIR>/scripts/<script>.py" <subcommand>
 | `python check_setup.py [--fix] [--with-kokoro]` | — | `~/.unveo/venv`, `~/.unveo/setup.json` | System Python, stdlib only |
 | `unveo analyze_repo --repo <path>` | the repo | `repo_scan.json` | [05](05-REPO-ANALYSIS-SPEC.md) |
 | `unveo capture probe --url <url>` | — | `capture/probe.png` | [10](10-CAPTURE-SPEC.md) |
+| `unveo script check` · `script budget --limit N` | `script.md`, `brief.json`, `shots.md`, the repo | — | exit 2 with `errors[]`: headings, pitch order, source tags (questions exempt), source files and lines, budget ±5%, explainers vs brief, clip shots, dashes; `warnings[]` for short scripts, segment shares, scenes longer than their target |
+| `unveo capture check` | `capture/steps.json` | — | schema errors, plus the plan in plain words with ⚠️ destructive and ⛔ payment flags |
 | `unveo brief validate` | `brief.json` | — | exit 2 with `errors[]`; free-only providers, ≤3 explainers, confirmed understanding |
 | `unveo state set <step> <status> [--hash h]` · `state show` | `state.json` | `state.json` | resume bookkeeping |
 | `unveo capture dry-run [--scene sNN]` | `capture/steps.json` | `capture/dryrun/` | [10](10-CAPTURE-SPEC.md) |

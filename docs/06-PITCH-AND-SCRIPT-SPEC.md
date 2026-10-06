@@ -93,7 +93,7 @@ On screen: links from brief.json
 **Rules**
 - A heading per scene: `## <id> · <segment> · <visual>[:<template>] · target <s> s[ · steps: <id>][ · logic: <H-id>]`. Visuals: `anim:<template>`, `capture`, `clip`.
 - `Narration:` is exactly what gets spoken, apart from the tags. `voice.py` strips all `[...]` tags before speech.
-- **Every narration sentence ends with a source tag:** `[src: path:line]`, `[src: path:line-line]`, `[brief: field]` (from the user's answers) or `[understanding: confirmed]` (for the field and problem lines the user confirmed at Checkpoint A). `qa.py` fails a sentence with no tag.
+- **Every narration sentence that states something ends with a source tag** (questions ending in `?` are exempt): `[src: path:line]`, `[src: path:line-line]`, `[brief: field]` (from the user's answers) or `[understanding: confirmed]` (for the field and problem lines the user confirmed at Checkpoint A). `qa.py` fails a sentence with no tag.
 - `On screen:` is the text the template shows; it's optional for capture scenes.
 - The header line keeps the running word count, so the user can see the budget.
 

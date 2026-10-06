@@ -87,8 +87,9 @@ def hue_gap(a, b):
 
 def dominant_color(png):
     from PIL import Image
-    im = Image.open(png).convert("RGB").resize((96, 54))
-    q = Counter(tuple(v // 16 * 16 + 8 for v in px) for px in im.getdata())
+    import numpy as np
+    px = np.asarray(Image.open(png).convert("RGB").resize((96, 54))).reshape(-1, 3) // 16 * 16 + 8
+    q = Counter(map(tuple, px.tolist()))
     return to_hex(q.most_common(1)[0][0])
 
 

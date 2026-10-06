@@ -9,7 +9,7 @@ unveo v0.1.0-dev
 
 Makes a judge-ready hackathon demo video from a repo: the real web app recorded in an automated browser, animated explainers for the hidden logic, a free English or Hindi voiceover, and a 1080p MP4 that fits the time limit. The output goes to `unveo-out/final.mp4`.
 
-**This build has Phase 0 (setup) and Phase 1 (understand).** Phase 1 ends with a confirmed `unveo-out/understanding.md` and a valid `unveo-out/brief.json`. After that, say exactly: "Your brief is saved in unveo-out/brief.json. Script writing and rendering aren't built yet in this version of unveo."
+**This build has Phase 0 (setup), Phase 1 (understand) and Phase 2 (write).** Phase 2 ends at Checkpoint B, with an approved `script.md`, a dry-run-tested `capture/steps.json` and, if needed, `shots.md`. After that, say exactly: "Your script and recording plan are approved and saved in unveo-out/. Voice, recording and rendering aren't built yet in this version of unveo."
 
 ## Non-negotiables
 
@@ -62,7 +62,7 @@ When you ask with choices: in Claude Code, use AskUserQuestion (at most 4 option
 
 **1. Saved brief.** If `OUT/brief.json` exists and `--fresh` wasn't given, run `"<PY>" "<SKILL_DIR>/scripts/brief.py" validate`.
 - If it's valid, ask: **"Reuse your saved answers? (<limit> · <language> · <palette name> · <project name>)"**, with options *Reuse (Recommended)* · *Change something* · *Start fresh*.
-  - *Reuse:* give the finish message from the top of this file, and stop.
+  - *Reuse:* skip to Phase 2. If `state.json` shows `script` approved, give the finish message from the top of this file instead.
   - *Change something:* ask what, change only that, then re-validate.
 - If it's invalid, or the user picks *Start fresh*, continue from step 2.
 
@@ -112,6 +112,7 @@ Then ask, as multiple choice:
 > **Which hidden logic should I animate? 2 is a good default; 3 at most.**
 
 - The options are the top 4 H-items (the most a choice list holds), with the top 2 marked (Recommended). At a 60 s limit, recommend 1. The user can name H5 with *Other*.
+- With only 1 H-item, ask instead: **"Animate <title>?"** *Yes (Recommended)* · *No explainer*. With none, skip the question and say so in one line.
 - Apply any corrections, show the changed parts again, and repeat until the answer is *Yes*.
 - Then set `Confirmed: yes, <date>` in understanding.md and run `state.py set understanding approved`.
 
@@ -127,9 +128,9 @@ Then ask, as multiple choice:
 > Links: App *<app url>* · Repo *<repo url>*
 > Use these (Recommended) · Add event and team name · Change the links · Add an extra closing line
 
-Store links exactly as the user types them, character for character. Leave out the App link when there's no app URL. Use `""` for blank event and team. Draft one impact line (who benefits and how; no numbers you can't source) and show it for approval.
+Store links exactly as the user types them, character for character. Leave out the App link when there's no public app URL (a `localhost` or `127.0.0.1` link can't go on the end card; brief.py rejects it). Use `""` for blank event and team. Draft one impact line (who benefits and how; no numbers you can't source) and show it for approval.
 
-**11. Write and validate the brief.** Write `OUT/brief.json` in the shape below, then run `"<PY>" "<SKILL_DIR>/scripts/brief.py" validate`. Fix every error it lists and validate again. When it's valid, run `state.py set brief done`, then give the finish message from the top of this file.
+**11. Write and validate the brief.** Write `OUT/brief.json` in the shape below, then run `"<PY>" "<SKILL_DIR>/scripts/brief.py" validate`. Fix every error it lists and validate again. When it's valid, run `state.py set brief done` and go on to Phase 2.
 
 ```json
 {
@@ -154,6 +155,41 @@ Store links exactly as the user types them, character for character. Leave out t
 - `source` is `{"kind": "github", "url": "<url>", "clone_path": "<root>"}` for a cloned repo.
 - The Hindi voice is `hi-IN-SwaraNeural`.
 - `capture_enabled` is false when there's no reachable web app.
-- `journey` holds each step's plain sentence, without the `[route…, element…]` tag (the tags stay in understanding.md).
+- `journey` holds each step as written in understanding.md (`<action> → <what appears>`), without the `[route…, element…]` tag.
 - `confirmed_at` is the real current time: run `date -Iseconds` (on Windows PowerShell, `Get-Date -Format o`).
 - The `hidden_logic` ids are the ones in understanding.md (you may renumber the scan's candidates).
+
+## Phase 2: Write
+
+**12. Script.** Read `<SKILL_DIR>/PITCH.md` now. Write `OUT/script.md` in its exact format:
+- one capture scene per journey step (or `clip` when `capture_enabled` is false)
+- the selected explainers cut in after their `shown_at_step`
+- the impact line in the close scene
+
+Run `"<PY>" "<SKILL_DIR>/scripts/script.py" check` and fix every listed error until it exits 0. Mention any `warnings` in one line each.
+
+**13. Recording plan** (skip when `capture_enabled` is false). Read `<SKILL_DIR>/CAPTURE.md` now. Write `OUT/capture/steps.json` with one entry per capture scene. Then:
+- Run `"<PY>" "<SKILL_DIR>/scripts/capture.py" check` and fix every error.
+- Run `"<PY>" "<SKILL_DIR>/scripts/capture.py" dry-run`. Fix failures from their `closest` and screenshot, and re-run them with `--scene sNN`. That's at most 3 rounds per scene; a scene that still fails becomes a clip (CAPTURE.md, step 4).
+- If the app needs a login and the env variables aren't set, ask the user to set them now. Never ask for the values.
+- Re-run `script.py check` after any scene turns into a clip.
+- When it all passes, run `state.py set dryrun done`.
+
+**14. Shot list.** If any scene is `clip`, write `OUT/shots.md` as PITCH.md shows, and run `script.py check` again.
+
+**15. Checkpoint B (✅ required).** Show:
+- a table of scenes: id · segment · seconds · visual · narration (spoken text, without tags)
+- the word count against the budget (from `script.py check`)
+- for each capture scene, the `plan` lines from `capture.py check`; ⚠️ lines are destructive steps that stay skipped unless the user ticks them, and ⛔ lines are never run
+- the dry-run sheet path (`OUT/capture/dryrun/sheet.png`); look at it if you can view images
+- the shots the user must record, if any
+
+Then ask:
+> **Approve the script and the recording plan?**
+> Approve (Recommended) · Edit some lines · Make it shorter · Change the recording plan
+
+- For edits: apply them, re-run `script.py check` (and `capture.py dry-run --scene` for changed scenes), and show only what changed.
+- For ⚠️ steps the user ticks: set `"approved": true` on those steps and re-run the dry run for that scene.
+- On *Approve*, run `state.py set script approved`.
+- If there are shots, tell the user they can start recording now. The files go in `OUT/clips/` with the names in shots.md.
+- Then give the finish message from the top of this file.

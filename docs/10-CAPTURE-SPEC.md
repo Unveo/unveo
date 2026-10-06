@@ -8,6 +8,7 @@
 | Command | What it does |
 |---|---|
 | `unveo capture probe --url <url>` | Opens the URL headless at 1920×1080, waits for network idle (15 s max), saves `capture/probe.png`, and reports: HTTP status, title, final URL after redirects, `login_wall` (a password field, or a redirect to /login, /signin or /auth), load time |
+| `unveo capture check` | Validates steps.json and prints each scene's plan in plain words, flagging ⚠️ destructive and ⛔ payment steps. No browser |
 | `unveo capture dry-run [--scene sNN]` | Runs every scene's steps fast (no recording, no pacing). Screenshots after each scene go into `capture/dryrun/sNN.png`; failures go into `capture/dryrun/sNN-fail.png` with the error, the step index and the 5 closest matching elements. Builds `capture/dryrun/sheet.png` |
 | `unveo capture record [--scene sNN]` | Records each capture scene into `capture/sNN.mp4`, paced to the voice timing in `timeline.json` |
 
