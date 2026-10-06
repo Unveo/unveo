@@ -200,7 +200,7 @@ class Page:
         self.pg = self.b.new_page(viewport={"width": width, "height": width * 9 // 16}, device_scale_factor=1)
         self.errors = []
         self.pg.on("pageerror", lambda e: self.errors.append(f"{scene_id}: {e}"))
-        self.pg.goto((film / "index.html").as_uri() + f"?scene={scene_id}&w={width}")
+        self.pg.goto((film / "index.html").resolve().as_uri() + f"?scene={scene_id}&w={width}")
         self.pg.wait_for_function("window.ready === true", timeout=60000)
         self.pg.add_style_tag(content="*,*::before,*::after{transition:none!important;animation:none!important;caret-color:transparent!important}")
         self.pg.evaluate("document.getAnimations().forEach(a => a.pause())")
@@ -332,7 +332,7 @@ def stills_cmd(out, at=None, every=False):
                 if not src.exists():
                     continue
                 subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-ss", f"{t:.2f}", "-i", str(src), "-frames:v", "1", str(f)], check=True)
-            files.append((f, f"{s['id']} · {s['template'] or s['visual']} · {t:.1f} s"))
+            files.append((f, f"{s['id']} · {s['template'] if s['visual'] == 'anim' else s['visual']} · {t:.1f} s"))
     cols, w, h = 3, 640, 360
     rows = max(1, -(-len(files) // cols))
     sheet = Image.new("RGB", (cols * w, rows * (h + 44)), "white")

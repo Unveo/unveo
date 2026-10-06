@@ -58,11 +58,11 @@ unveo/
 │   │       ├── render_core.py    from render_template.py
 │   │       ├── audio_core.py     from audio_template.py
 │   │       └── core.js           from remake/core.js (easings, springs, helpers)
+│   ├── templates/cursor.js      the fake cursor injected during capture
 │   ├── templates/film/
 │   │   ├── index.html            loads palette, core.js, scenes, data; defines seek(t)
 │   │   ├── film.js               scene registry, per-scene local time, preview controls
 │   │   ├── palette.css           CSS variables, filled from brief.json
-│   │   ├── cursor.js             the fake cursor injected during capture
 │   │   └── scenes/
 │   │       ├── title.js  context.js  problem.js  product-intro.js
 │   │       ├── explainer-pipeline-flow.js  explainer-formula-breakdown.js

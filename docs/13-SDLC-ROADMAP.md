@@ -15,6 +15,8 @@ The order of work from these docs to a released v0.1.0. Each milestone ends with
 | M6 | Scenes and render | 5 | All templates, palettes, stills, final segments |
 | M7 | Audio, stitch and QA | 3 | final.mp4 passing qa.py |
 | M8 | Dogfood and launch | 3 | MPLADS video submitted-quality; v0.1.0 released |
+
+> Status (7 Oct 2026): M0–M7 built and tested (104 tests). M8 dogfood done: the MPLADS video was made end to end with unveo and passes QA. Still open for M8: the Windows test pass, the README demo GIF, and tagging v0.1.0.
 | — | **Total** | **≈ 26** | |
 
 Order rationale: capture (M5) comes right after the voice because capture is paced to the voice, and it's the riskiest new part, so it's tested before the template work.

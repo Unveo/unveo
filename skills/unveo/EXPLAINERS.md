@@ -33,8 +33,9 @@ At most 6 stages. `payloads[i]` is what stage i receives.
 {"title": "…", "source": ["…"], "example_data": true,
  "input": {"kind": "table", "label": "A new work", "example": "Road · ₹12 lakh · Bihar"}, "preprocess": ["12 features"],
  "model": {"name": "HistGradientBoostingClassifier", "where": "local", "label": "Delay model"},
- "output": {"label": "Delay risk", "example": "High", "confidence": 0.81, "alternatives": [{"label": "Medium", "p": 0.15}]}}
+ "output": {"label": "Delay risk", "example": "High", "confidence": 0.81, "score_label": "confidence", "alternatives": [{"label": "Medium", "p": 0.15}]}}
 ```
+`score_label` names the number honestly (for example "delay probability" when the model outputs a probability, not a confidence).
 
 ## raw-vs-processed (cleaning, extraction). Beats: question · raw · clean
 ```json

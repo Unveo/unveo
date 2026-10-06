@@ -82,6 +82,12 @@ class TemplatesTest(unittest.TestCase):
         self.assertTrue((out / "stills/sheet.png").exists())
         self.assertEqual(len(res["stills"]), len(DATA))
 
+    def test_works_with_the_default_relative_out_folder(self):
+        out = make_out(only={"s01"})
+        p = subprocess.run([sys.executable, str(SCRIPTS / "render.py"), "stills", "--out", out.name],
+                           capture_output=True, text=True, timeout=300, cwd=out.parent)
+        self.assertEqual(p.returncode, 0, p.stderr[-500:])
+
     def test_same_time_gives_identical_pixels(self):
         out = make_out(only={"s05"})
         _, a = run(out, "stills", "--at", "1.2")
