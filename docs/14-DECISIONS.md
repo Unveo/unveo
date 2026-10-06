@@ -46,7 +46,7 @@ One entry per decision. Status: **Accepted** (you confirmed it), **Proposed** (m
 - edge-tts gives exact word timings and speaks about 2.2–2.3 words a second.
 - Kokoro runs through `kokoro-onnx` with an int8 model (120 MB total, no PyTorch), offline, at about 2.5× real time.
 - Microsoft publishes no terms for reusing Edge Read Aloud audio, so it's a grey area. The README names Kokoro (Apache-2.0) as the fully open option.
-- Which voices to use: your pick, from the M0 samples.
+- **Defaults chosen (7 Oct 2026):** `en-IN-NeerjaNeural` for English and `hi-IN-SwaraNeural` for Hindi, with edge-tts as the engine and Kokoro as the fallback. Other voices are available on request: `en-IN-NeerjaExpressiveNeural`, `en-IN-PrabhatNeural`, `hi-IN-MadhurNeural`, and Kokoro `hf_beta` and `hm_psi`.
 
 ### ADR-007 · Python in its own venv at `~/.unveo/venv`
 **Status:** Proposed

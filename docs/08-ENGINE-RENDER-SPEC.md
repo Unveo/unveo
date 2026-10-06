@@ -9,6 +9,8 @@ All commands use the form `"<PY>" "<SKILL_DIR>/scripts/<script>.py" <subcommand>
 | `python check_setup.py [--fix] [--with-kokoro]` | — | `~/.unveo/venv`, `~/.unveo/setup.json` | System Python, stdlib only |
 | `unveo analyze_repo --repo <path>` | the repo | `repo_scan.json` | [05](05-REPO-ANALYSIS-SPEC.md) |
 | `unveo capture probe --url <url>` | — | `capture/probe.png` | [10](10-CAPTURE-SPEC.md) |
+| `unveo brief validate` | `brief.json` | — | exit 2 with `errors[]`; free-only providers, ≤3 explainers, confirmed understanding |
+| `unveo state set <step> <status> [--hash h]` · `state show` | `state.json` | `state.json` | resume bookkeeping |
 | `unveo capture dry-run [--scene sNN]` | `capture/steps.json` | `capture/dryrun/` | [10](10-CAPTURE-SPEC.md) |
 | `unveo voice [--scene sNN] [--provider edge\|kokoro]` | `script.md`, `brief.json` | `voice/` | [09](09-VOICE-AUDIO-SPEC.md) |
 | `unveo plan_timeline` | `script.md`, `voice/voice.json` | `timeline.json` | exit 2 if over the limit |

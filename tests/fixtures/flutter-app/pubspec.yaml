@@ -1,0 +1,4 @@
+name: field_scan
+dependencies:
+  flutter:
+    sdk: flutter

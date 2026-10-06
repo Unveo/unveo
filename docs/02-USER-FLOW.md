@@ -38,7 +38,7 @@ What the user sees from the first command to `final.mp4`: every question, checkp
 
 ```
 Phase 0  Setup ───────────── check_setup.py (installs what's missing)
-Phase 1  Understand ──────── input → Q1 → Q2 → repo analysis → URL check → Q3 ✅A → Q4 → Q5 → brief.json
+Phase 1  Understand ──────── input → repo map → Q1 → Q2 → understanding → URL check → Q3 ✅A → Q4 → Q5 → brief.json
 Phase 2  Write ───────────── script.md → steps.json → dry run → (shots.md for fallbacks) → ✅B
 Phase 3  Build ───────────── voice → timeline → capture (paced) → scenes → stills ✅C → draft → final → mix → stitch → QA → final.mp4
 ```
@@ -58,7 +58,7 @@ The user answers 5 questions and approves 3 checkpoints (A, B, C). Everything el
 > **How long can the video be? Use your hackathon's limit.**
 > 60 seconds · 90 seconds · 2 minutes · 3 minutes · Custom
 
-Skipped if `--limit` was given or the README states a video limit. Custom accepts a number of seconds or `m:ss`, from 30 to 600.
+Skipped if `--limit` was given. If the README states a video limit, that option comes first, marked "(from your README)". Custom accepts a number of seconds or `m:ss`, from 30 to 600.
 
 **Q2. Language** (default English)
 > **Which language should the voiceover be in?**

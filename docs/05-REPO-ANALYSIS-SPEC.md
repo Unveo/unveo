@@ -11,7 +11,7 @@ Two passes:
 | Input | Action |
 |---|---|
 | Inside a repo | Root = `git rev-parse --show-toplevel`, or the cwd if it isn't a git repo |
-| GitHub URL `https://github.com/<owner>/<repo>[/tree/<branch>]` | `git clone --depth 1 [--branch <branch>] <url> ~/.unveo/repos/<owner>-<repo>`. If it already exists: `git -C <path> pull --ff-only` |
+| GitHub URL `https://github.com/<owner>/<repo>[/tree/<branch>]` | `git clone --depth 1 [--branch <branch>] <url> ~/.unveo/repos/<owner>-<repo>`, with `GIT_LFS_SKIP_SMUDGE=1` so large LFS data files aren't downloaded (on the MPLADS repo: 2.5 s instead of 9+ minutes). If it already exists: `git -C <path> pull --ff-only` |
 | Any other git URL (GitLab and others) | Same, with the folder named after the last two path parts |
 
 Clone failures (private repo, no access) exit with code 2 and the message: "I couldn't clone this repo. If it's private, make sure `git clone <url>` works in your terminal, then try again."
@@ -30,11 +30,11 @@ Clone failures (private repo, no access) exit with code 2 and the message: "I co
 
 | Key | How it's found |
 |---|---|
-| `stack` | `package.json` dependencies (next, react, vue, svelte, express, vite…), `requirements.txt` / `pyproject.toml` (fastapi, flask, django, streamlit, gradio), `go.mod`, `Cargo.toml`, `pubspec.yaml` (Flutter → not a web app), `AndroidManifest.xml`, `*.xcodeproj` |
+| `stack` | Every `package.json` up to 2 folders deep (monorepos: `web/`, `api/`…) and its dependencies (next, react, vue, svelte, express, vite…), `requirements.txt` / `pyproject.toml` (fastapi, flask, django, streamlit, gradio), `go.mod`, `Cargo.toml`, `pubspec.yaml` (Flutter → not a web app), `AndroidManifest.xml`, `*.xcodeproj` |
 | `app_kind` | `web`, `mobile`, `cli`, `library`, `notebook`, `hardware` or `unknown`. Only `web` (and Streamlit or Gradio) gets auto-capture |
-| `run_hints` | `scripts.dev` / `scripts.start` in package.json, `Procfile`, `docker-compose.yml`, `uvicorn` and `streamlit run` lines in the README, default ports |
+| `run_hints` | `scripts.dev` / `scripts.start` in every package.json up to 2 folders deep (with its `cwd`), `Procfile`, run commands in README inline code and fenced blocks (following `cd`), ports from `--port` or `localhost:NNNN` |
 | `routes` | Next.js `app/**/page.*` and `pages/**`, React Router `<Route path=`, Vue Router `path:`, SvelteKit `routes/**/+page.svelte`, Flask `@app.route`, FastAPI `@app.get/post`, Django `urls.py` `path(` |
-| `ui_labels` | Visible text near interactive elements: `<button>…</button>`, `aria-label=`, `placeholder=`, `<label>`, link text, `title=` (per file, first 200). This feeds the selectors in steps.json |
+| `ui_labels` | Visible text near interactive elements: `<button>…</button>`, `aria-label=`, `placeholder=`, `<label>`, link text, headings, plus English strings from i18n/strings files (deduplicated; per file, first 200). This feeds the selectors in steps.json |
 | `forms` | `<form>`, `<input name=`, `<select name=`, and the submit handler name |
 | `url_candidates` | See §4 |
 | `hidden_logic_candidates` | See §5 |
@@ -85,7 +85,7 @@ The agent reads, in this order, and stops when it's confident:
 
 ## 4. Finding the app URL
 
-Candidates, ranked by score:
+Candidates, ranked by score. A bare link with no label and no hosting domain is **not** a candidate (it's usually a data source or a doc):
 
 | Source | Pattern | Score |
 |---|---|---|
@@ -113,11 +113,14 @@ The agent probes the top candidate with `capture.py probe`. If it fails, it trie
 
 **Linking to the screen.** For each candidate, the script takes its output names (return dict keys, assigned field names, column names) and greps for them in frontend files (`*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, `*.html`, templates). Each hit is a `ui_hit`. The agent then maps the `ui_hit` to a journey step: that step is where the explainer cuts in.
 
-**Ranking** (top 5 shown to the user):
+**Excluded:** test files (`tests/`, `test_*`, `*.test.*`, `*.spec.*`, `conftest.py`) and i18n string tables. Bare keywords (`risk`, `rank`, `score`, `weight`…) don't count as outputs, so only specific names (`work_risk_score`, `riskScore`) link code to the screen. Those links come from any matching name in the file, not just the chosen function.
+
+**Ranking** (top 10 in repo_scan.json; the agent shows at most 5):
 1. It's visible on screen (has a `ui_hit` on a journey step): +0.4.
 2. It's complex (2+ inputs, or 2+ stages): +0.3.
 3. It's what the product is about (named in the README summary): +0.2.
 4. It's novel (not a plain CRUD call or auth): +0.1.
+5. Tie-breakers: logic density (keyword hits ÷ 40, at most +0.1); +0.05 in a core folder (`engine/`, `core/`, `ml/`, `models/`, `scoring/`…); −0.3 for frontend helpers (`web/`, `components/`, `views/`… unless under `lib/`, `services/` or `utils/`).
 
 **What the agent must read before proposing an explainer:** the full function or module (every line in the `lines` range), so the inputs, weights and steps in the explainer are the code's real ones. If the logic lives behind an outside API whose internals can't be seen, the explainer says "sends X to <API>, gets Y back" and nothing more.
 

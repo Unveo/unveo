@@ -50,6 +50,8 @@ unveo/
 │   │   ├── mix.py                voice + score → audio/mix.wav (ducking, −14 LUFS)
 │   │   ├── stitch.py             ingest · draft · final → final.mp4
 │   │   ├── qa.py                 quality gates → qa.md
+│   │   ├── brief.py              validate brief.json
+│   │   ├── state.py              state.json bookkeeping
 │   │   ├── common.py             shared helpers: paths, ffmpeg exe, JSON out, hashing
 │   │   └── engine/               vendored from howseen-ai/claude-motion-design
 │   │       ├── UPSTREAM.md       source URL, pinned SHA, what we changed

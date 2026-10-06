@@ -60,7 +60,7 @@ Each segment gets its share of the total. The agent counts words per scene while
 
 - **English (default):** Indian English voice. Standard spelling.
 - **Hindi:** narration in Devanagari. Technical terms, product names, field names and code words stay in **English in Latin script** (for example: "यह dashboard हर project का risk score दिखाता है।"), so the hi-IN voice says them as English words.
-  > Pending your listening test: the M0 samples have both versions (`hi_swara_latinterms` and `hi_swara_devaterms`). Both are timed the same. Pick the one that sounds right.
+  > Decision (7 Oct 2026): technical terms stay in Latin script. Both versions were tested in M0 and timed the same.
 - **On-screen text is English** in both cases: titles, labels, explainer captions and the end card.
 - Hinglish is not supported (see [14-DECISIONS.md](14-DECISIONS.md)).
 
