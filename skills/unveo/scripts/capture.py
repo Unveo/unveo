@@ -95,15 +95,22 @@ def ctx_args(steps, hi_res=False):
     return {"viewport": {"width": round(1920 / z), "height": round(1080 / z)}, "device_scale_factor": z}
 
 
-def zoom_crop(t, zooms, W, H):
-    """The part of a W x H frame to show at time t: eases in on the zoom's box, holds, eases back out (docs/15 A9)."""
+def zoom_k(t, zooms):
+    """(how far into a zoom we are, 0..1 eased in-out; that zoom) at time t, or (0, None)."""
     for z in zooms:
         t0 = z["t_s"]
         ease, hold = z.get("ease_s", ZOOM_EASE_S), z.get("hold_s", ZOOM_HOLD_S)
         if t < t0 or t > t0 + 2 * ease + hold:
             continue
         k = min(1.0, (t - t0) / ease) if t < t0 + ease + hold else max(0.0, 1 - (t - t0 - ease - hold) / ease)
-        k = 4 * k ** 3 if k < 0.5 else 1 - (-2 * k + 2) ** 3 / 2  # ease in-out
+        return (4 * k ** 3 if k < 0.5 else 1 - (-2 * k + 2) ** 3 / 2), z
+    return 0.0, None
+
+
+def zoom_crop(t, zooms, W, H):
+    """The part of a W x H frame to show at time t: eases in on the zoom's box, holds, eases back out (docs/15 A9)."""
+    k, z = zoom_k(t, zooms)
+    if z:
         s = 1 + (z["scale"] - 1) * k
         w, h = round(W / s), round(H / s)
         bx, by, bw, bh = z["box"]
@@ -113,10 +120,23 @@ def zoom_crop(t, zooms, W, H):
     return 0, 0, W, H
 
 
+def spotlight(img, k, box, pad=18):
+    """Dim everything but the zoom's target (a "spotlight" display): the page stays still, the light moves."""
+    from PIL import Image, ImageDraw
+    if k <= 0.001:
+        return img
+    shade = Image.new("L", img.size, round(150 * k))
+    bx, by, bw, bh = box
+    ImageDraw.Draw(shade).rounded_rectangle((bx - pad, by - pad, bx + bw + pad, by + bh + pad), 14, fill=0)
+    return Image.composite(Image.new("RGB", img.size, "#000000"), img, shade)
+
+
 # ---------- rules (no browser)
 
 def validate(steps):
-    e = []
+    import looks
+    e = [f"{sid}: display must be one of {', '.join(looks.DISPLAYS)}" for sid, sc in (steps.get("scenes") or {}).items()
+         if sc.get("display") and sc["display"] not in looks.DISPLAYS]
     if steps.get("version") != 1:
         e.append("version must be 1")
     if not str(steps.get("base_url", "")).startswith(("http://", "https://")):
@@ -640,15 +660,16 @@ async def aperform(page, st, base, env):
         await page.wait_for_timeout(st["ms"])
 
 
-def encode(frames, t_start, t_end, path, zooms=()):
-    """Timestamped JPEG frames -> constant 30 fps 1920x1080 h264. Each frame shows until the next one arrives;
-    zooms crop in smoothly (zoom_crop)."""
+def encode(frames, t_start, t_end, path, zooms=(), size=(1920, 1080), light=False):
+    """Timestamped JPEG frames -> constant 30 fps h264 (1920x1080, or a phone's 430x932). Each frame shows until the
+    next one arrives; zooms crop in smoothly (zoom_crop), or with light=True dim around the target instead (spotlight)."""
+    OW, OH = size
     import io
     from bisect import bisect_right
     from PIL import Image
     times = [max(0.0, ts - t_start) for ts, _ in frames]
     n = max(1, round((t_end - t_start) * 30))
-    enc = subprocess.Popen([ffmpeg_exe(), "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", "1920x1080", "-r", "30",
+    enc = subprocess.Popen([ffmpeg_exe(), "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{OW}x{OH}", "-r", "30",
                             "-i", "-", "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-pix_fmt", "yuv420p", "-an", str(path)],
                            stdin=subprocess.PIPE)
     cache_src, cache_key, cache_out = None, None, None
@@ -659,16 +680,22 @@ def encode(frames, t_start, t_end, path, zooms=()):
             if cache_src is None or cache_src[0] != idx:
                 cache_src = (idx, Image.open(io.BytesIO(base64.b64decode(frames[idx][1]))).convert("RGB"))
             img = cache_src[1]
-            crop = zoom_crop(t, zooms, *img.size)
+            if light:
+                k, z = zoom_k(t, zooms)
+                crop = (0, 0, *img.size, round(k, 2))
+            else:
+                crop = zoom_crop(t, zooms, *img.size)
             if (idx, crop) != cache_key:
                 part = img.crop((crop[0], crop[1], crop[0] + crop[2], crop[1] + crop[3]))
-                scale = min(1920 / part.width, 1080 / part.height)
+                if light and z:
+                    part = spotlight(part, k, z["box"])
+                scale = min(OW / part.width, OH / part.height)
                 fitted = part.resize((round(part.width * scale), round(part.height * scale)), Image.LANCZOS)
                 if scale > 1.05:  # zoomed in: a light sharpen keeps text crisp
                     from PIL import ImageFilter
                     fitted = fitted.filter(ImageFilter.UnsharpMask(radius=1.2, percent=60, threshold=2))
-                canvas = Image.new("RGB", (1920, 1080))
-                canvas.paste(fitted, ((1920 - fitted.width) // 2, (1080 - fitted.height) // 2))
+                canvas = Image.new("RGB", (OW, OH))
+                canvas.paste(fitted, ((OW - fitted.width) // 2, (OH - fitted.height) // 2))
                 cache_key, cache_out = (idx, crop), canvas.tobytes()
             enc.stdin.write(cache_out)
     finally:
@@ -735,6 +762,9 @@ async def record_scenes(out, only):
         for k, scene in enumerate(scenes, 1):
             sid, sc = scene["id"], steps["scenes"][scene["id"]]
             words = (voice.get(sid) or {}).get("words", [])
+            display = sc.get("display")
+            phone = display == "phone"
+            await page.set_viewport_size({"width": 430, "height": 932} if phone else ctx_args(steps)["viewport"])
             try:  # get to the starting page before the camera rolls
                 if sc.get("start") and page.url.rstrip("/") != urljoin(base, sc["start"]["url"]).rstrip("/"):
                     await aperform(page, sc["start"], base, os.environ)
@@ -810,7 +840,7 @@ async def record_scenes(out, only):
             if not frames:
                 frames = [(wall0, base64.b64encode(await page.screenshot(type="jpeg", quality=90)).decode())]
             path = o / "capture" / f"{sid}.mp4"
-            encode(sorted(frames), wall0, wall_end, path, zooms)
+            encode(sorted(frames), wall0, wall_end, path, zooms, size=(430, 932) if phone else (1920, 1080), light=display == "spotlight")
             if err:
                 failures.append(err)
             results.append({"scene": sid, "file": str(path), "target_s": scene["dur_s"],

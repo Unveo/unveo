@@ -23,37 +23,105 @@ def duration(p):
     return int(h) * 3600 + int(m) * 60 + float(s)
 
 
+def _wrap(draw, text, font, width):
+    lines, cur = [], ""
+    for word in text.split():
+        trial = (cur + " " + word).strip()
+        if draw.textlength(trial, font=font) <= width or not cur:
+            cur = trial
+        else:
+            lines.append(cur)
+            cur = word
+    return lines + ([cur] if cur else [])
+
+
 def frame_assets(frame, w, h, folder):
-    """The look's backdrop (colour, soft shadow, window bar) and the recording's rounded mask, drawn once and cached."""
-    from PIL import Image, ImageDraw, ImageFilter
+    """The look's backdrop for one display (window, float, laptop, phone, tilt, split) and the recording's mask,
+    drawn once with Pillow and cached. Returns (backdrop.png, mask.png, x, y, width, height) of the screen area."""
+    from PIL import Image, ImageDraw, ImageFilter, ImageFont
     import hashlib
-    window = frame["kind"] == "window"
-    k = w / 1920
-    iw = round(w * (0.86 if window else 0.88) / 2) * 2
-    ih = round(iw * 9 / 16 / 2) * 2
-    bar = round(44 * k) if window else 0
-    x, y = (w - iw) // 2, (h - ih - bar) // 2 + bar
-    r = round((14 if window else 22) * k)
-    key = hashlib.sha1(json.dumps([frame, w, h]).encode()).hexdigest()[:10]
+    kind, k = frame["kind"], w / 1920
+    key = hashlib.sha1(json.dumps([frame, w, h], sort_keys=True).encode()).hexdigest()[:10]
     folder.mkdir(parents=True, exist_ok=True)
     bg_png, mask_png = folder / f"frame-{key}.png", folder / f"mask-{key}.png"
+    even = lambda v: int(round(v / 2) * 2)
+    bar, r = 0, round(22 * k)
+    if kind == "window":
+        iw = even(w * 0.86); ih = even(iw * 9 / 16); bar, r = round(44 * k), round(14 * k)
+        x, y = (w - iw) // 2, (h - ih - bar) // 2 + bar
+    elif kind == "laptop":
+        iw = even(w * 0.70); ih = even(iw * 9 / 16); pad, base = round(18 * k), round(26 * k)
+        x, y = (w - iw) // 2, (h - ih - 2 * pad - base) // 2 + pad
+        r = round(6 * k)
+    elif kind == "phone":
+        ih = even(h * 0.86); iw = even(ih * 430 / 932); pad = round(14 * k); r = round(44 * k)
+        x, y = (w - iw) // 2, (h - ih) // 2
+    elif kind == "split":
+        iw = even(w * 0.60); ih = even(iw * 9 / 16)
+        x, y = round(w * 0.055), (h - ih) // 2
+    else:  # float, tilt
+        iw = even(w * 0.88 if kind == "float" else w * 0.78); ih = even(iw * 9 / 16)
+        x, y = (w - iw) // 2, (h - ih) // 2
     if not bg_png.exists():
         img = Image.new("RGB", (w, h), frame["bg"])
         shadow = Image.new("L", (w, h), 0)
-        ImageDraw.Draw(shadow).rounded_rectangle((x, y - bar + round(14 * k), x + iw, y + ih + round(14 * k)), r, fill=70)
+        sd = ImageDraw.Draw(shadow)
+        if kind == "laptop":
+            sd.rounded_rectangle((x - pad, y - pad + round(18 * k), x + iw + pad, y + ih + pad + base + round(18 * k)), round(24 * k), fill=60)
+        elif kind == "phone":
+            sd.rounded_rectangle((x - pad, y - pad + round(16 * k), x + iw + pad, y + ih + pad + round(16 * k)), r + pad, fill=70)
+        else:
+            sd.rounded_rectangle((x, y - bar + round(14 * k), x + iw, y + ih + round(14 * k)), r, fill=70)
         img.paste(Image.new("RGB", (w, h), "#000000"), mask=shadow.filter(ImageFilter.GaussianBlur(28 * k)))
         d = ImageDraw.Draw(img)
-        if window:
+        if kind == "window":
             d.rounded_rectangle((x, y - bar, x + iw, y + r * 2), r, fill=frame["chrome"])
             dot = "#4a4d55" if frame.get("dark") else "#c4c2bb"
             for i in range(3):
                 cx, cy = x + round((24 + i * 22) * k), y - bar // 2
                 d.ellipse((cx - round(6 * k), cy - round(6 * k), cx + round(6 * k), cy + round(6 * k)), fill=dot)
+        elif kind == "laptop":
+            d.rounded_rectangle((x - pad, y - pad, x + iw + pad, y + ih + pad), round(18 * k), fill="#1c1c1f")
+            bw = round(w * 0.82)
+            d.rounded_rectangle(((w - bw) // 2, y + ih + pad, (w + bw) // 2, y + ih + pad + base), round(12 * k), fill="#cfccc4")
+            d.rounded_rectangle((w // 2 - round(90 * k), y + ih + pad, w // 2 + round(90 * k), y + ih + pad + round(9 * k)),
+                                round(5 * k), fill="#b5b2aa")
+        elif kind == "phone":
+            d.rounded_rectangle((x - pad, y - pad, x + iw + pad, y + ih + pad), r + pad, fill="#141416")
+        elif kind == "split":
+            fonts = Path(__file__).resolve().parents[1] / "templates" / "film" / "fonts" / "geist-semibold.ttf"
+            px = x + iw + round(80 * k)
+            width = w - px - round(90 * k)
+            ty = y + round(30 * k)
+            if frame.get("step"):
+                big = ImageFont.truetype(str(fonts), round(120 * k))
+                d.text((px, ty), str(frame["step"]), font=big, fill=frame["accent"])
+                ty += round(150 * k)
+            f = ImageFont.truetype(str(fonts), round(52 * k))
+            for line in _wrap(d, frame.get("label", ""), f, width)[:4]:
+                d.text((px, ty), line, font=f, fill=frame["ink"])
+                ty += round(64 * k)
         img.save(bg_png)
         mask = Image.new("L", (iw, ih), 0)
-        ImageDraw.Draw(mask).rounded_rectangle((0, -r if window else 0, iw - 1, ih - 1), r, fill=255)  # window: square top
+        top = -r if kind == "window" else 0  # a window's screen meets its title bar with square corners
+        ImageDraw.Draw(mask).rounded_rectangle((0, top, iw - 1, ih - 1), r, fill=255)
         mask.save(mask_png)
     return bg_png, mask_png, x, y, iw, ih
+
+
+def framed_still(png, spec, folder):
+    """One recorded frame set into its display (for the stills sheet), so Checkpoint C shows what the video will."""
+    from PIL import Image
+    if not spec:
+        return
+    bg, mask, x, y, iw, ih = frame_assets(spec, 1920, 1080, folder)
+    shot = Image.open(png).convert("RGB")
+    shot.thumbnail((iw, ih), Image.LANCZOS)
+    screen = Image.new("RGB", (iw, ih), "#000000" if spec["kind"] == "phone" else spec["bg"])
+    screen.paste(shot, ((iw - shot.width) // 2, (ih - shot.height) // 2))
+    canvas = Image.open(bg).convert("RGB")
+    canvas.paste(screen, (x, y), Image.open(mask))
+    canvas.save(png)
 
 
 def fit(src, dst, dur, w=1920, h=1080, bg="black", frame=None):
@@ -69,9 +137,17 @@ def fit(src, dst, dur, w=1920, h=1080, bg="black", frame=None):
         return
     bg_png, mask_png, x, y, iw, ih = frame_assets(frame, w, h, dst.parent.parent / "frames")
     t = f"{have + 0.2:.3f}"
-    fc = (f"[1:v]scale={iw}:{ih}:force_original_aspect_ratio=decrease,pad={iw}:{ih}:(ow-iw)/2:(oh-ih)/2:color={frame['bg']},"
-          f"fps=30,format=rgba[v];[2:v]format=gray[m];[v][m]alphamerge[vm];"
-          f"[0:v][vm]overlay={x}:{y}:shortest=1,setsar=1{tail}[out]")
+    fill = "#000000" if frame["kind"] == "phone" else frame["bg"]
+    fc = (f"[1:v]scale={iw}:{ih}:force_original_aspect_ratio=decrease,pad={iw}:{ih}:(ow-iw)/2:(oh-ih)/2:color={fill},"
+          f"fps=30,format=rgba[v];[2:v]format=gray[m];[v][m]alphamerge[vm];")
+    if frame["kind"] == "tilt":  # a gentle turn to the right: the far edge a little shorter
+        P = 8
+        W2, H2 = iw + 2 * P, ih + 2 * P
+        fc += (f"[vm]pad={W2}:{H2}:{P}:{P}:color=black@0,format=yuva444p,perspective="
+               f"x0=0:y0=0:x1={W2 * 0.985:.1f}:y1={H2 * 0.045:.1f}:x2=0:y2={H2}:x3={W2 * 0.985:.1f}:y3={H2 * 0.955:.1f}:sense=destination[vm2];"
+               f"[0:v][vm2]overlay={x - P}:{y - P}:shortest=1,setsar=1{tail}[out]")
+    else:
+        fc += f"[0:v][vm]overlay={x}:{y}:shortest=1,setsar=1{tail}[out]"
     subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-loop", "1", "-framerate", "30", "-t", t, "-i", str(bg_png), "-i", str(src),
                     "-loop", "1", "-framerate", "30", "-t", t, "-i", str(mask_png), "-filter_complex", fc, "-map", "[out]",
                     "-t", f"{dur:.3f}", "-an", *ENC, str(dst)], check=True)
@@ -115,8 +191,11 @@ def ingest(o, placeholders):
     if look and "accent" in tokens:
         tokens = looks.palette(tokens, look)
     bg = tokens.get("bg", "black")
-    frame = looks.frame(look, tokens) if look and "accent" in tokens else None
+    styled = "accent" in tokens
+    steps = json.loads((o / "capture" / "steps.json").read_text(encoding="utf-8")).get("scenes", {}) if (o / "capture" / "steps.json").exists() else {}
+    journey = (json.loads((o / "brief.json").read_text(encoding="utf-8")).get("understanding") or {}).get("journey") or []
     _, handle = looks.plan_for(o)
+    step_no = 0
     shots = shots_map(o)
     missing, missing_ids, made = [], [], []
     for s in tl["scenes"]:
@@ -139,6 +218,10 @@ def ingest(o, placeholders):
         else:
             continue
         end = s["dur_s"] + handle.get(sid, 0.0)  # runs on past its end while the next scene blends in
+        step_no += 1
+        sc = steps.get(sid) or {}
+        label = sc.get("label") or (journey[step_no - 1].split("→")[0].strip() if step_no <= len(journey) else "")
+        frame = looks.display_spec(looks.display_for(sc, look), look, tokens, label, step_no) if styled else None
         fit(src, o / "render" / "segments" / f"{sid}.mp4", end, bg=bg, frame=frame)
         fit(src, o / "render" / "draft" / f"{sid}.mp4", end, 960, 540, bg=bg, frame=frame)
         made.append(sid)

@@ -46,6 +46,23 @@ One scene in steps.json for each `capture` scene in script.md, with the same id.
     - **At the end:** the card turns green: "Done".
     - The result's `recorded_in` says which happened (`hidden` or `window`). None of the guide is ever in the video.
 
+## How each recording is shown: `display`
+
+A scene may set `"display"` (and an optional short `"label"`) next to its steps. Without one, the look's default is used.
+
+| display | What it looks like | Good for |
+|---|---|---|
+| `full` | the app fills the frame | dense dashboards, maps |
+| `window` / `window-dark` | in a browser window on the look's ground | most web apps |
+| `float` | a large card with a soft shadow | clean, product-first scenes |
+| `laptop` | inside a drawn laptop | the first look at the product |
+| `phone` | **recorded at a phone's size (430×932)** inside a phone | mobile-first or responsive apps |
+| `tilt` | a gentle 3D turn | a calm middle scene between busy ones |
+| `split` | the app on the left, the step number and `label` large on the right | multi-step journeys |
+| `spotlight` | the page stays still and everything but the zoom target dims | pointing at one number or button |
+
+Mix two or three across a video when it has 3+ recordings (stills warns if every scene is the same); keep one display per scene. `spotlight` needs a step with `zoom`.
+
 ## Actions
 
 | `do` | Needs | Notes |

@@ -121,14 +121,31 @@ def palette(tokens, look):
     return dict(tokens)
 
 
-def frame(look, tokens):
-    """How a recording sits in the frame: None (full-screen) or a dict for stitch.fit."""
-    kind = (LOOKS.get(look) or {}).get("frame", "full")
-    if kind == "full":
+DISPLAYS = ("full", "window", "window-dark", "float", "laptop", "phone", "tilt", "split", "spotlight")
+
+
+def display_for(scene_steps, look):
+    """A scene's display: its own "display" in steps.json, else the look's default, else full-screen."""
+    return (scene_steps or {}).get("display") or (LOOKS.get(look) or {}).get("frame") or "full"
+
+
+def display_spec(kind, look, tokens, label="", step=None):
+    """What stitch.fit needs to set a recording into the frame. None = full-screen.
+    spotlight is done while recording (capture.encode), so here it falls back to the look's own frame."""
+    if kind == "spotlight":
+        kind = (LOOKS.get(look) or {}).get("frame", "full")
+    if kind in (None, "full"):
         return None
-    dark = kind == "window-dark"
-    return {"kind": "float" if kind == "float" else "window", "bg": tokens["bg"],
-            "chrome": "#1d1f24" if dark else tokens.get("surface", "#eeeeee"), "dark": dark}
+    dark = kind == "window-dark" or (LOOKS.get(look) or {}).get("palette") == "dark"
+    return {"kind": "window" if kind == "window-dark" else kind, "bg": tokens["bg"], "ink": tokens.get("ink", "#111111"),
+            "accent": tokens.get("accent", "#111111"), "muted": tokens.get("muted", "#666666"),
+            "chrome": "#1d1f24" if dark else tokens.get("surface", "#eeeeee"), "dark": dark,
+            "label": label or "", "step": step}
+
+
+def frame(look, tokens):
+    """The look's default frame for every recording (kept for callers that don't pass a scene)."""
+    return display_spec((LOOKS.get(look) or {}).get("frame", "full"), look, tokens)
 
 
 if __name__ == "__main__":

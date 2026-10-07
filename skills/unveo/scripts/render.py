@@ -528,6 +528,15 @@ def stills_cmd(out, at=None, every=False):
     last = (looks.history() or [{}])[-1].get("look")
     if look and look == last:
         warnings.append({"scene": "*", "kind": "repeat", "detail": f"the last video used the '{look}' look too; pick another (looks.candidates)"})
+    import stitch
+    cap_steps = json.loads((o / "capture" / "steps.json").read_text(encoding="utf-8")).get("scenes", {}) if (o / "capture" / "steps.json").exists() else {}
+    cap_ids = [x["id"] for x in scenes if x["visual"] == "capture"]
+    tokens = json.loads((o / "brief.json").read_text(encoding="utf-8"))["palette"]["tokens"]
+    tokens = looks.palette(tokens, look) if "accent" in tokens else tokens
+    shown = {looks.display_for(cap_steps.get(i), look) for i in cap_ids}
+    if len(cap_ids) >= 3 and len(shown) == 1:
+        warnings.append({"scene": "*", "kind": "variety", "detail": f"every recording is shown as '{shown.pop()}'; "
+                         "giving one or two scenes another display (laptop, phone, split, tilt, spotlight) keeps it lively"})
     with sync_playwright() as pw:
         for i, (s, t) in enumerate(picks):
             f = d / f"still-{i:02d}-{s['id']}.png"
@@ -546,6 +555,10 @@ def stills_cmd(out, at=None, every=False):
                 if not src.exists():
                     continue
                 subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-ss", f"{t:.2f}", "-i", str(src), "-frames:v", "1", str(f)], check=True)
+                if s["visual"] == "capture" and "accent" in tokens:
+                    stitch.framed_still(f, looks.display_spec(looks.display_for(cap_steps.get(s["id"]), look), look, tokens,
+                                                              cap_steps.get(s["id"], {}).get("label", ""), cap_ids.index(s["id"]) + 1),
+                                        o / "render" / "frames")
             files.append((f, f"{s['id']} · {s['template'] if s['visual'] == 'anim' else s['visual']} · {t:.1f} s"))
     cols, w, h = 3, 640, 360
     rows = max(1, -(-len(files) // cols))
