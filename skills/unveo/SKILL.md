@@ -207,7 +207,7 @@ Then ask:
 - When it's done, `state.py set capture done`.
 
 **19. Design and scene data.**
-1. Read `<SKILL_DIR>/DESIGN.md`. Write `OUT/film/design.json`: the chosen `look`, 2–3 `motifs` from the project's world (`render.py icons --search <word>`), and a one-line concept for this project. The look sets the fonts, colours, motion and how recordings are framed; override a field only with a reason. Compose at least one of the context, problem and product-intro scenes for this story (script.py warns otherwise).
+1. Read `<SKILL_DIR>/DESIGN.md`. Write `OUT/film/design.json`: the chosen `look`, the video's one recording frame as `display` (window, laptop, float, tilt, split, full), 2–3 `motifs` from the project's world (`render.py icons --search <word>`), and a one-line concept for this project. The look sets the fonts, colours, motion and how recordings are framed; override a field only with a reason. Compose at least one of the context, problem and product-intro scenes for this story (script.py warns otherwise).
 2. Read `<SKILL_DIR>/ENGINE.md` and `<SKILL_DIR>/EXPLAINERS.md`. Write `OUT/film/data/<id>.json` for every `anim:` scene in timeline.json. Use a template where it fits; compose your own scene (`anim:compose`) where the story needs something the templates don't do.
 3. Set explainer `beats` (required for a voiced explainer) and compose `at` values as `"word:<word>"` keys, picking the words in the narration where each beat should land.
 
@@ -245,7 +245,7 @@ Captions show the real words even where `say_as` changes the pronunciation. `bri
 **26. QA.** Read `<SKILL_DIR>/QA.md`. Run `"<PY>" "<SKILL_DIR>/scripts/qa.py"`. Fix every failing blocking gate as QA.md says, re-run only the affected steps, then stitch and QA again. When it passes, `state.py set qa done`.
 
 **27. Done.** If step 6 started the app, run `"<PY>" "<SKILL_DIR>/scripts/setup_app.py" stop`. Then open the user's folder (`open unveo-out` on macOS, `explorer unveo-out` on Windows, `xdg-open unveo-out` on Linux). Then say, filling in the values:
-`unveo-out/demo-video.mp4 · <m:ss> · 1920×1080 · <LUFS> LUFS · captions burned in. Also there: subtitles.srt, script.md, quality-check.md.`
+`unveo-out/demo-video.mp4 · <m:ss> · <size from qa.md> · <LUFS> LUFS · captions burned in. Also there: subtitles.srt, script.md, quality-check.md.`
 Mention any `clip` scenes still showing placeholder cards.
 
 ## Changing one thing later

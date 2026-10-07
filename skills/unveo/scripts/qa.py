@@ -8,7 +8,7 @@ import argparse, json, os, re, subprocess, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import emit, ffmpeg_exe, out_dir, public_dir, read_json  # noqa: E402
+from common import emit, ffmpeg_exe, out_dir, out_size, public_dir, read_json  # noqa: E402
 
 FIX = {
     "duration": "Shorten the narration (PITCH.md), re-voice, and re-run from plan_timeline.py.",
@@ -20,6 +20,7 @@ FIX = {
     "explainers": "Give every explainer data file a 'source' list of real file:line ranges.",
     "end card": "Copy close.links from brief.json into the close scene's data, exactly.",
     "secrets": "Delete the file that holds the password, and re-record with \"secret\": true.",
+    "voice level": "Re-run mix.py (it levels every line), then stitch.py final.",
     "captions": "Run stitch.py final again (it rebuilds captions.srt and captions.ass from voice.json).",
 }
 
@@ -77,7 +78,7 @@ def main():
     gate("duration", dur <= brief["limit_s"] + 0.05, f"{dur:.2f} s (limit {brief['limit_s']} s)")
     v = re.search(r"Video: (\w+).*?, (\w+)\(.*?(\d{3,4})x(\d{3,4}).*?, ([\d.]+) fps", info)
     au = re.search(r"Audio: (\w+).*?, (\d+) Hz", info)
-    fmt_ok = bool(v and v.group(1) == "h264" and v.group(2).startswith("yuv420p") and (v.group(3), v.group(4)) == ("1920", "1080")
+    fmt_ok = bool(v and v.group(1) == "h264" and v.group(2).startswith("yuv420p") and (int(v.group(3)), int(v.group(4))) == out_size(o)
                   and abs(float(v.group(5)) - 30) < 0.01 and au and au.group(1) == "aac" and au.group(2) == "48000")
     gate("format", fmt_ok, f"{v.group(3)}x{v.group(4)}, {v.group(5)} fps, {v.group(1)} {v.group(2)}; audio {au.group(1) if au else 'none'}" if v else "unreadable")
 
@@ -109,6 +110,12 @@ def main():
         if sc.get("voice") and sc.get("template") != "close" and not settling and sc["dur_s"] > sc.get("voice_s", 0) + 1.0 + sc.get("lead_s", 0):
             bad.append(f"{sc['id']} runs {sc['dur_s'] - sc['voice_s']:.1f} s past its voice")
     gate("sync", not bad, "; ".join(bad) or "every segment matches its voice")
+
+    vl = o / "audio" / "voice_levels.json"
+    levels = json.loads(vl.read_text()) if vl.exists() else {}
+    spread = (max(levels.values()) - min(levels.values())) if levels else 0.0
+    gate("voice level", spread <= 3.0, f"lines within {spread:.1f} LU of each other" if levels else "no voice levels recorded (re-run mix.py)",
+         blocking=bool(levels))
 
     import script
     res = script.check(o)

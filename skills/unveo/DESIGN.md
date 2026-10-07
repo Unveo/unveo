@@ -37,7 +37,7 @@ Every cut blends: the next scene starts on time and fades or wipes in over the p
 | poster | slide | slide |
 | product | smooth slide | fade |
 
-The title and close always fade. Override with `"transition": {"type": "<xfade name>", "dur": 0.6}` in design.json; `"dur": 0` gives hard cuts.
+The title and close always fade. Two recordings in a row always hard cut: the app carries on, and a blend would ghost it. Override with `"transition": {"type": "<xfade name>", "dur": 0.6}` in design.json; `"dur": 0` gives hard cuts.
 
 ### Motifs: the project's own world, not generic shapes
 

@@ -5,7 +5,7 @@
   render.py icons --search <word>       free-licence icons for motifs (lucide:landmark, mdi:rupee …)
   render.py stills [--at 3,18] [--all]  stills/sheet.png: animated scenes + one frame per recorded scene (Checkpoint C)
   render.py draft                       render/draft/sNN.mp4 at 960x540, 1 sample per frame (timing check)
-  render.py final [--chunks N] [--scene sNN]   render/segments/sNN.mp4 at 1920x1080, 30 fps, 3 subframes (motion blur)
+  render.py final [--chunks N] [--scene sNN]   render/segments/sNN.mp4 at the brief's size (2K: 2560x1440), 30 fps, 3 subframes
   render.py pops --file final.mp4       single-frame glitch scan
   render.py estimate                    predicted minutes for the final render
 All take --out (default unveo-out). Unchanged scenes are not re-rendered.
@@ -15,12 +15,12 @@ from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import clips_dir, emit, ffmpeg_exe, log, out_dir, read_json, sha1_of  # noqa: E402
+from common import INTERMEDIATE_CRF, clips_dir, emit, ffmpeg_exe, log, out_dir, out_size, read_json, sha1_of  # noqa: E402
 
 TEMPLATES = Path(__file__).resolve().parents[1] / "templates" / "film"
 FPS, SUBFRAMES, SHUTTER = 30, 3, 0.5
 MS_PER_CAPTURE = 50  # measured in M0 on a 10-core Mac
-ENCODE = ["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
+ENCODE = ["-c:v", "libx264", "-preset", "medium", "-crf", str(INTERMEDIATE_CRF), "-pix_fmt", "yuv420p",
           "-color_range", "tv", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-movflags", "+faststart"]
 BT709 = "scale=in_range=pc:out_range=tv:out_color_matrix=bt709"
 
@@ -444,7 +444,11 @@ class Page:
 
     def __init__(self, pw, film, scene_id, width):
         self.b = pw.chromium.launch()
-        self.pg = self.b.new_page(viewport={"width": width, "height": width * 9 // 16}, device_scale_factor=1)
+        if width > 1920:  # 2K: the same 1920x1080 stage at a higher pixel density, so text and lines are drawn sharp
+            self.pg = self.b.new_page(viewport={"width": 1920, "height": 1080}, device_scale_factor=width / 1920)
+            width = 1920
+        else:
+            self.pg = self.b.new_page(viewport={"width": width, "height": width * 9 // 16}, device_scale_factor=1)
         self.errors = []
         self.pg.on("pageerror", lambda e: self.errors.append(f"{scene_id}: {e}"))
         self.pg.goto((film / "index.html").resolve().as_uri() + f"?scene={scene_id}&w={width}")
@@ -507,7 +511,7 @@ def video_cmd(out, mode, chunks=None, only=None, extra=()):
         with sync_playwright() as pw:
             for s in todo:
                 log(f"rendering {s['id']} ({s['template']}, {s['dur_s']} s)")
-                errors += render_scene(pw, film, s, folder / f"{s['id']}.mp4", 960 if mode == "draft" else 1920, 1 if mode == "draft" else SUBFRAMES)
+                errors += render_scene(pw, film, s, folder / f"{s['id']}.mp4", 960 if mode == "draft" else out_size(out)[0], 1 if mode == "draft" else SUBFRAMES)
     else:  # greedy split by frame count, one process per chunk
         groups = [[] for _ in range(chunks)]
         for s in sorted(todo, key=lambda s: -s["dur_s"]):
@@ -540,7 +544,7 @@ def work_cmd(out, mode, ids):
     try:
         with sync_playwright() as pw:
             for sid in ids:
-                errors += render_scene(pw, film, scenes[sid], folder / f"{sid}.mp4", 960 if mode == "draft" else 1920, 1 if mode == "draft" else SUBFRAMES)
+                errors += render_scene(pw, film, scenes[sid], folder / f"{sid}.mp4", 960 if mode == "draft" else out_size(out)[0], 1 if mode == "draft" else SUBFRAMES)
     except Exception as e:  # report to the parent, never hang it
         emit("render", ok=False, message=f"{ids}: {e}", page_errors=errors)
     emit("render", page_errors=errors)
@@ -642,10 +646,12 @@ def stills_cmd(out, at=None, every=False):
     cap_ids = [x["id"] for x in scenes if x["visual"] == "capture"]
     tokens = json.loads((o / "brief.json").read_text(encoding="utf-8"))["palette"]["tokens"]
     tokens = looks.palette(tokens, look) if "accent" in tokens else tokens
-    shown = {looks.display_for(cap_steps.get(i), look) for i in cap_ids}
-    if len(cap_ids) >= 3 and len(shown) == 1:
-        warnings.append({"scene": "*", "kind": "variety", "detail": f"every recording is shown as '{shown.pop()}'; "
-                         "giving one or two scenes another display (laptop, phone, split, tilt, spotlight) keeps it lively"})
+    design = json.loads((film / "design.json").read_text(encoding="utf-8")) if (film / "design.json").exists() else {}
+    burned = json.loads((o / "brief.json").read_text(encoding="utf-8")).get("captions", "burned") == "burned"
+    odd = sorted(i for i in cap_ids if (cap_steps.get(i) or {}).get("display") not in (None, *looks.SCENE_DISPLAYS))
+    if odd:  # one frame per video: a per-scene frame would make recordings jump between devices
+        issues.append({"scene": ",".join(odd), "kind": "frame", "detail": "set the frame once in film/design.json (\"display\"); "
+                       "a scene may only use phone or spotlight"})
     with sync_playwright() as pw:
         for i, (s, t) in enumerate(picks):
             f = d / f"still-{i:02d}-{s['id']}.png"
@@ -665,8 +671,9 @@ def stills_cmd(out, at=None, every=False):
                     continue
                 subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-ss", f"{t:.2f}", "-i", str(src), "-frames:v", "1", str(f)], check=True)
                 if s["visual"] == "capture" and "accent" in tokens:
-                    stitch.framed_still(f, looks.display_spec(looks.display_for(cap_steps.get(s["id"]), look), look, tokens,
-                                                              cap_steps.get(s["id"], {}).get("label", ""), cap_ids.index(s["id"]) + 1),
+                    stitch.framed_still(f, looks.display_spec(looks.display_for(cap_steps.get(s["id"]), look, design), look, tokens,
+                                                              cap_steps.get(s["id"], {}).get("label", ""), cap_ids.index(s["id"]) + 1,
+                                                              band=burned, design=design),
                                         o / "render" / "frames")
             files.append((f, f"{s['id']} · {s['template'] if s['visual'] == 'anim' else s['visual']} · {t:.1f} s"))
     cols, w, h = 3, 640, 360
@@ -709,7 +716,8 @@ def estimate_cmd(out):
     tl = read_json(Path(out) / "timeline.json")
     frames = sum(round(s["dur_s"] * FPS) for s in tl["scenes"] if s["visual"] == "anim")
     chunks = min(4, max(1, (os.cpu_count() or 2) // 2))
-    minutes = frames * SUBFRAMES * MS_PER_CAPTURE / 1000 / chunks / 60 * 1.15
+    px = (out_size(out)[0] / 1920) ** 2  # 2K has 1.78x the pixels of 1080p
+    minutes = frames * SUBFRAMES * MS_PER_CAPTURE * (0.4 + 0.6 * px) / 1000 / chunks / 60 * 1.15
     emit("estimate", frames=frames, chunks=chunks, minutes=round(minutes, 1),
          message=f"About {max(1, round(minutes))} minute(s) for the final render ({frames} frames, {chunks} chunks)")
 

@@ -249,8 +249,10 @@ def estimate_words(text, dur):
 
 # ---------- audio in and out
 
-def decode(path, sr=SR):
-    raw = subprocess.run([ffmpeg_exe(), "-v", "quiet", "-i", str(path), "-ac", "1", "-ar", str(sr), "-f", "f32le", "-"],
+def decode(path, sr=SR, clean=False):
+    """Audio as mono floats. clean=True (own takes): cut mic rumble below 80 Hz and soften steady hiss."""
+    af = ["-af", "highpass=f=80,afftdn=nr=10:nf=-40"] if clean else []
+    raw = subprocess.run([ffmpeg_exe(), "-v", "quiet", "-i", str(path), *af, "-ac", "1", "-ar", str(sr), "-f", "f32le", "-"],
                          capture_output=True, check=True).stdout
     return np.frombuffer(raw, np.float32).astype(np.float64)
 
@@ -408,7 +410,7 @@ def main():
             else:
                 raise RuntimeError(f"edge-tts unavailable: {last}")
         elif prov == "own":
-            x, segs = tighten(decode(own_take(o, sid)), with_map=True)
+            x, segs = tighten(decode(own_take(o, sid), clean=True), with_map=True)
             encode_mp3(x, path)
             wf = takes_dir(o) / f"{sid}.words.json"
             heard = json.loads(wf.read_text(encoding="utf-8")).get("words", []) if wf.exists() else []

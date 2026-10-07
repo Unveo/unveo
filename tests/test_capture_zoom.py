@@ -27,6 +27,13 @@ class CurveTest(unittest.TestCase):
         self.assertLessEqual(x, 2800)
         self.assertGreaterEqual(x + w, 3200)
 
+    def test_css_box_is_mapped_to_frame_pixels(self):
+        # a 1440x810 viewport screencast as 1920x1080 frames: the CSS box must scale by 4/3, not land 1:1
+        z = {"t_s": 1.0, "box": [600, 300, 240, 210], "scale": 2.0, "hold_s": 1.0}
+        x, y, w, h = capture.zoom_crop(2.0, [z], 1920, 1080, 1920 / 1440, 1080 / 810)
+        self.assertAlmostEqual(x + w / 2, (600 + 120) * 4 / 3, delta=1)
+        self.assertAlmostEqual(y + h / 2, (300 + 105) * 4 / 3, delta=1)
+
     def test_eases_in_smoothly(self):
         widths = [capture.zoom_crop(1.0 + k * 0.1, [self.Z], W, H)[2] for k in range(7)]
         self.assertEqual(widths, sorted(widths, reverse=True))
@@ -86,7 +93,7 @@ class RecordZoomTest(unittest.TestCase):
         err = subprocess.run([ffmpeg_exe(), "-i", str(zoomed)], capture_output=True, text=True).stderr
         h, m, s = re.search(r"Duration: (\d+):(\d+):([\d.]+)", err).groups()
         self.assertAlmostEqual(float(s), 4.0, delta=0.2)
-        self.assertIn("1920x1080", err)
+        self.assertIn("2560x1440", err)  # 2K by default, captured natively (no upscaling)
         self.assertEqual(len(res["scenes"][0]["zooms"]), 1)
         t = res["scenes"][0]["zooms"][0]["t_s"] + 1.0  # inside the hold
         self.assertGreater(np.abs(self.frame(zoomed, t) - self.frame(plain, t)).mean(), 8)

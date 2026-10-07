@@ -88,13 +88,25 @@ class AudioTest(unittest.TestCase):
         self.assertAlmostEqual(d, total, delta=0.05)
 
 
+class VoiceLevelTest(unittest.TestCase):
+    def test_quiet_and_loud_lines_come_out_at_the_same_level(self):
+        o, total = project()
+        subprocess.run([FF, "-v", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=330:duration=3.0", "-af", "volume=-24dB",
+                        "-ar", "48000", str(o / "voice/s02.mp3")], check=True)   # a quiet take
+        run("score.py", o)
+        code, res = run("mix.py", o)
+        self.assertEqual(code, 0, res)
+        levels = res["voice_lufs"]
+        self.assertLessEqual(max(levels.values()) - min(levels.values()), 2.0, levels)
+
+
 class StitchQaTest(unittest.TestCase):
     def test_ingest_stitch_and_qa(self):
         o, total = project()
         code, res = run("stitch.py", o, "ingest")
         self.assertEqual(code, 0, res)
-        T = looks.T_DEFAULT  # each runs on by its transition into the next scene
-        for sid, want in (("s02", 3.0 + T), ("s03", 2.0 + T)):
+        T = looks.T_DEFAULT  # s02 -> s03 is recording -> clip (a hard cut); s03 runs on into the close's fade
+        for sid, want in (("s02", 3.0), ("s03", 2.0 + T)):
             d, _ = info(o / f"render/segments/{sid}.mp4")
             self.assertAlmostEqual(d, want, delta=0.07, msg=sid)
         run("score.py", o)
@@ -104,9 +116,12 @@ class StitchQaTest(unittest.TestCase):
         d, err = info(o / "final.mp4")
         self.assertAlmostEqual(d, total, delta=0.1)
         self.assertIn("Audio: aac", err)
+        self.assertIn("2560x1440", err)  # 2K by default
         code, res = run("qa.py", o)
         self.assertEqual(code, 0, res)
         self.assertTrue((o / "qa.md").read_text().startswith("PASS"))
+        lvl = next(g for g in res["gates"] if g["gate"] == "voice level")
+        self.assertTrue(lvl["ok"] and lvl["blocking"], lvl)
         cap = next(g for g in res["gates"] if g["gate"] == "captions")
         self.assertTrue(cap["ok"], cap)
         self.assertTrue((o / "captions.srt").exists())

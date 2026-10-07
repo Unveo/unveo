@@ -33,6 +33,13 @@ class CutPlanTest(unittest.TestCase):
         self.assertEqual(cuts[3]["type"], "fade")         # into the close
         self.assertTrue(all(c["dur"] in (0, looks.T_DEFAULT) for c in cuts))
 
+    def test_two_recordings_in_a_row_hard_cut_so_the_app_never_ghosts(self):
+        scenes = [{"id": "s05", "visual": "capture", "template": None}, {"id": "s06", "visual": "capture", "template": None},
+                  {"id": "s07", "visual": "anim", "template": "compose"}]
+        cuts = looks.cuts(scenes, "editorial")
+        self.assertEqual(cuts[0]["dur"], 0)   # recording -> recording: the app just carries on
+        self.assertGreater(cuts[1]["dur"], 0) # recording -> animation still blends
+
     def test_handles_are_the_outgoing_cut_and_none_after_the_last_scene(self):
         h = looks.handles(SCENES, "editorial")
         self.assertEqual(h["s05"], 0)

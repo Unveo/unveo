@@ -36,6 +36,8 @@ def errors(b):
         e.append("limit_s must be a whole number of seconds from 30 to 600")
     if b.get("captions", "burned") not in ("burned", "srt", "off"):
         e.append("captions must be 'burned', 'srt' or 'off'")
+    if b.get("resolution", "2k") not in ("2k", "1080p"):
+        e.append("resolution must be '2k' or '1080p'")
     if b.get("mode", "guided") not in ("quick", "guided"):
         e.append("mode must be 'quick' or 'guided'")
     if b.get("focus", "balanced") not in ("product", "balanced", "explain"):
@@ -96,6 +98,7 @@ def defaults(o, mode, narration, lang, limit, repo_url):
                      else {"kind": "local", "path": root}, "repo_url": repo_url or "", "app_url": "",
                      "login": {"needed": False, "user_env": "UNVEO_LOGIN_USER", "password_env": "UNVEO_LOGIN_PASSWORD"}},
          "limit_s": limit or readme.get("video_limit_s") or 120, "language": lang, "focus": "balanced", "captions": "burned",
+         "resolution": "2k",
          "voice": {"provider": "own", "voice_id": "own", "rate": "+0%"} if narration == "own"
          else {"provider": "edge", "voice_id": voice.default_voice(lang), "rate": "+10%"},
          "palette": {"name": "project", "tokens": render.project_palette(scan.get("palette_candidates", []), o / "capture" / "probe.png")},

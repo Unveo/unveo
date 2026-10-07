@@ -12,6 +12,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: semv
   - Captions burned in plus captions.srt.
   - Per-video design brief (the app's font, motion, background), building blocks and compose scenes, overflow, contrast and crowding checks, QA feel report.
   - setup_app.py: plan, install --yes, start --yes, stop for local Node and Python apps.
+- Round 5 (from your review of the round-4 video):
+  - 2K (2560×1440) by default, rendered and recorded natively; near-lossless working files, a careful final encode.
+  - Hard cuts between recordings; one frame per video; captions in their own band and in one box.
+  - Even voice levels: each line levelled, own takes cleaned, a QA gate.
 - Round 4 (from your review of the round-3 video):
   - Transitions on every cut, picked by the look, with exact sync; recordings hold 0.8 s after the last click.
   - Recording in a hidden browser after login; your window keeps a calm yellow tint with progress.

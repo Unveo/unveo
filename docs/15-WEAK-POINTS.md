@@ -2,7 +2,7 @@
 
 ## Where things stand (round 4, 7 Oct 2026)
 
-- **Done:** 33 items across rounds 1 to 4. Every table below marks them ✅.
+- **Done:** 39 items across rounds 1 to 5. Every table below marks them ✅.
 - **Left before v0.1.0 (🟡):**
   - A4: a warm-up probe for sleeping backends
   - B4: one Hindi video end to end
@@ -106,6 +106,17 @@ Ranked by how often each one would hurt a real team at a deadline.
 | T5 | **Every recording was "a window"** | ✅ `display` per scene: full, window, window-dark, float, laptop, phone (recorded at 430×932), tilt, split (with the step and label), spotlight (dims around the zoom target). Stills show them; a warning when all recordings look the same |
 | T6 | **Scenes were text blocks, not the project's world** | ✅ Open-licence icons (Iconify, no-credit sets only, ~50 Lucide bundled offline) and `motifs` in design.json on the title, chapters and end card. 8 new blocks, 4 layouts, 4 story scenes (chapter, stat-hero, before-after, annotated-shot) |
 | T7 | **Too few themes, and history was a hard rule** | ✅ 10 looks, ranked by fit to the project's field; the last video's look only drops back, never banned |
+
+## Round 5 (from your review of the round-4 survey video, 7 Oct 2026)
+
+| # | Weak point | Status / fix |
+|---|---|---|
+| S1 | **1080p only** | ✅ 2K (2560×1440) by default (`brief.resolution`, `1080p` optional). Animations are drawn natively at 2K, and recordings are captured natively: Chrome's `--force-device-scale-factor` makes the screencast deliver 2560 px while the page lays out at 1920 CSS |
+| S2 | **Softness from re-encoding:** three lossy encodes (CRF 16 → 18 → 18), and a JPEG screencast at quality 92 | ✅ Working files at CRF 10, the final at CRF 16 (preset slow), the screencast at quality 100 |
+| S3 | **Ghosting between two recordings:** a crossfade of the same app at two zooms (00:41) | ✅ Recording → recording is a hard cut; blends stay for animations |
+| S4 | **Three frames in one video** (laptop, window, float) | ✅ One frame per video (`design.json` `display`); a scene may only add phone or spotlight. Others are an error in capture check and stills |
+| S5 | **Captions over the device and the app's buttons, with a ragged box per line** | ✅ Framed displays keep a caption band free at the bottom; captions use one box per caption (libass BorderStyle 4, transparent outline as padding) |
+| S6 | **Uneven voice levels between lines** (own takes) | ✅ Every clip is levelled to −20 LUFS before the mix; own takes get a high-pass and light denoise; a blocking QA gate keeps lines within 3 LU |
 
 ## New things to build on (found in round 4)
 

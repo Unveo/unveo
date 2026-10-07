@@ -49,6 +49,21 @@ class GroupTest(unittest.TestCase):
         self.assertEqual(captions.srt_time(3723.456), "01:02:03,456")
 
 
+class BoxTest(unittest.TestCase):
+    def test_a_two_line_caption_sits_in_one_box(self):
+        import numpy as np
+        from common import ffmpeg_exe
+        from PIL import Image
+        d = Path(tempfile.mkdtemp())
+        (d / "c.ass").write_text(captions.ASS_HEAD + "Dialogue: 0,0:00:00.00,0:00:02.00,Default,,0,0,0,,You sign in with Google, so there's\\Nno password.\n")
+        subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=white:s=1920x1080:d=1", "-vf",
+                        f"subtitles={d / 'c.ass'}:fontsdir={captions.FONTS}", "-frames:v", "1", str(d / "c.png")], check=True)
+        a = np.array(Image.open(d / "c.png").convert("L")).astype(int)
+        rows = [r for r in range(700, 1080) if (a[r] < 200).sum() > 50]
+        lefts = {int(np.argmax(a[r] < 200)) for r in rows}
+        self.assertLessEqual(max(lefts) - min(lefts), 2, lefts)  # one box: every row starts at the same x
+
+
 class StitchBurnTest(unittest.TestCase):
     def test_burned_captions_change_the_frame_and_srt_is_written(self):
         from test_audio_stitch_qa import project, run, FF  # reuse the tiny finished project

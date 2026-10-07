@@ -44,6 +44,17 @@ class PublicFolderTest(unittest.TestCase):
             self.assertTrue((root / "your-clips" / "shot-01.mp4").exists())
 
 
+class OutSizeTest(unittest.TestCase):
+    def test_2k_is_the_default_and_1080p_is_an_option(self):
+        with tempfile.TemporaryDirectory() as d:
+            o = Path(d)
+            self.assertEqual(common.out_size(o), (2560, 1440))  # no brief yet
+            (o / "brief.json").write_text(json.dumps({"resolution": "1080p"}))
+            self.assertEqual(common.out_size(o), (1920, 1080))
+            (o / "brief.json").write_text(json.dumps({"resolution": "2k"}))
+            self.assertEqual(common.out_size(o), (2560, 1440))
+
+
 class EmitTest(unittest.TestCase):
     def test_ok_prints_json_last_line_and_exits_0(self):
         code, out = run_emit("common.emit('voice', outputs=['a.mp3'])")

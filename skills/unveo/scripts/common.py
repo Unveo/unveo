@@ -22,6 +22,19 @@ OUT = "unveo-out/.work"  # unveo's working files; the person's folder (unveo-out
 PUBLIC_FILES = ("demo-video.mp4", "subtitles.srt", "script.md", "quality-check.md", "preview.png")
 
 
+SIZES = {"2k": (2560, 1440), "1080p": (1920, 1080)}
+INTERMEDIATE_CRF, FINAL_CRF = 10, 16  # working files nearly lossless; only the final encode is what people see
+
+
+def out_size(o):
+    """The finished video's size from brief.resolution: 2K (2560x1440) unless the brief asks for 1080p."""
+    try:
+        res = json.loads((Path(o) / "brief.json").read_text(encoding="utf-8")).get("resolution", "2k")
+    except (OSError, ValueError):
+        res = "2k"
+    return SIZES.get(res, SIZES["2k"])
+
+
 def public_dir(o):
     """unveo-out/ for unveo-out/.work; the folder itself for any other --out (tests, custom paths)."""
     o = Path(o)

@@ -46,22 +46,28 @@ One scene in steps.json for each `capture` scene in script.md, with the same id.
     - **At the end:** the card turns green: "Done".
     - The result's `recorded_in` says which happened (`hidden` or `window`). None of the guide is ever in the video.
 
-## How each recording is shown: `display`
+## How recordings are shown: one frame per video
 
-A scene may set `"display"` (and an optional short `"label"`) next to its steps. Without one, the look's default is used.
+The **frame is set once for the whole video** in `film/design.json` as `"display"`; without one, the look's frame is used. Every recording sits in it, so the picture never jumps between devices.
 
 | display | What it looks like | Good for |
 |---|---|---|
 | `full` | the app fills the frame | dense dashboards, maps |
 | `window` / `window-dark` | in a browser window on the look's ground | most web apps |
-| `float` | a large card with a soft shadow | clean, product-first scenes |
-| `laptop` | inside a drawn laptop | the first look at the product |
-| `phone` | **recorded at a phone's size (430×932)** inside a phone | mobile-first or responsive apps |
-| `tilt` | a gentle 3D turn | a calm middle scene between busy ones |
+| `float` | a large card with a soft shadow | clean, product-first videos |
+| `laptop` | inside a drawn laptop | a product feel |
+| `tilt` | a gentle 3D turn | calm, editorial videos |
 | `split` | the app on the left, the step number and `label` large on the right | multi-step journeys |
-| `spotlight` | the page stays still and everything but the zoom target dims | pointing at one number or button |
 
-Mix two or three across a video when it has 3+ recordings (stills warns if every scene is the same); keep one display per scene. `spotlight` needs a step with `zoom`.
+A single scene in steps.json may only use:
+- **`"display": "phone"`:** a genuinely mobile screen, recorded at a phone's size (430×932) inside a phone.
+- **`"display": "spotlight"`:** the page stays still and everything but the zoom target dims. It needs a step with `zoom`.
+
+Any other per-scene `display` is an error in `capture.py check`.
+
+When captions are burned in, framed displays leave a band at the bottom free, so captions never cover the app.
+
+Two recordings in a row always **hard cut** (the app just carries on); cuts into and out of animations use the look's transition.
 
 ## Actions
 
@@ -89,7 +95,7 @@ Optional on any step:
 
 ## Screen size
 
-Recordings are 1920×1080 at 100% page zoom. That's the only setting the screencast captures at native sharpness, and every layout looks exactly as users see it. Make small details readable with `zoom` on the step, not by enlarging the whole page. `"viewport": {"zoom": 1.25}` still works when a UI is genuinely too small, but the frames come out a little softer.
+Recordings are made at the video's size: the page lays out at 1920×1080 CSS (100% zoom), and for 2K it's drawn at 4/3 pixel density, so the 2560×1440 footage is native, not upscaled. Every layout looks exactly as users see it. Make small details readable with `zoom` on the step, not by enlarging the whole page. `"viewport": {"zoom": 1.25}` still works when a UI is genuinely too small.
 - `timeout_ms`: default 10000.
 - `approved`: see Safety.
 

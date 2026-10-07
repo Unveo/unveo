@@ -60,10 +60,28 @@ class DisplayTest(unittest.TestCase):
         panel = np.array(Image.open(bg).convert("L"))[300:800, 1300:1860]
         self.assertGreater((panel < 90).mean(), 0.005)  # dark text on the light panel
 
-    def test_look_default_and_step_override(self):
-        self.assertEqual(looks.display_for({"display": "laptop"}, "editorial"), "laptop")
-        self.assertEqual(looks.display_for({}, "editorial"), "window")
-        self.assertEqual(looks.display_for({}, None), "full")
+    def test_one_frame_per_video_with_phone_and_spotlight_per_scene(self):
+        self.assertEqual(looks.display_for({}, "editorial", {}), "window")                         # the look's frame
+        self.assertEqual(looks.display_for({}, "editorial", {"display": "laptop"}), "laptop")       # the video's frame
+        self.assertEqual(looks.display_for({"display": "float"}, "editorial", {"display": "laptop"}), "laptop")  # no per-scene frames
+        self.assertEqual(looks.display_for({"display": "phone"}, "editorial", {"display": "laptop"}), "phone")
+        self.assertEqual(looks.display_for({"display": "spotlight"}, "editorial", {"display": "laptop"}), "spotlight")
+        self.assertEqual(looks.display_for({}, None, {}), "full")
+
+    def test_a_per_scene_frame_is_reported(self):
+        steps = {"version": 1, "base_url": "http://x", "scenes": {"s05": {"display": "laptop", "steps": [{"do": "pause", "ms": 5}]}}}
+        errs = " ".join(capture.validate(steps))
+        self.assertIn("design.json", errs)
+
+    def test_framed_displays_leave_the_caption_band_clear(self):
+        from PIL import Image
+        for kind in ("window", "window-dark", "float", "laptop", "tilt", "split", "phone"):
+            with self.subTest(display=kind):
+                spec = looks.display_spec(kind, "editorial", TOKENS, label="Answer five questions", step=2, band=True)
+                bg, mask, x, y, iw, ih = stitch.frame_assets(spec, 1920, 1080, self.d / "frames")
+                self.assertLessEqual(y + ih, 1080 - looks.CAPTION_BAND, kind)
+                band = np.array(Image.open(bg).convert("RGB")).astype(int)[1080 - looks.CAPTION_BAND + 12:]
+                self.assertLess(np.abs(band - [0xf5, 0xef, 0xe3]).mean(), 4, kind)  # nothing drawn where captions go
 
 
 class SpotlightAndPhoneRecordTest(unittest.TestCase):
@@ -96,7 +114,7 @@ class SpotlightAndPhoneRecordTest(unittest.TestCase):
     def test_phone_display_records_a_mobile_viewport(self):
         path, _ = self.record({"display": "phone", "start": {"do": "goto", "url": "/"}, "steps": [{"do": "pause", "ms": 300}]})
         _, size = probe(path)
-        self.assertEqual(size, (430, 932))
+        self.assertEqual(size, (574, 1242))  # a 430x932 phone viewport, captured at 2K pixel density
 
     def test_spotlight_dims_around_the_target_instead_of_zooming(self):
         step = {"do": "hover", "target": {"role": "button", "name": "Search"}, "say": "Search", "zoom": {"scale": 1.6, "hold_s": 1.5}}
@@ -104,10 +122,10 @@ class SpotlightAndPhoneRecordTest(unittest.TestCase):
         z = res["scenes"][0]["zooms"][0]
         raw = subprocess.run([ffmpeg_exe(), "-v", "quiet", "-ss", str(z["t_s"] + 1.0), "-i", str(path), "-frames:v", "1", "-f", "rawvideo",
                               "-pix_fmt", "gray", "-"], capture_output=True, check=True).stdout
-        g = np.frombuffer(raw, np.uint8).reshape(1080, 1920).astype(float)
-        bx, by, bw, bh = z["box"]
+        g = np.frombuffer(raw, np.uint8).reshape(1440, 2560).astype(float)  # 2K frame; the box is in CSS pixels
+        bx, by, bw, bh = [round(v * 4 / 3) for v in z["box"]]
         inside = g[by - 14:by - 4, bx:bx + bw].mean()  # the lit margin around the target (the page is white there)
-        corner = g[1000:1070, 1800:1910].mean()  # page background, far from the button
+        corner = g[1340:1420, 2400:2540].mean()  # page background, far from the button
         self.assertLess(corner, 170)            # dimmed (the page is white)
         self.assertGreater(inside, corner + 30)  # the target stays lit
 

@@ -15,6 +15,8 @@ import voice as voicemod  # noqa: E402
 
 MAX_LINE, MAX_LINES, MAX_DUR, MIN_DUR = 42, 2, 4.0, 1.2
 FONTS = Path(__file__).resolve().parents[1] / "templates" / "film" / "fonts"
+# BorderStyle 4 (libass): one box behind the whole caption, not a box per line; the outline is transparent and only
+# pads the box. MarginV 26 puts it inside the caption band that framed recordings leave free (looks.CAPTION_BAND).
 ASS_HEAD = """[Script Info]
 ScriptType: v4.00+
 PlayResX: 1920
@@ -24,7 +26,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Geist SemiBold,44,&H00FFFFFF,&H00FFFFFF,&H66141414,&H66141414,0,0,0,0,100,100,0,0,3,14,0,2,160,160,64,1
+Style: Default,Geist SemiBold,40,&H00FFFFFF,&H00FFFFFF,&HFF141414,&H40141414,0,0,0,0,100,100,0,0,4,12,0,2,160,160,26,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

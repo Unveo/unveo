@@ -10,10 +10,10 @@ import argparse, json, re, subprocess, sys, tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import clips_dir, emit, ffmpeg_exe, log, out_dir, read_json  # noqa: E402
+from common import FINAL_CRF, INTERMEDIATE_CRF, clips_dir, emit, ffmpeg_exe, log, out_dir, out_size, read_json  # noqa: E402
 
 FF = None
-ENC = ["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-r", "30",
+ENC = ["-c:v", "libx264", "-preset", "medium", "-crf", str(INTERMEDIATE_CRF), "-pix_fmt", "yuv420p", "-r", "30",
        "-color_range", "tv", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"]
 
 
@@ -45,23 +45,24 @@ def frame_assets(frame, w, h, folder):
     folder.mkdir(parents=True, exist_ok=True)
     bg_png, mask_png = folder / f"frame-{key}.png", folder / f"mask-{key}.png"
     even = lambda v: int(round(v / 2) * 2)
-    bar, r = 0, round(22 * k)
+    bar, r, pad, base = 0, round(22 * k), 0, 0
+    room = h - round(frame.get("band", 0) * k) - round(48 * k)  # height the frame may use above the caption band
     if kind == "window":
-        iw = even(w * 0.86); ih = even(iw * 9 / 16); bar, r = round(44 * k), round(14 * k)
-        x, y = (w - iw) // 2, (h - ih - bar) // 2 + bar
+        bar, r = round(44 * k), round(14 * k)
+        iw = even(min(w * 0.86, (room - bar) * 16 / 9)); ih = even(iw * 9 / 16); extra = bar
     elif kind == "laptop":
-        iw = even(w * 0.70); ih = even(iw * 9 / 16); pad, base = round(18 * k), round(26 * k)
-        x, y = (w - iw) // 2, (h - ih - 2 * pad - base) // 2 + pad
-        r = round(6 * k)
+        pad, base, r = round(18 * k), round(26 * k), round(6 * k)
+        iw = even(min(w * 0.70, (room - 2 * pad - base) * 16 / 9)); ih = even(iw * 9 / 16); extra = 2 * pad + base
     elif kind == "phone":
-        ih = even(h * 0.86); iw = even(ih * 430 / 932); pad = round(14 * k); r = round(44 * k)
-        x, y = (w - iw) // 2, (h - ih) // 2
+        pad, r = round(14 * k), round(44 * k)
+        ih = even(min(h * 0.86, room - 2 * pad)); iw = even(ih * 430 / 932); extra = 2 * pad
     elif kind == "split":
-        iw = even(w * 0.60); ih = even(iw * 9 / 16)
-        x, y = round(w * 0.055), (h - ih) // 2
+        iw = even(min(w * 0.60, room * 16 / 9)); ih = even(iw * 9 / 16); extra = 0
     else:  # float, tilt
-        iw = even(w * 0.88 if kind == "float" else w * 0.78); ih = even(iw * 9 / 16)
-        x, y = (w - iw) // 2, (h - ih) // 2
+        iw = even(min(w * 0.88 if kind == "float" else w * 0.78, room * 16 / 9)); ih = even(iw * 9 / 16); extra = 0
+    top = (h - round(frame.get("band", 0) * k) - ih - extra) // 2  # centred in the space above the band
+    x = round(w * 0.055) if kind == "split" else (w - iw) // 2
+    y = top + (bar if kind == "window" else pad)
     if not bg_png.exists():
         img = Image.new("RGB", (w, h), frame["bg"])
         shadow = Image.new("L", (w, h), 0)
@@ -72,7 +73,10 @@ def frame_assets(frame, w, h, folder):
             sd.rounded_rectangle((x - pad, y - pad + round(16 * k), x + iw + pad, y + ih + pad + round(16 * k)), r + pad, fill=70)
         else:
             sd.rounded_rectangle((x, y - bar + round(14 * k), x + iw, y + ih + round(14 * k)), r, fill=70)
-        img.paste(Image.new("RGB", (w, h), "#000000"), mask=shadow.filter(ImageFilter.GaussianBlur(28 * k)))
+        shadow = shadow.filter(ImageFilter.GaussianBlur(28 * k))
+        if frame.get("band"):  # keep the caption band clean: no shadow under it
+            ImageDraw.Draw(shadow).rectangle((0, h - round(frame["band"] * k), w, h), fill=0)
+        img.paste(Image.new("RGB", (w, h), "#000000"), mask=shadow)
         d = ImageDraw.Draw(img)
         if kind == "window":
             d.rounded_rectangle((x, y - bar, x + iw, y + r * 2), r, fill=frame["chrome"])
@@ -187,7 +191,9 @@ def ingest(o, placeholders):
     tl = read_json(o / "timeline.json")
     import looks
     tokens = json.loads((o / "brief.json").read_text(encoding="utf-8")).get("palette", {}).get("tokens", {})
-    look = (json.loads((o / "film" / "design.json").read_text(encoding="utf-8")) if (o / "film" / "design.json").exists() else {}).get("look")
+    design = json.loads((o / "film" / "design.json").read_text(encoding="utf-8")) if (o / "film" / "design.json").exists() else {}
+    look = design.get("look")
+    burned = json.loads((o / "brief.json").read_text(encoding="utf-8")).get("captions", "burned") == "burned"
     if look and "accent" in tokens:
         tokens = looks.palette(tokens, look)
     bg = tokens.get("bg", "black")
@@ -221,8 +227,8 @@ def ingest(o, placeholders):
         step_no += 1
         sc = steps.get(sid) or {}
         label = sc.get("label") or (journey[step_no - 1].split("→")[0].strip() if step_no <= len(journey) else "")
-        frame = looks.display_spec(looks.display_for(sc, look), look, tokens, label, step_no) if styled else None
-        fit(src, o / "render" / "segments" / f"{sid}.mp4", end, bg=bg, frame=frame)
+        frame = looks.display_spec(looks.display_for(sc, look, design), look, tokens, label, step_no, band=burned, design=design) if styled else None
+        fit(src, o / "render" / "segments" / f"{sid}.mp4", end, *out_size(o), bg=bg, frame=frame)
         fit(src, o / "render" / "draft" / f"{sid}.mp4", end, 960, 540, bg=bg, frame=frame)
         made.append(sid)
     if missing and (o / "shots.md").exists():  # the person's copy of what to record, next to where the clips go
@@ -246,7 +252,7 @@ def burn_filter(o, w):
     """subtitles=… for the final video when brief.captions is 'burned' (the default); regenerates the captions first."""
     brief = json.loads((o / "brief.json").read_text(encoding="utf-8"))
     mode = brief.get("captions", "burned")
-    if w != 1920 or mode == "off" or not (o / "voice" / "voice.json").exists():
+    if w < 1920 or mode == "off" or not (o / "voice" / "voice.json").exists():
         return ""
     import captions
     if not captions.build(o) or mode != "burned":  # "srt": the file only
@@ -286,7 +292,9 @@ def concat(o, folder, audio, dst, w, h):
         cmd += ["-i", str(p)]
     if audio.exists():
         cmd += ["-i", str(audio), "-map", f"{len(segs)}:a", "-c:a", "aac", "-b:a", "192k", "-ar", "48000"]
-    cmd += ["-filter_complex", ";".join(parts), "-map", "[out]", *ENC, "-t", f"{total:.3f}", "-movflags", "+faststart", str(dst)]
+    final = w >= 1920  # what people see: a careful encode; the draft stays quick
+    enc = [*ENC[:2], "-preset", "slow" if final else "veryfast", "-crf", str(FINAL_CRF if final else 20), "-tune", "film", *ENC[6:]]
+    cmd += ["-filter_complex", ";".join(parts), "-map", "[out]", *enc, "-t", f"{total:.3f}", "-movflags", "+faststart", str(dst)]
     subprocess.run(cmd, check=True)
     return total
 
@@ -304,7 +312,7 @@ def main():
     if a.cmd == "draft":
         total = concat(o, "draft", audio, o / "draft.mp4", 960, 540)
         emit("stitch", outputs=[str(o / "draft.mp4")], total_s=round(total, 2), message="draft.mp4 ready to preview")
-    total = concat(o, "segments", audio, o / "final.mp4", 1920, 1080)
+    total = concat(o, "segments", audio, o / "final.mp4", *out_size(o))
     emit("stitch", outputs=[str(o / "final.mp4")], total_s=round(total, 2),
          message=f"final.mp4: {int(total // 60)}:{total % 60:04.1f}" + ("" if audio.exists() else " (no audio: run score.py and mix.py)"))
 

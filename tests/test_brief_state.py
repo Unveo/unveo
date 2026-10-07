@@ -92,6 +92,10 @@ class ValidateTest(unittest.TestCase):
             bad = subprocess.run([sys.executable, str(SCRIPTS / "brief.py"), "validate", "--out", out], capture_output=True)
         self.assertEqual((ok.returncode, bad.returncode), (0, 2))
 
+    def test_resolution_must_be_known(self):
+        b = good_brief(); b["resolution"] = "8k"
+        self.assertTrue(any("resolution" in e for e in brief.errors(b)))
+
     def test_mode_must_be_quick_or_guided(self):
         b = good_brief(); b["mode"] = "turbo"
         self.assertTrue(any("mode" in e for e in brief.errors(b)))
@@ -116,6 +120,7 @@ class DefaultsTest(unittest.TestCase):
         self.assertEqual((b["voice"]["provider"], b["voice"]["rate"]), ("edge", "+10%"))
         self.assertTrue(b["voice"]["voice_id"].endswith("Neural"))
         self.assertEqual(b["palette"]["name"], "project")
+        self.assertEqual(b["resolution"], "2k")
         self.assertEqual(b["palette"]["tokens"]["accent"], "#4f46e5")
         self.assertEqual(b["project"]["name"], "Civic Watch")
         self.assertIn("understanding", res["still_needed"])  # the agent's part

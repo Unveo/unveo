@@ -76,7 +76,7 @@ Options: `--quick` · `--own-voice` · `--limit 90` · `--lang hi` · `--url htt
 
 | File | What it is |
 |---|---|
-| `demo-video.mp4` | Your video: 1920×1080, 30 fps, captions burned in, under your limit |
+| `demo-video.mp4` | Your video: 2K (2560×1440), 30 fps, H.264 CRF 16, −14 LUFS, captions burned in, under your limit |
 | `subtitles.srt` | The captions as a file, for YouTube or Devpost |
 | `script.md` | The narration with times, easy to read |
 | `quality-check.md` | The quality report |

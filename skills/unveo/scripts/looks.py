@@ -83,6 +83,8 @@ def cuts(scenes, look, design=None):
             kind = "fade"
         elif "anim" == a.get("visual") == b.get("visual"):
             kind = rule["anim"]
+        elif a.get("visual") in ("capture", "clip") and b.get("visual") in ("capture", "clip"):
+            kind = None  # the app just carries on from one step to the next: a blend would only ghost it
         else:
             kind = rule["rec"]
         kind = over.get("type", kind)
@@ -163,25 +165,34 @@ def palette(tokens, look):
 
 
 DISPLAYS = ("full", "window", "window-dark", "float", "laptop", "phone", "tilt", "split", "spotlight")
+SCENE_DISPLAYS = ("phone", "spotlight")  # the only displays a single scene may pick; the frame is per video
+CAPTION_BAND = 170  # px at 1080p kept free under a framed recording, so captions never cover the app
 
 
-def display_for(scene_steps, look):
-    """A scene's display: its own "display" in steps.json, else the look's default, else full-screen."""
-    return (scene_steps or {}).get("display") or (LOOKS.get(look) or {}).get("frame") or "full"
+def video_frame(look, design=None):
+    """The one frame every recording in this video sits in: design.json "display", else the look's."""
+    return (design or {}).get("display") or (LOOKS.get(look) or {}).get("frame") or "full"
 
 
-def display_spec(kind, look, tokens, label="", step=None):
+def display_for(scene_steps, look, design=None):
+    """A scene's display: the video's frame, unless the scene is a phone screen or a spotlight moment."""
+    own = (scene_steps or {}).get("display")
+    return own if own in SCENE_DISPLAYS else video_frame(look, design)
+
+
+def display_spec(kind, look, tokens, label="", step=None, band=False, design=None):
     """What stitch.fit needs to set a recording into the frame. None = full-screen.
-    spotlight is done while recording (capture.encode), so here it falls back to the look's own frame."""
+    spotlight is done while recording (capture.encode), so here it uses the video's frame.
+    band=True keeps CAPTION_BAND free at the bottom for burned-in captions."""
     if kind == "spotlight":
-        kind = (LOOKS.get(look) or {}).get("frame", "full")
+        kind = video_frame(look, design)
     if kind in (None, "full"):
         return None
     dark = kind == "window-dark" or (LOOKS.get(look) or {}).get("palette") == "dark"
     return {"kind": "window" if kind == "window-dark" else kind, "bg": tokens["bg"], "ink": tokens.get("ink", "#111111"),
             "accent": tokens.get("accent", "#111111"), "muted": tokens.get("muted", "#666666"),
             "chrome": "#1d1f24" if dark else tokens.get("surface", "#eeeeee"), "dark": dark,
-            "label": label or "", "step": step}
+            "label": label or "", "step": step, "band": CAPTION_BAND if band else 0}
 
 
 def frame(look, tokens):

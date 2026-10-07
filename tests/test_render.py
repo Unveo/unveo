@@ -109,7 +109,7 @@ class VideoTest(unittest.TestCase):
         self.assertEqual(code, 0, res)
         d, v = probe(out / "render/segments/s02.mp4")
         self.assertAlmostEqual(d, 1.0 + looks.T_DEFAULT, delta=0.07)
-        self.assertIn("1920x1080", v)
+        self.assertIn("2560x1440", v)  # 2K by default, drawn natively
         self.assertIn("30 fps", v)
         code, res = run(out, "final")
         self.assertEqual(res["rendered"], [])  # nothing changed, nothing re-rendered

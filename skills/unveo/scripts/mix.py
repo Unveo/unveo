@@ -14,6 +14,16 @@ sys.path.insert(0, str(Path(__file__).parent))
 from common import emit, ffmpeg_exe, out_dir, read_json  # noqa: E402
 
 SR, DUCK_DB, ATTACK_S, RELEASE_S = 48000, 9.0, 0.08, 0.4
+VOICE_LUFS = -20.0  # every voice clip is levelled to this before the mix, so no line is louder than its neighbours
+
+
+def clip_lufs(path):
+    """Integrated loudness of one clip, or None when it's too short or silent to measure."""
+    try:
+        v = float(measure(path)["input_i"])
+    except (ValueError, KeyError):
+        return None
+    return v if v > -70 else None
 
 
 def load(path):
@@ -50,10 +60,16 @@ def main():
     total = tl.get("total_s") or sum(s["dur_s"] for s in tl["scenes"])
     n = int(round(total * SR))
     voice = np.zeros((n, 2))
+    levels = {}
     for s in tl["scenes"]:
         if not s.get("voice"):
             continue
         v = load(o / s["voice"])
+        lufs = clip_lufs(o / s["voice"])
+        if lufs is not None:  # level each line (at most ±30 dB) so a quiet take sits with the rest
+            g = max(-30.0, min(30.0, VOICE_LUFS - lufs))
+            v = v * 10 ** (g / 20)
+            levels[s["id"]] = round(lufs + g, 1)
         i = int(round((s["start_s"] + s.get("lead_s", 0)) * SR))
         j = min(n, i + len(v))
         voice[i:j] += v[: j - i]
@@ -75,7 +91,8 @@ def main():
     subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-i", str(raw), "-af", af, "-ar", str(SR), "-c:a", "pcm_s24le", "-t", f"{total:.3f}", str(out)], check=True)
     raw.unlink()
     m = measure(out)
-    emit("mix", outputs=[str(out)], lufs=float(m["input_i"]), true_peak=float(m["input_tp"]),
+    (o / "audio" / "voice_levels.json").write_text(json.dumps(levels))
+    emit("mix", outputs=[str(out)], lufs=float(m["input_i"]), true_peak=float(m["input_tp"]), voice_lufs=levels,
          message=f"mix.wav: {float(m['input_i']):.1f} LUFS, true peak {float(m['input_tp']):.1f} dBTP")
 
 

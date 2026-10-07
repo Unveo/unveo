@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import emit, ffmpeg_exe, log, out_dir, read_json  # noqa: E402
+from common import INTERMEDIATE_CRF, emit, ffmpeg_exe, log, out_dir, out_size, read_json  # noqa: E402
 
 VIEWPORT = {"width": 1920, "height": 1080}
 LOGIN_PATH = re.compile(r"/(log-?in|sign-?in|auth)(/|$|\?)", re.I)
@@ -41,7 +41,7 @@ def hidden_session_sync(p, vctx, vpage, steps, base):
     try:
         state = vctx.storage_state(indexed_db=True)
         origin, pairs = vpage.evaluate("location.origin"), vpage.evaluate("() => Object.entries(sessionStorage)")
-        b = p.chromium.launch()
+        b = p.chromium.launch(args=launch_args(steps))
         c = b.new_context(storage_state=state, **ctx_args(steps))
         c.add_init_script(script=session_script(origin, pairs))
         pg = c.new_page()
@@ -62,7 +62,7 @@ async def hidden_session(p, vctx, vpage, steps, base):
         state = await vctx.storage_state(indexed_db=True)
         origin = await vpage.evaluate("location.origin")
         pairs = await vpage.evaluate("() => Object.entries(sessionStorage)")
-        b = await p.chromium.launch()
+        b = await p.chromium.launch(args=launch_args(steps))
         c = await b.new_context(storage_state=state, **ctx_args(steps))
         await c.add_init_script(script=session_script(origin, pairs))
         await c.add_init_script(path=str(CURSOR_JS))
@@ -86,13 +86,23 @@ def has_zoom(steps):
     return any(st.get("zoom") for sc in (steps.get("scenes") or {}).values() for st in sc.get("steps", []))
 
 
+def pixel_scale(steps):
+    """Device pixels per CSS pixel: viewport.zoom times the output scale (2K = 4/3)."""
+    return float((steps.get("viewport") or {}).get("zoom", 1.0)) * steps.get("_scale", 1.0)
+
+
 def ctx_args(steps, hi_res=False):
-    """1920x1080 at 100% by default: the CDP screencast captures CSS pixels, so this is the only size that's
-    native-sharp (measured 7 Oct 2026). viewport.zoom > 1 enlarges the UI with the real layout, but frames are
-    then upscaled and a little softer. CSS zoom is not used: it breaks full-height layouts and iframes.
-    Readability for small details comes from step zooms (zoom_crop)."""
+    """The page always lays out at 1920x1080 CSS (viewport.zoom > 1 enlarges the UI with the real layout).
+    For 2K the page renders at 4/3 pixel density, so it's captured natively at 2560x1440. The screencast only
+    delivers device pixels when Chrome is started with --force-device-scale-factor (launch_args); the context's
+    own device_scale_factor alone still gives CSS-sized frames (measured 7 Oct 2026). CSS zoom is not used."""
     z = float((steps.get("viewport") or {}).get("zoom", 1.0))
-    return {"viewport": {"width": round(1920 / z), "height": round(1080 / z)}, "device_scale_factor": z}
+    return {"viewport": {"width": round(1920 / z), "height": round(1080 / z)}, "device_scale_factor": pixel_scale(steps)}
+
+
+def launch_args(steps):
+    d = pixel_scale(steps)
+    return [f"--force-device-scale-factor={d:.4f}"] if abs(d - 1) > 1e-3 else []
 
 
 def zoom_k(t, zooms):
@@ -107,13 +117,19 @@ def zoom_k(t, zooms):
     return 0.0, None
 
 
-def zoom_crop(t, zooms, W, H):
+def frame_box(box, sx, sy):
+    """A CSS-pixel box in frame pixels: the screencast frame isn't always CSS-sized (a resized window, a smaller viewport)."""
+    bx, by, bw, bh = box
+    return bx * sx, by * sy, bw * sx, bh * sy
+
+
+def zoom_crop(t, zooms, W, H, sx=1.0, sy=1.0):
     """The part of a W x H frame to show at time t: eases in on the zoom's box, holds, eases back out (docs/15 A9)."""
     k, z = zoom_k(t, zooms)
     if z:
         s = 1 + (z["scale"] - 1) * k
         w, h = round(W / s), round(H / s)
-        bx, by, bw, bh = z["box"]
+        bx, by, bw, bh = frame_box(z["box"], sx, sy)
         x = min(max(0, round(bx + bw / 2 - w / 2)), W - w)
         y = min(max(0, round(by + bh / 2 - h / 2)), H - h)
         return x, y, w, h
@@ -135,8 +151,9 @@ def spotlight(img, k, box, pad=18):
 
 def validate(steps):
     import looks
-    e = [f"{sid}: display must be one of {', '.join(looks.DISPLAYS)}" for sid, sc in (steps.get("scenes") or {}).items()
-         if sc.get("display") and sc["display"] not in looks.DISPLAYS]
+    e = [f"{sid}: a scene's display can only be {' or '.join(looks.SCENE_DISPLAYS)}; the frame ({sc['display']}) is set once "
+         "for the whole video in film/design.json (\"display\")" for sid, sc in (steps.get("scenes") or {}).items()
+         if sc.get("display") and sc["display"] not in looks.SCENE_DISPLAYS]
     if steps.get("version") != 1:
         e.append("version must be 1")
     if not str(steps.get("base_url", "")).startswith(("http://", "https://")):
@@ -485,6 +502,7 @@ def login_timeout_msg(steps):
 
 def launch_profile_sync(p, steps):
     kw = dict(user_data_dir=profile_dir(steps), headless=not headed(), **ctx_args(steps), **PROFILE_ARGS)
+    kw["args"] = PROFILE_ARGS["args"] + launch_args(steps)
     try:
         return p.chromium.launch_persistent_context(channel="chrome", **kw)  # real Chrome: Google sign-in works more often
     except Exception:
@@ -493,6 +511,7 @@ def launch_profile_sync(p, steps):
 
 async def launch_profile_async(p, steps):
     kw = dict(user_data_dir=profile_dir(steps), headless=not headed(), **ctx_args(steps), **PROFILE_ARGS)
+    kw["args"] = PROFILE_ARGS["args"] + launch_args(steps)
     try:
         return await p.chromium.launch_persistent_context(channel="chrome", **kw)
     except Exception:
@@ -667,10 +686,10 @@ def encode(frames, t_start, t_end, path, zooms=(), size=(1920, 1080), light=Fals
     import io
     from bisect import bisect_right
     from PIL import Image
-    times = [max(0.0, ts - t_start) for ts, _ in frames]
+    times = [max(0.0, f[0] - t_start) for f in frames]
     n = max(1, round((t_end - t_start) * 30))
     enc = subprocess.Popen([ffmpeg_exe(), "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{OW}x{OH}", "-r", "30",
-                            "-i", "-", "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-pix_fmt", "yuv420p", "-an", str(path)],
+                            "-i", "-", "-c:v", "libx264", "-preset", "veryfast", "-crf", str(INTERMEDIATE_CRF), "-pix_fmt", "yuv420p", "-an", str(path)],
                            stdin=subprocess.PIPE)
     cache_src, cache_key, cache_out = None, None, None
     try:
@@ -680,15 +699,17 @@ def encode(frames, t_start, t_end, path, zooms=(), size=(1920, 1080), light=Fals
             if cache_src is None or cache_src[0] != idx:
                 cache_src = (idx, Image.open(io.BytesIO(base64.b64decode(frames[idx][1]))).convert("RGB"))
             img = cache_src[1]
+            css = frames[idx][2:4]  # the CSS size this frame covers (screencast metadata); zoom boxes are in CSS pixels
+            sx, sy = (img.width / css[0], img.height / css[1]) if len(css) == 2 and all(css) else (1.0, 1.0)
             if light:
                 k, z = zoom_k(t, zooms)
                 crop = (0, 0, *img.size, round(k, 2))
             else:
-                crop = zoom_crop(t, zooms, *img.size)
+                crop = zoom_crop(t, zooms, *img.size, sx, sy)
             if (idx, crop) != cache_key:
                 part = img.crop((crop[0], crop[1], crop[0] + crop[2], crop[1] + crop[3]))
                 if light and z:
-                    part = spotlight(part, k, z["box"])
+                    part = spotlight(part, k, frame_box(z["box"], sx, sy))
                 scale = min(OW / part.width, OH / part.height)
                 fitted = part.resize((round(part.width * scale), round(part.height * scale)), Image.LANCZOS)
                 if scale > 1.05:  # zoomed in: a light sharpen keeps text crisp
@@ -717,6 +738,9 @@ async def record_scenes(out, only):
     from playwright.async_api import async_playwright, Error as PWError
     o = Path(out)
     steps = load_steps(out)
+    W, H = out_size(o)
+    steps["_scale"] = W / 1920  # record at the output's pixel density: 2K is captured natively
+    even = lambda v: int(round(v / 2) * 2)
     try:
         timeline = read_json(o / "timeline.json")
         voice = {c["scene"]: c for c in read_json(o / "voice" / "voice.json")["clips"]}
@@ -751,7 +775,7 @@ async def record_scenes(out, only):
             await guide_async(visible, "tint", "Recording in the background" if moved else "Recording in this window",
                               "Getting ready…" if moved else "Please don't touch the mouse or keyboard until it's done.")
         else:
-            browser = await p.chromium.launch()
+            browser = await p.chromium.launch(args=launch_args(steps))
             ctx = await browser.new_context(**ctx_args(steps))
             await ctx.add_init_script(path=str(CURSOR_JS))
             page = await ctx.new_page()
@@ -794,11 +818,12 @@ async def record_scenes(out, only):
             cdp = await ctx.new_cdp_session(page)
 
             def on_frame(f, cdp=cdp, frames=frames):
-                frames.append((f["metadata"]["timestamp"], f["data"]))
+                md = f["metadata"]
+                frames.append((md["timestamp"], f["data"], md.get("deviceWidth"), md.get("deviceHeight")))
                 ack = asyncio.ensure_future(cdp.send("Page.screencastFrameAck", {"sessionId": f["sessionId"]}))
                 ack.add_done_callback(lambda t: t.exception())  # a late ack after the page closed is harmless
             cdp.on("Page.screencastFrame", on_frame)
-            await cdp.send("Page.startScreencast", {"format": "jpeg", "quality": 92, "maxWidth": 1920, "maxHeight": 1080, "everyNthFrame": 1})
+            await cdp.send("Page.startScreencast", {"format": "jpeg", "quality": 100, "maxWidth": 3840, "maxHeight": 2160, "everyNthFrame": 1})
             t0, wall0 = time.monotonic(), time.time()
             at, actions, err, last_end = schedule(sc.get("steps", []), words, scene.get("lead_s", 0.3)), [], None, 0.0
             zooms = []
@@ -840,12 +865,14 @@ async def record_scenes(out, only):
             if not frames:
                 frames = [(wall0, base64.b64encode(await page.screenshot(type="jpeg", quality=90)).decode())]
             path = o / "capture" / f"{sid}.mp4"
-            encode(sorted(frames), wall0, wall_end, path, zooms, size=(430, 932) if phone else (1920, 1080), light=display == "spotlight")
+            size = (even(430 * steps["_scale"]), even(932 * steps["_scale"])) if phone else (W, H)
+            encode(sorted(frames), wall0, wall_end, path, zooms, size=size, light=display == "spotlight")
             if err:
                 failures.append(err)
+            area = next(([f[2], f[3]] for f in frames if len(f) == 4 and f[2] and f[3]), None)  # CSS size the camera saw
             results.append({"scene": sid, "file": str(path), "target_s": scene["dur_s"],
                             "recorded_s": round(wall_end - wall0, 2), "over_s": round(max(0.0, elapsed - scene["dur_s"]), 2),
-                            "need_s": need, "actions": actions, "zooms": zooms, "ok": err is None})
+                            "need_s": need, "actions": actions, "zooms": zooms, "area": area, "ok": err is None})
         if visible is not None:
             await guide_async(visible, "tint", "Done. Recording finished.", "unveo closes this window by itself.", True)
             await asyncio.sleep(1.5)
@@ -863,6 +890,12 @@ async def record_scenes(out, only):
         res["next"] = "run plan_timeline.py again: it lengthens " + ", ".join(longer) + " so the cut doesn't land on a click"
     if failures:
         emit("capture", ok=False, user_action=True, message=f"{len(failures)} scene(s) failed while recording", **res)
+    want = {r["scene"]: 430 / 932 if (steps["scenes"][r["scene"]].get("display") == "phone") else 16 / 9 for r in results}
+    boxed = [r["scene"] for r in results if r["area"] and abs(r["area"][0] / r["area"][1] / want[r["scene"]] - 1) > 0.02]
+    if boxed:  # e.g. the person's window was resized or is smaller than the viewport: the video gets black bars
+        res["letterboxed"] = boxed
+        res["fix"] = ("the browser showed a non-16:9 area for " + ", ".join(boxed) + " (see each scene's area), so those videos "
+                      "have black bars; keep the recording window unresized (or use a bigger screen) and record them again")
     over = [r["scene"] for r in results if r["over_s"] > 1.5]
     emit("capture", message=f"recorded {len(results)} scene(s)" + (f"; {over} ran long" if over else ""), **res)
 
