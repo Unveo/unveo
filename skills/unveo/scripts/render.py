@@ -13,7 +13,7 @@ from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import emit, ffmpeg_exe, log, out_dir, read_json, sha1_of  # noqa: E402
+from common import clips_dir, emit, ffmpeg_exe, log, out_dir, read_json, sha1_of  # noqa: E402
 
 TEMPLATES = Path(__file__).resolve().parents[1] / "templates" / "film"
 FPS, SUBFRAMES, SHUTTER = 30, 3, 0.5
@@ -427,6 +427,10 @@ def work_cmd(out, mode, ids):
     emit("render", page_errors=errors)
 
 
+def videos(d):
+    return sorted(f for f in Path(d).glob("*") if f.suffix.lower() in (".mp4", ".mov", ".webm", ".mkv")) if Path(d).exists() else []
+
+
 def stills_cmd(out, at=None, every=False):
     from playwright.sync_api import sync_playwright
     from PIL import Image, ImageDraw, ImageFont
@@ -451,7 +455,7 @@ def stills_cmd(out, at=None, every=False):
     with sync_playwright() as pw:
         for i, (s, t) in enumerate(picks):
             f = d / f"still-{i:02d}-{s['id']}.png"
-            if s["visual"] == "anim" or (s["visual"] == "clip" and not any((o / "clips").glob("*"))):
+            if s["visual"] == "anim" or (s["visual"] == "clip" and not videos(clips_dir(o))):
                 page = Page(pw, film, s["id"], 1920)  # animated scene, or the placeholder card for a missing clip
                 page.shot(t, f)
                 errors += page.errors
@@ -460,9 +464,9 @@ def stills_cmd(out, at=None, every=False):
                 warnings += [{"scene": s["id"], **x} for x in chk["warnings"]]
                 page.close()
             else:
-                src = o / ("capture" if s["visual"] == "capture" else "clips") / f"{s['id']}.mp4"
+                src = (o / "capture" if s["visual"] == "capture" else clips_dir(o)) / f"{s['id']}.mp4"
                 if s["visual"] == "clip":
-                    src = next(iter(sorted((o / "clips").glob("*"))), src) if (o / "clips").exists() else src
+                    src = next(iter(videos(clips_dir(o))), src)
                 if not src.exists():
                     continue
                 subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-ss", f"{t:.2f}", "-i", str(src), "-frames:v", "1", str(f)], check=True)
@@ -533,7 +537,7 @@ def main():
     wk.add_argument("--mode")
     wk.add_argument("--scenes")
     for sp in sub.choices.values():
-        sp.add_argument("--out", default="unveo-out")
+        sp.add_argument("--out", default="unveo-out/.work")
     a = ap.parse_args()
     if a.cmd == "palettes":
         palettes_cmd(a.out)

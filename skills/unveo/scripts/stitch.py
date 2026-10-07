@@ -10,7 +10,7 @@ import argparse, json, re, subprocess, sys, tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import emit, ffmpeg_exe, log, out_dir, read_json  # noqa: E402
+from common import clips_dir, emit, ffmpeg_exe, log, out_dir, read_json  # noqa: E402
 
 FF = None
 ENC = ["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-r", "30",
@@ -58,7 +58,7 @@ def shot_task(o, shot):
 
 def find_clip(o, shot):
     for ext in (".mp4", ".mov", ".webm", ".mkv", ".MP4", ".MOV"):
-        p = o / "clips" / f"{shot}{ext}"
+        p = clips_dir(o) / f"{shot}{ext}"
         if p.exists():
             return p
     return None
@@ -80,7 +80,7 @@ def ingest(o, placeholders):
             shot = shots.get(sid, f"shot-{sid[1:]}")
             src = find_clip(o, shot)
             if not src:
-                missing.append(f"clips/{shot}.mp4")
+                missing.append(f"your-clips/{shot}.mp4")
                 missing_ids.append(sid)
                 data = o / "film" / "data" / f"{sid}.json"
                 data.parent.mkdir(parents=True, exist_ok=True)
@@ -91,9 +91,12 @@ def ingest(o, placeholders):
         fit(src, o / "render" / "segments" / f"{sid}.mp4", s["dur_s"], bg=bg)
         fit(src, o / "render" / "draft" / f"{sid}.mp4", s["dur_s"], 960, 540, bg=bg)
         made.append(sid)
+    if missing and (o / "shots.md").exists():  # the person's copy of what to record, next to where the clips go
+        clips_dir(o).mkdir(parents=True, exist_ok=True)
+        (clips_dir(o) / "what-to-record.md").write_text((o / "shots.md").read_text(encoding="utf-8"), encoding="utf-8")
     if missing and not placeholders:
         emit("stitch", ok=False, user_action=True, missing=missing, made=made,
-             message=f"Waiting for {', '.join(missing)}. Record them (see shots.md), or run with --placeholders.")
+             message=f"Waiting for {', '.join(missing)}. Record them (see your-clips/what-to-record.md), or run with --placeholders.")
     if missing:  # animated cards instead, rendered by render.py with the placeholder template
         for mode in ("final", "draft"):
             p = subprocess.run([sys.executable, str(Path(__file__).parent / "render.py"), mode, "--out", str(o)]
@@ -142,7 +145,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["ingest", "draft", "final"])
     ap.add_argument("--placeholders", action="store_true")
-    ap.add_argument("--out", default="unveo-out")
+    ap.add_argument("--out", default="unveo-out/.work")
     a = ap.parse_args()
     o = out_dir(a.out)
     if a.cmd == "ingest":

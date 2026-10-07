@@ -18,7 +18,7 @@ def main():
     ap.add_argument("step", nargs="?")
     ap.add_argument("status", nargs="?")
     ap.add_argument("--hash")
-    ap.add_argument("--out", default="unveo-out")
+    ap.add_argument("--out", default="unveo-out/.work")
     a = ap.parse_args()
     path = out_dir(a.out) / "state.json"
     state = read_json(path) if path.exists() else {"version": 1, "steps": {}}

@@ -43,7 +43,7 @@ def measure(path, extra=""):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--out", default="unveo-out")
+    ap.add_argument("--out", default="unveo-out/.work")
     a = ap.parse_args()
     o = out_dir(a.out)
     tl = read_json(o / "timeline.json")

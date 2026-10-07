@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import emit, ffmpeg_exe, log, out_dir, read_json, sha1_of, write_json  # noqa: E402
+from common import emit, ffmpeg_exe, log, out_dir, read_json, sha1_of, takes_dir, write_json  # noqa: E402
 import script as scriptmod  # noqa: E402
 
 HOME = Path(os.environ.get("UNVEO_HOME", Path.home() / ".unveo"))
@@ -317,7 +317,7 @@ def kokoro_clip(text, accent, path, voice_id=None):
 
 def own_take(o, sid):
     for ext in (".webm", ".wav", ".m4a", ".mp3", ".ogg", ".mp4"):
-        p = o / "voice" / "own" / f"{sid}{ext}"
+        p = takes_dir(o) / f"{sid}{ext}"
         if p.exists():
             return p
     return None
@@ -353,7 +353,7 @@ def main():
     ap.add_argument("--provider", choices=["edge", "kokoro", "own"])
     ap.add_argument("--voice")
     ap.add_argument("--rate")
-    ap.add_argument("--out", default="unveo-out")
+    ap.add_argument("--out", default="unveo-out/.work")
     a = ap.parse_args()
     o = out_dir(a.out)
     brief = json.loads((o / "brief.json").read_text(encoding="utf-8")) if (o / "brief.json").exists() else {}
@@ -389,7 +389,7 @@ def main():
 
     def want(sid, prov):
         take = own_take(o, sid) if prov == "own" else None
-        wf = o / "voice" / "own" / f"{sid}.words.json"
+        wf = takes_dir(o) / f"{sid}.words.json"
         extra = (take.stat().st_size, take.stat().st_mtime, wf.stat().st_mtime if wf.exists() else 0) if take else ()
         return sha1_of(VERSION, texts[sid], prov, voice_id, rate, *extra)
 
@@ -410,7 +410,7 @@ def main():
         elif prov == "own":
             x, segs = tighten(decode(own_take(o, sid)), with_map=True)
             encode_mp3(x, path)
-            wf = o / "voice" / "own" / f"{sid}.words.json"
+            wf = takes_dir(o) / f"{sid}.words.json"
             heard = json.loads(wf.read_text(encoding="utf-8")).get("words", []) if wf.exists() else []
             words, timing = spoken_words(texts[sid], heard, segs)
         else:

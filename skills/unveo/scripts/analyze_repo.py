@@ -459,7 +459,7 @@ def env_keys(root):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--repo", default=".")
-    ap.add_argument("--out", default="unveo-out")
+    ap.add_argument("--out", default="unveo-out/.work")
     a = ap.parse_args()
     root = resolve(a.repo)
     if root is None:

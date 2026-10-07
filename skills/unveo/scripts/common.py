@@ -18,11 +18,49 @@ def emit(step, ok=True, user_action=False, **fields):
     sys.exit(0 if ok else 2 if user_action else 1)
 
 
-def out_dir(path="unveo-out"):
+OUT = "unveo-out/.work"  # unveo's working files; the person's folder (unveo-out/) only holds what they want to see
+PUBLIC_FILES = ("demo-video.mp4", "subtitles.srt", "script.md", "quality-check.md", "preview.png")
+
+
+def public_dir(o):
+    """unveo-out/ for unveo-out/.work; the folder itself for any other --out (tests, custom paths)."""
+    o = Path(o)
+    return o.parent if o.name == ".work" else o
+
+
+def takes_dir(o):
+    return public_dir(o) / "your-voice"   # own-voice takes from the studio
+
+
+def clips_dir(o):
+    return public_dir(o) / "your-clips"   # clips the person records themselves
+
+
+def migrate(o):
+    """A folder made by an older unveo (everything flat in unveo-out/): move it into .work once."""
+    root = o.parent
+    if o.name != ".work" or o.exists() or not ((root / "brief.json").exists() or (root / "state.json").exists()):
+        return
+    o.mkdir(parents=True)
+    for f in list(root.iterdir()):
+        if f.name == ".work" or f.name.startswith("."):
+            continue
+        if f.name == "clips":
+            f.rename(root / "your-clips")
+        elif f.name == "voice" and (f / "own").exists():
+            (f / "own").rename(root / "your-voice")
+            f.rename(o / "voice")
+        else:
+            f.rename(o / f.name)
+
+
+def out_dir(path=OUT):
     p = Path(path)
+    migrate(p)
     p.mkdir(parents=True, exist_ok=True)
-    if not (p / ".gitignore").exists():
-        (p / ".gitignore").write_text("*\n")  # the folder ignores itself; the user's .gitignore stays untouched
+    root = public_dir(p)
+    if not (root / ".gitignore").exists():
+        (root / ".gitignore").write_text("*\n")  # the folder ignores itself; the user's .gitignore stays untouched
     return p
 
 

@@ -129,7 +129,7 @@ def _get(d, keys):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["validate", "defaults"])
-    ap.add_argument("--out", default="unveo-out")
+    ap.add_argument("--out", default="unveo-out/.work")
     ap.add_argument("--mode", choices=["quick", "guided"], default="guided")
     ap.add_argument("--narration", choices=["ai", "own"], default="ai")
     ap.add_argument("--lang", choices=["en", "hi"], default="en")

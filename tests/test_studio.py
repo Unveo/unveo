@@ -41,7 +41,7 @@ class StudioTest(unittest.TestCase):
         self.assertEqual(lines[0]["text"], "Developers now code with AI.")  # tags removed, as it will be spoken
         self.assertFalse(lines[0]["approved"])
         self.assertTrue(self.post("/take/s02", b"FAKEWEBM")["ok"])
-        self.assertTrue((self.o / "voice/own/s02.webm").exists())
+        self.assertTrue((self.o / "your-voice/s02.webm").exists())
         self.assertTrue(self.get("/lines")[0]["approved"])
         self.post("/finish")
         out, _ = self.p.communicate(timeout=10)

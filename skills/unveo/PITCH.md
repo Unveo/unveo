@@ -92,10 +92,10 @@ Narration: <impact line> [brief: close.impact_line]
 
 ```markdown
 # Shots to record
-Record each shot as its own file and save it in unveo-out/clips/ with the name shown.
+Record each shot as its own file and save it in unveo-out/your-clips/ with the name shown.
 Settings: 1920×1080 if you can, browser zoom 125%, bookmarks bar hidden, notifications off, no sound needed.
 
-## shot-01 → scene s07 · target 10 s · save as clips/shot-01.mp4
+## shot-01 → scene s07 · target 10 s · save as your-clips/shot-01.mp4
 What to do:
   1. <action>
   2. <action>

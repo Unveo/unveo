@@ -132,32 +132,27 @@ segments + mix.wav ─► stitch.py final ─► final.mp4 ─► qa.py ─► q
 
 ## 6. The output folder
 
+The person sees only what they asked for; everything unveo needs to work is in the hidden `.work/`.
+
 ```
 unveo-out/
-├── brief.json            intake answers (reused on re-runs)
-├── state.json            step status + input hashes (for resume)
-├── repo_scan.json        analyze_repo.py output
-├── understanding.md      the agent's summary, as confirmed at Checkpoint A
-├── script.md             narration per scene, with timings and sources
-├── shots.md              only if some scenes fall back to clips the user records
-├── timeline.json         scene order, durations, start times
-├── voice/                s01.mp3 … sNN.mp3, voice.json
-├── capture/
-│   ├── steps.json        browser actions per capture scene
-│   ├── probe.png         first screenshot of the app
-│   ├── dryrun/           failure screenshots + sheet.png
-│   └── s05.mp4 …         recordings, paced to the voice
-├── clips/                where the user drops recordings (shot-01.mp4 …)
-├── film/                 copy of templates/film + data/sNN.json + timeline.js
-├── stills/               sheet.png, palettes.png, individual stills
-├── render/
-│   ├── segments/         one mp4 per scene, normalised
-│   └── draft/            draft segments
-├── audio/                score.wav, mix.wav
-├── draft.mp4             optional preview
-├── final.mp4             the deliverable
-└── qa.md                 the QA report
+├── demo-video.mp4        the video (published by qa.py)
+├── subtitles.srt         captions, for YouTube or Devpost
+├── script.md             the narration with times, no source tags
+├── quality-check.md      the QA report
+├── preview.png           the stills sheet
+├── your-voice/           own-voice takes from the studio (sNN.webm + sNN.words.json), only if chosen
+├── your-clips/           clips the person records (shot-01.mp4 …) + what-to-record.md, only if needed
+├── .gitignore            "*": the folder ignores itself
+└── .work/                hidden working folder (OUT in SKILL.md; every script's default --out)
+    ├── brief.json · state.json · repo_scan.json · understanding.md · script.md (with tags) · shots.md · timeline.json
+    ├── voice/            s01.mp3 … sNN.mp3, voice.json, samples/
+    ├── capture/          steps.json, probe.png, dryrun/, s05.mp4 … (recordings paced to the voice)
+    ├── film/ · stills/ · render/ · audio/ · app/ (setup_app logs)
+    ├── captions.srt · captions.ass · final.mp4 · qa.md
 ```
+
+A folder from an older unveo (everything flat in `unveo-out/`) is moved into `.work/` the first time a script runs. Its `clips/` becomes `your-clips/`, and `voice/own/` becomes `your-voice/`.
 
 ## 7. File schemas
 

@@ -1,12 +1,14 @@
 """Quality gates on the finished video (docs/12 §1) -> qa.md. Exit 0 only if every blocking gate passes.
 
-  qa.py [--out unveo-out]
+  qa.py [--out unveo-out/.work]
+
+Then copies the video, subtitles, a clean script, this report and the preview sheet to unveo-out/.
 """
 import argparse, json, os, re, subprocess, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import emit, ffmpeg_exe, out_dir, read_json  # noqa: E402
+from common import emit, ffmpeg_exe, out_dir, public_dir, read_json  # noqa: E402
 
 FIX = {
     "duration": "Shorten the narration (PITCH.md), re-voice, and re-run from plan_timeline.py.",
@@ -22,13 +24,43 @@ FIX = {
 }
 
 
+def clean_script(o, brief, tl):
+    """The script as a person reads it: times, what's on screen, the words. No source tags."""
+    import script as scriptmod
+    narr = {x["id"]: x for x in scriptmod.parse((o / "script.md").read_text(encoding="utf-8"))}
+    mmss = lambda t: f"{int(t // 60)}:{int(t % 60):02d}"
+    out = [f"# {brief.get('project', {}).get('name', 'Demo')} · demo script", ""]
+    for sc in tl["scenes"]:
+        x = narr.get(sc["id"], {})
+        what = {"capture": "the app, recorded", "clip": "your clip"}.get(sc["visual"], (sc.get("template") or "animation").replace("-", " "))
+        out += [f"**{mmss(sc['start_s'])}–{mmss(sc['start_s'] + sc['dur_s'])}** · {what}", "",
+                scriptmod.spoken(x.get("narration", "")) or "_(no voice)_", ""]
+    return "\n".join(out)
+
+
+def publish(o, brief, tl):
+    """Copy what the person wants to see to the top of unveo-out/, with plain names."""
+    import shutil
+    root = public_dir(o)
+    done = []
+    for src, name in ((o / "final.mp4", "demo-video.mp4"), (o / "captions.srt", "subtitles.srt"),
+                      (o / "qa.md", "quality-check.md"), (o / "stills" / "sheet.png", "preview.png")):
+        if src.exists():
+            shutil.copyfile(src, root / name)
+            done.append(str(root / name))
+    if (o / "script.md").exists():
+        (root / "script.md").write_text(clean_script(o, brief, tl), encoding="utf-8")
+        done.append(str(root / "script.md"))
+    return done
+
+
 def ff_info(path):
     return subprocess.run([ffmpeg_exe(), "-hide_banner", "-i", str(path)], capture_output=True, text=True).stderr
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--out", default="unveo-out")
+    ap.add_argument("--out", default="unveo-out/.work")
     a = ap.parse_args()
     o = out_dir(a.out)
     final = o / "final.mp4"
@@ -138,9 +170,10 @@ def main():
     if fails:
         lines += ["", "## How to fix"] + [f"- **{g['gate']}**: {FIX.get(g['gate'], '')}" for g in fails]
     (o / "qa.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    published = publish(o, brief, tl)
     if not ok:
-        emit("qa", ok=False, user_action=True, gates=gates, message=head)
-    emit("qa", gates=gates, outputs=[str(o / "qa.md")], message=head)
+        emit("qa", ok=False, user_action=True, gates=gates, outputs=published, message=head)
+    emit("qa", gates=gates, outputs=published, message=head)
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ description: Use when someone needs a demo video, submission video, pitch video 
 
 unveo v0.1.0-dev
 
-Makes a judge-ready hackathon demo video from a repo: the real web app recorded in an automated browser, animated explainers for the hidden logic, a free English or Hindi voiceover, and a 1080p MP4 that fits the time limit. The output goes to `unveo-out/final.mp4`.
+Makes a judge-ready hackathon demo video from a repo: the real web app recorded in an automated browser, animated explainers for the hidden logic, a free English or Hindi voiceover, and a 1080p MP4 that fits the time limit. The video lands at `unveo-out/demo-video.mp4`.
 
 Four phases: **0 Setup → 1 Understand (Checkpoint A) → 2 Write (Checkpoint B) → 3 Build (Checkpoint C) → final.mp4.** Check `OUT/state.json` first: on `resume`, skip every step already marked done or approved.
 
@@ -24,7 +24,8 @@ Four phases: **0 Setup → 1 Understand (Checkpoint A) → 2 Write (Checkpoint B
 
 - **SKILL_DIR** is the folder containing this SKILL.md. Resolve it once, from the path you loaded this file from, and use absolute paths from then on.
 - **PY** is the `py` value printed by the setup check (the unveo venv's Python).
-- **OUT** is `unveo-out` in the folder where the user started: the repo root when inside a repo. For a GitHub URL it's still the user's current folder, not the clone.
+- **OUT** is `unveo-out/.work` in the folder where the user started (the repo root when inside a repo; for a GitHub URL, still the user's current folder, not the clone). Every script uses it by default. It's hidden: briefs, JSON, recordings, renders and logs live there.
+- **The user's folder** is `unveo-out/`. It holds only what they want: `demo-video.mp4`, `subtitles.srt`, `script.md` (clean, to read), `quality-check.md`, `preview.png`, plus `your-voice/` (studio takes) and `your-clips/` (clips they record, with `what-to-record.md`). `qa.py` publishes the files; never put anything else there.
 - Run every command from that folder. Every script prints progress to stderr. Its **last stdout line is JSON**, and its exit code means: `0` ok · `1` error · `2` the user must act (read `message`, `errors` or `fix`).
 - Record progress with `"<PY>" "<SKILL_DIR>/scripts/state.py" set <step> <done|approved|failed>` after each numbered step that names a state step.
 
@@ -171,7 +172,7 @@ Then ask:
 - For edits: apply them, re-run `script.py check` (and `capture.py dry-run --scene` for changed scenes), and show only what changed.
 - For ⚠️ steps the user ticks: set `"approved": true` on those steps and re-run the dry run for that scene.
 - On *Approve*, run `state.py set script approved`.
-- If there are shots, tell the user they can start recording now. The files go in `OUT/clips/` with the names in shots.md.
+- If there are shots, tell the user they can start recording now. The files go in `unveo-out/your-clips/` with the names in shots.md.
 - Then go on to Phase 3.
 
 ## Phase 3: Build
@@ -221,7 +222,7 @@ Then ask: **"Does anything look automated or generic?"** *Looks natural (Recomme
 Apply any change and redo the stills. On *Render*, run `state.py set stills approved`.
 
 **22. Fit recordings and clips.** Run `"<PY>" "<SKILL_DIR>/scripts/stitch.py" ingest`. If it exits 2 with `missing` clips, ask:
-> **These clips aren't in unveo-out/clips/ yet: <list>.**
+> **These clips aren't in unveo-out/your-clips/ yet: <list>.** (what to record: `unveo-out/your-clips/what-to-record.md`)
 > I'll record them now (wait) · Use placeholder cards
 
 For placeholders, run it with `--placeholders`.
@@ -241,8 +242,8 @@ Captions show the real words even where `say_as` changes the pronunciation. `bri
 
 **26. QA.** Read `<SKILL_DIR>/QA.md`. Run `"<PY>" "<SKILL_DIR>/scripts/qa.py"`. Fix every failing blocking gate as QA.md says, re-run only the affected steps, then stitch and QA again. When it passes, `state.py set qa done`.
 
-**27. Done.** If step 6 started the app, run `"<PY>" "<SKILL_DIR>/scripts/setup_app.py" stop`. Then open the folder (`open OUT` on macOS, `explorer OUT` on Windows, `xdg-open OUT` on Linux). Then say, filling in the values:
-`final.mp4 · <m:ss> · 1920×1080 · <LUFS> LUFS · captions burned in. Script: unveo-out/script.md. Captions file: unveo-out/captions.srt. QA: unveo-out/qa.md.`
+**27. Done.** If step 6 started the app, run `"<PY>" "<SKILL_DIR>/scripts/setup_app.py" stop`. Then open the user's folder (`open unveo-out` on macOS, `explorer unveo-out` on Windows, `xdg-open unveo-out` on Linux). Then say, filling in the values:
+`unveo-out/demo-video.mp4 · <m:ss> · 1920×1080 · <LUFS> LUFS · captions burned in. Also there: subtitles.srt, script.md, quality-check.md.`
 Mention any `clip` scenes still showing placeholder cards.
 
 ## Changing one thing later

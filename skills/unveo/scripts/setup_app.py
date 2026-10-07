@@ -234,7 +234,7 @@ def main():
     ap.add_argument("cmd", choices=["plan", "install", "start", "stop"])
     ap.add_argument("--repo", default=".")
     ap.add_argument("--yes", action="store_true", help="the user approved installing/starting")
-    ap.add_argument("--out", default="unveo-out")
+    ap.add_argument("--out", default="unveo-out/.work")
     a = ap.parse_args()
     repo = Path(a.repo).expanduser().resolve()
     o = out_dir(a.out)

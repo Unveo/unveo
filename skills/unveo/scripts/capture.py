@@ -819,7 +819,7 @@ def main():
         sp = sub.add_parser(name)
         sp.add_argument("--scene")
     for sp in sub.choices.values():
-        sp.add_argument("--out", default="unveo-out")
+        sp.add_argument("--out", default="unveo-out/.work")
     a = ap.parse_args()
     if a.cmd == "probe":
         probe(a.url, a.out)

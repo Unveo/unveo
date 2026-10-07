@@ -212,7 +212,7 @@ def check(out):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["check", "budget"])
-    ap.add_argument("--out", default="unveo-out")
+    ap.add_argument("--out", default="unveo-out/.work")
     ap.add_argument("--limit", type=int, default=120)
     ap.add_argument("--lang", default="en")
     ap.add_argument("--rate", default="+0%")

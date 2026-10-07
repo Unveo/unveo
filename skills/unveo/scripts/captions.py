@@ -136,7 +136,7 @@ def build(o):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--out", default="unveo-out")
+    ap.add_argument("--out", default="unveo-out/.work")
     a = ap.parse_args()
     o = out_dir(a.out)
     mode = json.loads((o / "brief.json").read_text(encoding="utf-8")).get("captions", "burned")

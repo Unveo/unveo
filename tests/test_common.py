@@ -20,6 +20,30 @@ class OutDirTest(unittest.TestCase):
             self.assertEqual((o / ".gitignore").read_text().strip(), "*")
 
 
+class PublicFolderTest(unittest.TestCase):
+    def test_work_folder_sits_inside_the_users_folder(self):
+        with tempfile.TemporaryDirectory() as d:
+            o = common.out_dir(Path(d) / "unveo-out" / ".work")
+            self.assertEqual(common.public_dir(o), Path(d) / "unveo-out")
+            self.assertEqual(common.takes_dir(o), Path(d) / "unveo-out" / "your-voice")
+            self.assertEqual(common.clips_dir(o), Path(d) / "unveo-out" / "your-clips")
+            self.assertTrue((Path(d) / "unveo-out" / ".gitignore").exists())
+
+    def test_an_old_flat_folder_moves_into_work_once(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / "unveo-out"
+            (root / "voice" / "own").mkdir(parents=True)
+            (root / "brief.json").write_text("{}")
+            (root / "voice" / "own" / "s02.webm").write_bytes(b"x")
+            (root / "clips").mkdir()
+            (root / "clips" / "shot-01.mp4").write_bytes(b"y")
+            o = common.out_dir(root / ".work")
+            self.assertTrue((o / "brief.json").exists())
+            self.assertFalse((root / "brief.json").exists())
+            self.assertTrue((root / "your-voice" / "s02.webm").exists())
+            self.assertTrue((root / "your-clips" / "shot-01.mp4").exists())
+
+
 class EmitTest(unittest.TestCase):
     def test_ok_prints_json_last_line_and_exits_0(self):
         code, out = run_emit("common.emit('voice', outputs=['a.mp3'])")

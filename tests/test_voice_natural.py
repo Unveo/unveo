@@ -76,14 +76,14 @@ class TightenTest(unittest.TestCase):
 class OwnVoiceTest(unittest.TestCase):
     def test_own_provider_builds_voice_json_from_approved_takes(self):
         o = Path(tempfile.mkdtemp())
-        (o / "voice/own").mkdir(parents=True)
+        (o / "your-voice").mkdir(parents=True)
         (o / "script.md").write_text("# S\n## s01 · context · anim:title · 2.5 s\n(no narration)\n\n"
                                      "## s02 · context · anim:context · target 3 s\nNarration: Hello there. [brief: limit_s]\n\n"
                                      "## s03 · close · anim:close · target 3 s\nNarration: Bye now. [brief: limit_s]\n")
         (o / "brief.json").write_text(json.dumps({"version": 1, "language": "en", "voice": {"provider": "own"}}))
         for sid in ("s02", "s03"):
             subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono:d=0.3", "-f", "lavfi",
-                            "-i", "sine=f=220:d=1.2", "-filter_complex", "[0][1][0]concat=n=3:v=0:a=1", str(o / f"voice/own/{sid}.wav")], check=True)
+                            "-i", "sine=f=220:d=1.2", "-filter_complex", "[0][1][0]concat=n=3:v=0:a=1", str(o / f"your-voice/{sid}.wav")], check=True)
         p = subprocess.run([sys.executable, str(SCRIPTS / "voice.py"), "--out", str(o)], capture_output=True, text=True, timeout=120)
         res = json.loads(p.stdout.strip().splitlines()[-1])
         self.assertEqual(p.returncode, 0, res)
@@ -94,7 +94,7 @@ class OwnVoiceTest(unittest.TestCase):
 
     def test_missing_takes_are_listed(self):
         o = Path(tempfile.mkdtemp())
-        (o / "voice/own").mkdir(parents=True)
+        (o / "your-voice").mkdir(parents=True)
         (o / "script.md").write_text("# S\n## s02 · context · anim:context · target 3 s\nNarration: Hello. [brief: limit_s]\n")
         (o / "brief.json").write_text(json.dumps({"version": 1, "language": "en", "voice": {"provider": "own"}}))
         p = subprocess.run([sys.executable, str(SCRIPTS / "voice.py"), "--out", str(o)], capture_output=True, text=True, timeout=60)

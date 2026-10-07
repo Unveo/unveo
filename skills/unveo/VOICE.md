@@ -40,7 +40,7 @@ Chosen in the start round. The voice is recorded **before** the screen, so the r
    - **Other browsers:** with no speech recognition, the yellow follows the pace.
    - **Stopping:** recording stops by itself 0.6 s after the last word.
 3. The user plays it back, re-records if they want, and approves.
-4. **What's saved:** the take goes to `voice/own/<scene>.webm`, and the time each word was heard goes to `<scene>.words.json`. Finish ends the session.
+4. **What's saved:** the take goes to `unveo-out/your-voice/<scene>.webm`, and the time each word was heard goes to `<scene>.words.json`. Finish ends the session.
 5. **Building the clips:** `voice.py --provider own` does three things:
    - **Silence:** cuts the edges and the long pauses, judged against the mic's own noise.
    - **Word timings:** carries the heard word times through those cuts (`timing: "spoken"`), so captions, compose blocks and explainer beats land on the real words. Without a words file, the timings are estimated over the spoken parts only.

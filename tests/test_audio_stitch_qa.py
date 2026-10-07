@@ -28,7 +28,7 @@ def run(name, out, *args):
 def project(limit=60):
     """A tiny finished project: 2 animated segments, 1 recording (too long), 1 clip (too short), voices, script."""
     o = Path(tempfile.mkdtemp())
-    for d in ("render/segments", "capture", "clips", "voice", "film/data"):
+    for d in ("render/segments", "capture", "your-clips", "voice", "film/data"):
         (o / d).mkdir(parents=True)
     scenes = [("s01", "context", "anim", "title", 2.5, 0.0), ("s02", "product", "capture", None, 3.0, 2.0),
               ("s03", "product", "clip", None, 2.0, 1.5), ("s04", "close", "anim", "close", 4.0, 1.0)]
@@ -44,14 +44,14 @@ def project(limit=60):
     src("navy", 2.5, o / "render/segments/s01.mp4")
     src("white", 4.0, o / "render/segments/s04.mp4")
     src("gray", 5.0, o / "capture/s02.mp4")           # longer than its 3.0 s: trimmed
-    src("teal", 1.0, o / "clips/shot-01.mp4")         # shorter than its 2.0 s: last frame held
+    src("teal", 1.0, o / "your-clips/shot-01.mp4")         # shorter than its 2.0 s: last frame held
     for sid, *_, vs in scenes:
         if vs:
             subprocess.run([FF, "-v", "error", "-y", "-f", "lavfi", "-i", f"sine=frequency=330:duration={vs}", "-ar", "48000",
                             str(o / f"voice/{sid}.mp3")], check=True)
     (o / "voice/voice.json").write_text(json.dumps({"version": 1, "provider": "edge", "clips": [
         {"scene": sid, "file": f"voice/{sid}.mp3", "dur_s": vs} for sid, *_, vs in scenes if vs]}))
-    (o / "shots.md").write_text("## shot-01 → scene s03 · target 3 s · save as clips/shot-01.mp4\n")
+    (o / "shots.md").write_text("## shot-01 → scene s03 · target 3 s · save as your-clips/shot-01.mp4\n")
     (o / "brief.json").write_text(json.dumps({"version": 1, "limit_s": limit, "language": "en",
         "project": {"name": "T", "source": {"kind": "local", "path": str(o)}},
         "palette": {"name": "x", "tokens": {"bg": "#f5f7f5", "ink": "#1b1f1c"}},
@@ -108,12 +108,30 @@ class StitchQaTest(unittest.TestCase):
         self.assertTrue(cap["ok"], cap)
         self.assertTrue((o / "captions.srt").exists())
 
+    def test_a_finished_run_leaves_only_the_public_files_on_top(self):
+        import shutil
+        built, _ = project()
+        root = Path(tempfile.mkdtemp()) / "unveo-out"
+        work = root / ".work"
+        shutil.copytree(built, work)
+        shutil.move(str(work / "your-clips"), str(root / "your-clips"))  # the user's own clips live on top
+        for step in (("stitch.py", "ingest"), ("score.py",), ("mix.py",), ("stitch.py", "final")):
+            code, res = run(step[0], work, *step[1:])
+            self.assertEqual(code, 0, (step, res))
+        code, res = run("qa.py", work)
+        self.assertEqual(code, 0, res)
+        top = {f.name for f in root.iterdir()}
+        self.assertEqual(top - {"preview.png"}, {".work", ".gitignore", "your-clips", "demo-video.mp4", "subtitles.srt",
+                                                  "quality-check.md", "script.md"})
+        self.assertEqual((root / "demo-video.mp4").stat().st_size, (work / "final.mp4").stat().st_size)
+        self.assertNotIn("[", (root / "script.md").read_text())  # a clean read: no source tags
+
     def test_missing_clip_needs_the_user(self):
         o, _ = project()
-        (o / "clips/shot-01.mp4").unlink()
+        (o / "your-clips/shot-01.mp4").unlink()
         code, res = run("stitch.py", o, "ingest")
         self.assertEqual(code, 2)
-        self.assertEqual(res["missing"], ["clips/shot-01.mp4"])
+        self.assertEqual(res["missing"], ["your-clips/shot-01.mp4"])
 
     def test_feel_report_flags_hype_on_screen(self):
         o, _ = project()
@@ -127,7 +145,7 @@ class StitchQaTest(unittest.TestCase):
 
     def test_missing_clip_with_placeholders_gets_a_card_segment(self):
         o, _ = project()
-        (o / "clips/shot-01.mp4").unlink()
+        (o / "your-clips/shot-01.mp4").unlink()
         code, res = run("stitch.py", o, "ingest", "--placeholders")
         self.assertEqual(code, 0, res)
         d, _ = info(o / "render/segments/s03.mp4")
@@ -135,7 +153,7 @@ class StitchQaTest(unittest.TestCase):
 
     def test_qa_warns_when_a_placeholder_card_is_in_the_video(self):
         o, _ = project()
-        (o / "clips/shot-01.mp4").unlink()
+        (o / "your-clips/shot-01.mp4").unlink()
         run("stitch.py", o, "ingest", "--placeholders"); run("score.py", o); run("mix.py", o); run("stitch.py", o, "final")
         code, res = run("qa.py", o)
         g = next(x for x in res["gates"] if x["gate"] == "placeholders")

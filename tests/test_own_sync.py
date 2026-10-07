@@ -34,13 +34,13 @@ class TimeMapTest(unittest.TestCase):
 class SpokenWordsTest(unittest.TestCase):
     def test_studio_word_times_become_voice_json_words(self):
         o = Path(tempfile.mkdtemp())
-        (o / "voice/own").mkdir(parents=True)
+        (o / "your-voice").mkdir(parents=True)
         (o / "script.md").write_text("# S\n## s02 · context · anim:context · target 3 s\nNarration: Hello there. Bye now. [brief: limit_s]\n")
         (o / "brief.json").write_text(json.dumps({"version": 1, "language": "en", "voice": {"provider": "own"}}))
         import soundfile as sf
-        sf.write(str(o / "voice/own/s02.wav"), take(), SR)
+        sf.write(str(o / "your-voice/s02.wav"), take(), SR)
         lag = voice.RECOGNITION_LAG_S
-        (o / "voice/own/s02.words.json").write_text(json.dumps({"words": [
+        (o / "your-voice/s02.words.json").write_text(json.dumps({"words": [
             {"w": "Hello", "t": 1.0 + lag}, {"w": "there", "t": 1.5 + lag}, {"w": "Bye", "t": 3.5 + lag}, {"w": "now", "t": 4.0 + lag}]}))
         p = subprocess.run([sys.executable, str(SCRIPTS / "voice.py"), "--out", str(o)], capture_output=True, text=True, timeout=120)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
@@ -106,7 +106,7 @@ class StudioSyncTest(unittest.TestCase):
     def test_word_timings_are_saved_next_to_the_take(self):
         req = urllib.request.Request(self.url + "/words/s02", data=json.dumps({"words": [{"w": "Developers", "t": 0.9}]}).encode(), method="POST")
         self.assertTrue(json.loads(urllib.request.urlopen(req, timeout=5).read())["ok"])
-        self.assertEqual(json.loads((self.o / "voice/own/s02.words.json").read_text())["words"][0]["w"], "Developers")
+        self.assertEqual(json.loads((self.o / "your-voice/s02.words.json").read_text())["words"][0]["w"], "Developers")
 
     def test_logo_is_served(self):
         r = urllib.request.urlopen(self.url + "/logo.png", timeout=5)

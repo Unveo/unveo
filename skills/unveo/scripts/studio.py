@@ -4,7 +4,7 @@
 
 Opens a local teleprompter page: the line to read is highlighted; Record, Play it back, Re-record if
 needed, then Approve. The word being said lights up (Chrome's speech recognition) and a pace guide moves at the
-speed chosen in the brief. Approved takes are saved to voice/own/<scene>.webm with the time each word was heard
+speed chosen in the brief. Approved takes are saved to unveo-out/your-voice/<scene>.webm with the time each word was heard
 (<scene>.words.json), so the video can follow the real voice; Finish ends the session.
 Then run `voice.py --provider own` to use them. The audio stays on this computer; in Chrome the live
 highlight uses the browser's built-in speech recognition, which sends audio to Google while you record.
@@ -13,7 +13,7 @@ import argparse, http.server, json, re, socketserver, sys, threading, webbrowser
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import emit, out_dir  # noqa: E402
+from common import emit, out_dir, takes_dir  # noqa: E402
 import script as scriptmod  # noqa: E402
 
 TEMPLATES = Path(__file__).resolve().parents[1] / "templates"
@@ -27,7 +27,7 @@ def lines(o):
     scenes = [s for s in scriptmod.parse((o / "script.md").read_text(encoding="utf-8")) if s["narration"]]
     brief = json.loads((o / "brief.json").read_text(encoding="utf-8")) if (o / "brief.json").exists() else {}
     wps = scriptmod.RATE.get(brief.get("language", "en"), 2.2) * scriptmod.rate_factor((brief.get("voice") or {}).get("rate"))
-    own = o / "voice" / "own"
+    own = takes_dir(o)
     out = []
     for s in scenes:
         text = scriptmod.spoken(s["narration"])
@@ -40,14 +40,15 @@ def lines(o):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["serve"])
-    ap.add_argument("--out", default="unveo-out")
+    ap.add_argument("--out", default="unveo-out/.work")
     ap.add_argument("--port", type=int, default=0)
     ap.add_argument("--no-open", action="store_true")
     ap.add_argument("--timeout", type=int, default=3600)
     a = ap.parse_args()
     o = out_dir(a.out)
-    own = o / "voice" / "own"
+    own = takes_dir(o)
     own.mkdir(parents=True, exist_ok=True)
+    (o / "voice").mkdir(exist_ok=True)
     done = threading.Event()
 
     class Handler(http.server.BaseHTTPRequestHandler):
