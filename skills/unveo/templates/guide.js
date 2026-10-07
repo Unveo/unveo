@@ -27,6 +27,14 @@
       .screen .big { font: 700 44px/1.1 system-ui, sans-serif; letter-spacing: -.02em; }
       .screen .small { font: 500 18px system-ui, sans-serif; opacity: .75; }
       .rec { width: 14px; height: 14px; border-radius: 50%; background: #e5484d; display: inline-block; margin-right: 12px; vertical-align: middle; animation: blink 1s infinite; }
+      .tint { position: fixed; inset: 0; background: rgba(253, 250, 141, .32); backdrop-filter: saturate(.85);
+              display: flex; align-items: center; justify-content: center; transition: opacity .4s ease; }
+      .tcard { background: ${YELLOW}; color: ${INK}; border: 2px solid ${INK}; border-radius: 22px; padding: 26px 34px;
+               box-shadow: 8px 8px 0 ${INK}; display: flex; gap: 18px; align-items: center; max-width: min(620px, calc(100% - 40px)); }
+      .tcard .mark { font: 900 30px/1 system-ui, sans-serif; letter-spacing: -.05em; }
+      .tcard .t1 { font: 800 22px/1.2 system-ui, sans-serif; display: flex; align-items: center; gap: 10px; }
+      .tcard .t2 { font: 500 16px/1.4 system-ui, sans-serif; opacity: .8; margin-top: 4px; }
+      .tcard.done { background: #e7f6ec; }
       @keyframes pulse { 50% { transform: scale(1.04); } }
       @keyframes blink { 50% { opacity: .25; } }
     </style><div class="layer"></div>`;
@@ -77,12 +85,22 @@
       place();
       return true;
     },
-    screen(kind, big, small) {  // kind: "rec" (yellow, before a scene) or "done" (green)
+    screen(kind, big, small) {  // a full-screen notice (kept for the fallback path)  // kind: "rec" (yellow, before a scene) or "done" (green)
       mount(); cancelAnimationFrame(raf); target = box = null;
       const bg = kind === "done" ? "#e7f6ec" : YELLOW;
       layer().innerHTML = `<div class="screen" style="background:${bg}"><div class="big">${kind === "rec" ? '<span class="rec"></span>' : ""}</div><div class="small"></div></div>`;
       root.querySelector(".big").append(big);
       root.querySelector(".small").textContent = small || "";
+      return true;
+    },
+    tint(title, sub, done) {  // steady and calm while unveo works in the background; never in the recording
+      mount(); cancelAnimationFrame(raf); target = box = null;
+      if (!root.querySelector(".tint")) {
+        layer().innerHTML = `<div class="tint"><div class="tcard"><div class="mark">/u.</div><div><div class="t1"></div><div class="t2"></div></div></div></div>`;
+      }
+      root.querySelector(".tcard").classList.toggle("done", !!done);
+      root.querySelector(".t1").innerHTML = (done ? "" : '<span class="rec"></span>') + title.replace(/[<&]/g, "");
+      root.querySelector(".t2").textContent = sub || "";
       return true;
     },
     clear() { cancelAnimationFrame(raf); target = box = null; if (host) host.remove(); host = root = null; return true; },

@@ -152,7 +152,7 @@ Run `"<PY>" "<SKILL_DIR>/scripts/script.py" check` and fix every listed error un
 - Run `"<PY>" "<SKILL_DIR>/scripts/capture.py" check` and fix every error.
 - Run `"<PY>" "<SKILL_DIR>/scripts/capture.py" dry-run`. Fix failures from their `closest` and screenshot, and re-run them with `--scene sNN`. That's at most 3 rounds per scene; a scene that still fails becomes a clip (CAPTURE.md, step 4).
 - If the app needs a login and the env variables aren't set, ask the user to set them now. Never ask for the values.
-- **Manual login:** before each `dry-run` and `record`, tell the user: "A browser window is opening. Log in there however you normally do; I'll carry on by myself once you're in. Please don't close it or click around after logging in." If it exits 2 with a login timeout, ask whether they want to try again or record those scenes as clips.
+- **Manual login:** before each `dry-run` and `record`, tell the user: "A browser window is opening. Log in there however you normally do; a dotted arrow shows where. Once you're in, the window turns yellow and unveo works in the background. Please leave it open." If it exits 2 with a login timeout, ask whether they want to try again or record those scenes as clips.
 - **One-time actions:** if a step can't be undone for the user (a form that accepts one response per person, an order, a vote), add `"once": true` to it. It's then flagged ⚠️ and skipped unless they approve it, and they should know it uses up their real entry (suggest a second account).
 - Re-run `script.py check` after any scene turns into a clip.
 - When it all passes, run `state.py set dryrun done`.

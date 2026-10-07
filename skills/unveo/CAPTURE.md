@@ -40,10 +40,11 @@ One scene in steps.json for each `capture` scene in script.md, with the same id.
   - The profile is kept in `~/.unveo/profiles/<site>`, so the recording usually doesn't need a second login.
   - Pick `until` carefully: something that appears only after login ("Continuing as", "Log out", the dashboard URL).
   - **The window guides the person:**
-    - **While waiting:** a yellow pill at the bottom says to log in, and a dotted box with an arrow marks what to click. That's the page's own sign-in button (or a Google/GitHub sign-in frame), or `"point_at": <target>` when the guess would be wrong.
-    - **Before each scene:** a yellow "Recording sNN · hands off" screen, then the tab title shows `● REC sNN`.
-    - **At the end:** a green "Done" screen.
-    - None of it is ever in the video: it's removed before the camera starts.
+    - **While waiting:** a yellow pill at the bottom says to log in, and a dotted box with an arrow marks what to click: the page's own sign-in button (or a Google/GitHub sign-in frame), or `"point_at": <target>` when the guess would be wrong.
+    - **After login:** unveo copies the login (cookies, localStorage, IndexedDB, sessionStorage) into a **hidden browser** and records there. The person's window keeps a steady translucent yellow tint with a card: "Recording in the background · Scene 2 of 4". Nothing flickers, and nothing they do can disturb a take. The dry run rehearses the same way.
+    - **If the app won't accept the copied login** (the `until` check fails in the hidden browser within 8 s), unveo records in the person's window instead. The tint stays between scenes, lifts 0.3 s before each take, and the tab title shows `● REC`.
+    - **At the end:** the card turns green: "Done".
+    - The result's `recorded_in` says which happened (`hidden` or `window`). None of the guide is ever in the video.
 
 ## Actions
 

@@ -27,6 +27,54 @@ DEFAULT_TIMEOUT_MS = 10000
 CURSOR_JS = Path(__file__).resolve().parents[1] / "templates" / "cursor.js"
 GUIDE_JS = Path(__file__).resolve().parents[1] / "templates" / "guide.js"
 LOGIN_BAR = "Please log in here, any way you like. unveo carries on by itself once you're in."
+HIDDEN_CHECK_S = float(os.environ.get("UNVEO_HIDDEN_CHECK_S", 8))  # how long the hidden browser may take to show it's logged in
+
+
+def session_script(origin, pairs):
+    """Restore the visible window's sessionStorage in the hidden browser (storage_state doesn't carry it)."""
+    return (f"if (location.origin === {json.dumps(origin)}) for (const [k, v] of {json.dumps(pairs)}) "
+            "if (sessionStorage.getItem(k) === null) sessionStorage.setItem(k, v);")
+
+
+def hidden_session_sync(p, vctx, vpage, steps, base):
+    b = None
+    try:
+        state = vctx.storage_state(indexed_db=True)
+        origin, pairs = vpage.evaluate("location.origin"), vpage.evaluate("() => Object.entries(sessionStorage)")
+        b = p.chromium.launch()
+        c = b.new_context(storage_state=state, **ctx_args(steps))
+        c.add_init_script(script=session_script(origin, pairs))
+        pg = c.new_page()
+        pg.goto(urljoin(base, steps["login"]["start"]), wait_until="load")
+        perform(pg, {**login_wait_step(steps), "timeout_ms": int(HIDDEN_CHECK_S * 1000)}, base, os.environ, False)
+        return b, c, pg
+    except Exception as e:
+        log(f"the login didn't carry over to a hidden browser ({str(e).splitlines()[0][:120]}); rehearsing in the visible window")
+        if b:
+            b.close()
+        return None
+
+
+async def hidden_session(p, vctx, vpage, steps, base):
+    """Copy the person's login into a headless browser and check it's accepted there. None = record in their window."""
+    b = None
+    try:
+        state = await vctx.storage_state(indexed_db=True)
+        origin = await vpage.evaluate("location.origin")
+        pairs = await vpage.evaluate("() => Object.entries(sessionStorage)")
+        b = await p.chromium.launch()
+        c = await b.new_context(storage_state=state, **ctx_args(steps))
+        await c.add_init_script(script=session_script(origin, pairs))
+        await c.add_init_script(path=str(CURSOR_JS))
+        pg = await c.new_page()
+        await pg.goto(urljoin(base, steps["login"]["start"]), wait_until="load")
+        await aperform(pg, {**login_wait_step(steps), "timeout_ms": int(HIDDEN_CHECK_S * 1000)}, base, os.environ)
+        return b, c, pg
+    except Exception as e:
+        log(f"the login didn't carry over to a hidden browser ({str(e).splitlines()[0][:120]}); recording in the visible window")
+        if b:
+            await b.close()
+        return None
 EARLY_S, MIN_GAP_S, GLIDE_MS = 0.3, 0.4, 550
 SETTLE_S = 0.8  # after the last action the page holds this long, so a cut never lands on a click
 
@@ -346,6 +394,7 @@ def dry_run(out, only=None):
     results, failures, skipped = [], [], []
     blocks = ([("login", steps["login"]["steps"], None)] if steps.get("login") and not is_manual(steps) else []) + [
         (sid, sc.get("steps", []), sc) for sid, sc in sorted(steps["scenes"].items()) if not only or sid == only]
+    visible = None
     with sync_playwright() as p:
         if is_manual(steps):
             ctx = launch_profile_sync(p, steps)
@@ -356,6 +405,11 @@ def dry_run(out, only=None):
             except PWError:
                 ctx.close()
                 emit("capture", ok=False, user_action=True, message=login_timeout_msg(steps))
+            moved = hidden_session_sync(p, ctx, page, steps, base)
+            if moved:  # rehearse exactly where the recording will happen; the person's window shows a calm tint
+                guide_sync(page, "tint", "Rehearsing in the background", "Checking every step before the real recording")
+                visible, browser = ctx, moved[0]
+                page = moved[2]
         else:
             browser = p.chromium.launch()
             page = browser.new_context(**ctx_args(steps)).new_page()
@@ -391,6 +445,8 @@ def dry_run(out, only=None):
                 page.screenshot(path=str(d / f"{sid}.png"))
             results.append({"scene": sid, "ok": err is None, "seconds": round(time.time() - t0, 1)})
         browser.close()
+        if visible:
+            visible.close()
     sheet = contact_sheet(d)
     res = {"scenes": [r for r in results if r["scene"] != "login"], "failures": failures, "skipped": skipped,
            "outputs": [str(sheet)] if sheet else []}
@@ -648,6 +704,7 @@ async def record_scenes(out, only):
         emit("capture", ok=False, user_action=True, missing_env=env_missing,
              message=f"Set {' and '.join(env_missing)} in your terminal first, then run again.")
     base, results, failures = steps["base_url"], [], []
+    visible, hidden_browser, recorded_in = None, None, "hidden"
     async with async_playwright() as p:
         if is_manual(steps):
             ctx = browser = await launch_profile_async(p, steps)
@@ -658,6 +715,14 @@ async def record_scenes(out, only):
             except PWError:
                 await ctx.close()
                 emit("capture", ok=False, user_action=True, message=login_timeout_msg(steps))
+            visible = page  # the person's window: from now on it only shows a calm tint
+            moved = await hidden_session(p, ctx, page, steps, base)
+            if moved:
+                hidden_browser, ctx, page = moved
+            else:
+                recorded_in = "window"
+            await guide_async(visible, "tint", "Recording in the background" if moved else "Recording in this window",
+                              "Getting ready…" if moved else "Please don't touch the mouse or keyboard until it's done.")
         else:
             browser = await p.chromium.launch()
             ctx = await browser.new_context(**ctx_args(steps))
@@ -667,7 +732,7 @@ async def record_scenes(out, only):
                 for st in steps["login"]["steps"]:
                     await aperform(page, st, base, os.environ)
         first = True
-        for scene in scenes:
+        for k, scene in enumerate(scenes, 1):
             sid, sc = scene["id"], steps["scenes"][scene["id"]]
             words = (voice.get(sid) or {}).get("words", [])
             try:  # get to the starting page before the camera rolls
@@ -686,9 +751,11 @@ async def record_scenes(out, only):
                 failures.append({"scene": sid, "step": "start", "error": str(e).splitlines()[0]})
                 continue
             title = None
-            if is_manual(steps):  # the person is watching this window: tell them, then clear it before the camera rolls
-                await guide_async(page, "screen", "rec", f"Recording {sid}", "Hands off the mouse and keyboard for a moment.")
-                await asyncio.sleep(1.2)
+            if visible is not None and recorded_in == "hidden":  # their window just says how far along it is
+                await guide_async(visible, "tint", "Recording in the background", f"Scene {k} of {len(scenes)} · you can leave this window")
+            elif visible is not None:  # recording in their window: lift the tint just before the camera rolls
+                await guide_async(page, "tint", "Recording in this window", f"Scene {k} of {len(scenes)} · hands off for a moment")
+                await asyncio.sleep(0.3)
                 await guide_async(page, "clear")
                 title = await page.title()
                 await page.evaluate("t => { document.title = t; }", f"● REC {sid} · unveo")
@@ -749,11 +816,13 @@ async def record_scenes(out, only):
             results.append({"scene": sid, "file": str(path), "target_s": scene["dur_s"],
                             "recorded_s": round(wall_end - wall0, 2), "over_s": round(max(0.0, elapsed - scene["dur_s"]), 2),
                             "need_s": need, "actions": actions, "zooms": zooms, "ok": err is None})
-        if is_manual(steps):
-            await guide_async(page, "screen", "done", "Done. Recording finished.", "unveo closes this window by itself.")
+        if visible is not None:
+            await guide_async(visible, "tint", "Done. Recording finished.", "unveo closes this window by itself.", True)
             await asyncio.sleep(1.5)
+        if hidden_browser:
+            await hidden_browser.close()
         await browser.close()
-    res = {"scenes": results, "failures": failures, "outputs": [r["file"] for r in results]}
+    res = {"scenes": results, "failures": failures, "outputs": [r["file"] for r in results], "recorded_in": recorded_in}
     rec = o / "capture" / "record.json"  # how long each recording needs; plan_timeline makes room for it
     known = json.loads(rec.read_text()) if rec.exists() else {}
     known.update({r["scene"]: {"need_s": r["need_s"], "recorded_s": r["recorded_s"]} for r in results})

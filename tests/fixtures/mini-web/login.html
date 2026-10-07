@@ -1,0 +1,11 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Sign in</title></head>
+<body><h1>Mini Risk</h1><button id="g">Sign in with Google</button><p id="who"></p>
+<a href="app.html">Open the app</a>
+<script>
+// A real-style login: the session lives in localStorage (?mem=1: only in memory, like apps that keep it in a JS variable).
+// With no session, "the person" signs in after 5 s; with one, the page knows them at once.
+const mem = location.search.includes("mem=1");
+const signedIn = () => { who.textContent = "Continuing as Test User"; };
+if (localStorage.getItem("token")) signedIn();
+else setTimeout(() => { if (!mem) localStorage.setItem("token", "t-123"); window.TOKEN = "t-123"; signedIn(); }, 5000);
+</script></body></html>

@@ -79,6 +79,57 @@ def yellow_share(video, t):
     return float(((a[:, 0] > 225) & (a[:, 1] > 225) & (a[:, 2] < 175)).mean())
 
 
+class HiddenRecordingTest(unittest.TestCase):
+    """After the person logs in, the login is copied into a hidden browser that records; their window just shows a tint."""
+    @classmethod
+    def setUpClass(cls):
+        ManualLoginTest.setUpClass.__func__(cls)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+
+    def record(self, start):
+        out = Path(tempfile.mkdtemp())
+        for d in ("capture", "voice"):
+            (out / d).mkdir()
+        steps = {"version": 1, "base_url": self.base,
+                 "login": {"mode": "manual", "start": start, "until": {"for": "text", "value": "Continuing as"}, "timeout_s": 30},
+                 "scenes": {"s05": {"start": {"do": "goto", "url": "/app.html"}, "steps": [
+                     {"do": "wait", "for": "text", "value": "Mini Risk Dashboard"}]}}}
+        (out / "capture/steps.json").write_text(json.dumps(steps))
+        (out / "voice/voice.json").write_text(json.dumps({"version": 1, "clips": [{"scene": "s05", "dur_s": 1.5, "words": []}]}))
+        (out / "timeline.json").write_text(json.dumps({"version": 1, "scenes": [
+            {"id": "s05", "visual": "capture", "lead_s": 0.3, "dur_s": 2.0, "start_s": 0}]}))
+        env = {**os.environ, "UNVEO_FORCE_HEADLESS": "1", "UNVEO_HOME": str(out / "home"), "UNVEO_HIDDEN_CHECK_S": "3"}
+        p = subprocess.run([sys.executable, str(SCRIPTS / "capture.py"), "record", "--out", str(out)],
+                           capture_output=True, text=True, timeout=180, env=env)
+        return p.returncode, json.loads(p.stdout.strip().splitlines()[-1]), out
+
+    def test_records_in_a_hidden_browser_with_the_copied_login(self):
+        code, res, out = self.record("/login.html")
+        self.assertEqual(code, 0, res)
+        self.assertEqual(res["recorded_in"], "hidden")
+        self.assertLess(yellow_share(out / "capture/s05.mp4", 0.5), 0.01)
+
+    def test_falls_back_to_the_visible_window_when_the_login_cant_be_copied(self):
+        code, res, out = self.record("/login.html?mem=1")
+        self.assertEqual(res["recorded_in"], "window")
+
+    def test_tint_card_says_what_is_happening(self):
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as pw:
+            b = pw.chromium.launch()
+            page = b.new_page()
+            page.goto(self.base + "/auth.html?never=1")
+            capture.guide_sync(page, "tint", "Recording in the background", "Scene 2 of 4 · you can leave this window")
+            text = page.evaluate("document.getElementById('__unveo_guide').shadowRoot.textContent")
+            bg = page.evaluate("getComputedStyle(document.getElementById('__unveo_guide').shadowRoot.querySelector('.tint')).backgroundColor")
+            b.close()
+        self.assertIn("Scene 2 of 4", text)
+        self.assertRegex(bg, r"rgba\(253, 250, 141, 0\.\d+\)")  # translucent brand yellow
+
+
 class GuideTest(unittest.TestCase):
     """What the person sees in the browser window: never part of the recording."""
     @classmethod
