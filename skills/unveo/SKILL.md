@@ -88,6 +88,12 @@ When you ask with choices: in Claude Code, use AskUserQuestion (at most 4 option
 > **Which language should the voiceover be in?**
 > English (Recommended) · Hindi
 
+**5a. Focus.** Ask:
+> **What should the video focus on?**
+> Balanced (Recommended): the product, plus 1–2 explanations of how it works · Show the product in detail: every main screen, no more than 1 explanation · Explain how it works: a shorter tour, 2–3 explanations
+
+At a 60 s limit, add to the descriptions: "60 s fits about 3 screens, or 2 screens and 1 explanation." Save the answer as `focus` (`balanced`, `product` or `explain`). It sets the time split, how many journey steps to write (PITCH.md) and how many explainers are allowed.
+
 **5b. Voice and pace (ask every run, never assume).** Make samples first, so the user can listen:
 `"<PY>" "<SKILL_DIR>/scripts/voice.py" samples --lang <en|hi> --name "<project name>" --rate +10%`
 The first samples match the user's region (from their system settings), then one from each other accent. No accent is forced. Give the paths (`OUT/voice/samples/*.mp3`), then ask:
@@ -126,7 +132,7 @@ Save them as `voice.voice_id` and `voice.rate` in brief.json (step 11). A faster
 > Yes, that's right · Mostly, I'll correct a few things · No, let me explain
 
 Then ask, as multiple choice:
-> **Which hidden logic should I animate? 2 is a good default; 3 at most.**
+> **Which hidden logic should I animate?** (the number follows the focus: product 0–1, balanced 1–3, explain 2–3; one fewer at 60 s)
 
 - The options are the top 4 H-items (the most a choice list holds), with the top 2 marked (Recommended). At a 60 s limit, recommend 1. The user can name H5 with *Other*.
 - With only 1 H-item, ask instead: **"Animate <title>?"** *Yes (Recommended)* · *No explainer*. With none, skip the question and say so in one line.
@@ -157,6 +163,7 @@ Store links exactly as the user types them, character for character. Leave out t
               "login": {"needed": false, "user_env": "UNVEO_LOGIN_USER", "password_env": "UNVEO_LOGIN_PASSWORD"}},
   "limit_s": 120,
   "language": "en",
+  "focus": "balanced",
   "voice": {"provider": "edge", "voice_id": "<from step 5b>", "rate": "+10%"},
   "understanding": {"field": "", "problem": "", "product": "", "journey": ["…"],
     "hidden_logic": [{"id": "H1", "title": "", "pattern": "formula-breakdown", "source": ["path:12-40"],

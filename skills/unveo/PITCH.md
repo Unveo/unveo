@@ -9,6 +9,16 @@
 | `product` | 65% | 1 `anim:product-intro` (4–6 s), then 1 scene per journey step, with the selected explainers cut in | `capture` (or `clip`) + `anim:explainer-<pattern>` |
 | `close` | 10% | 1 close scene: the impact line spoken, links held about 3 s | `anim:close` |
 
+**Focus** (brief.focus) changes the balance:
+
+| Focus | Context / problem / product / close | Journey steps to show | Explainers |
+|---|---|---|---|
+| `product` (show the product in detail) | 8% / 10% / 74% / 8% | every main screen: 4–7 | 0–1 |
+| `balanced` (default) | 10% / 15% / 65% / 10% | 3–5 | 1–3 (2 is typical) |
+| `explain` (how it works) | 10% / 15% / 65% / 10% | 2–3 | 2–3 |
+
+At 60 s, allow one explainer fewer (product: none; balanced: 1–2; explain: 2). `script.py check` enforces these.
+
 Seconds per segment: 60 s → 6 / 9 / 39 / 6 · 90 s → 9 / 14 / 58 / 9 · 2 min → 12 / 18 / 78 / 12 · 3 min → 18 / 27 / 117 / 18.
 
 A scene's `target` is your estimate (words ÷ 2.2). The real length comes from its voice clip later, so keep targets honest: `script.py check` warns when a scene's words need noticeably more time than its target.

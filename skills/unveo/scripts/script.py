@@ -15,6 +15,19 @@ RATE = {"en": 2.2, "hi": 2.2}  # words per second, measured in M0 (docs/06 §2)
 SILENT_S = 5.5                  # 2.5 s title card + 3 s end-card hold
 SEGMENTS = ["context", "problem", "product", "close"]
 SHARE = {"context": 0.10, "problem": 0.15, "product": 0.65, "close": 0.10}
+FOCUS = {  # brief.focus: the time split and how many explainers (docs/15 A8)
+    "product": {"share": {"context": 0.08, "problem": 0.10, "product": 0.74, "close": 0.08}, "explainers": (0, 1)},
+    "balanced": {"share": SHARE, "explainers": (1, 3)},
+    "explain": {"share": SHARE, "explainers": (2, 3)},
+}
+
+
+def explainer_bounds(focus, limit_s):
+    lo, hi = FOCUS.get(focus, FOCUS["balanced"])["explainers"]
+    if limit_s <= 60:  # a minute has no room for many
+        hi = max(0, hi - 1)
+        lo = min(lo, hi)
+    return lo, hi
 PATTERNS = ["pipeline-flow", "formula-breakdown", "model-io", "raw-vs-processed", "system-map"]
 TEMPLATES = {"title", "context", "problem", "product-intro", "close"} | {f"explainer-{p}" for p in PATTERNS}
 HEADING = re.compile(r"^## (s\d{2}) · (\w+) · (anim:[\w-]+|capture|clip) · (?:target )?(\d+(?:\.\d+)?) s"
@@ -142,8 +155,13 @@ def check(out):
 
     selected = {h["id"] for h in brief.get("understanding", {}).get("hidden_logic", []) if h.get("selected")}
     explainers = [s for s in scenes if (s["template"] or "").startswith("explainer-")]
-    if len(explainers) > 3:
-        errors.append(f"at most 3 explainers ({len(explainers)} found)")
+    focus = brief.get("focus", "balanced")
+    lo, hi = explainer_bounds(focus, brief.get("limit_s", 120))
+    lo = min(lo, len(selected))  # can't ask for more explainers than the user picked
+    if len(explainers) > hi:
+        errors.append(f"focus '{focus}' at {brief.get('limit_s', 120)} s allows at most {hi} explainer(s); found {len(explainers)}")
+    elif len(explainers) < lo:
+        errors.append(f"focus '{focus}' needs at least {lo} explainers; found {len(explainers)}")
     shots = (o / "shots.md").read_text(encoding="utf-8") if (o / "shots.md").exists() else ""
 
     for s in scenes:
@@ -183,7 +201,7 @@ def check(out):
         errors.append(f"{total} words is over the budget of {budget}: cut about {total - budget} words, mostly from product scenes")
     elif total < budget * 0.85:
         warnings.append(f"{total} words is well under the budget of {budget}: the video will run short of the limit")
-    for seg, share in SHARE.items():
+    for seg, share in FOCUS.get(brief.get("focus", "balanced"), FOCUS["balanced"])["share"].items():
         w = sum(s["words"] for s in scenes if s["segment"] == seg)
         if total and abs(w / total - share) > 0.12:
             warnings.append(f"{seg} has {w / total:.0%} of the words; the pitch aims for {share:.0%}")

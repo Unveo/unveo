@@ -144,6 +144,23 @@ class CheckTest(unittest.TestCase):
         _, out = check(robotic)
         self.assertTrue(any("contraction" in w for w in out["warnings"]), out["warnings"])
 
+    def test_focus_sets_explainer_bounds_and_the_60s_limit_lowers_the_cap(self):
+        self.assertEqual(script.explainer_bounds("product", 120), (0, 1))
+        self.assertEqual(script.explainer_bounds("balanced", 120), (1, 3))
+        self.assertEqual(script.explainer_bounds("explain", 120), (2, 3))
+        self.assertEqual(script.explainer_bounds("product", 60), (0, 0))
+        self.assertEqual(script.explainer_bounds("balanced", 60), (1, 2))
+
+    def test_product_focus_rejects_an_explainer_at_60s(self):
+        _, out = check(GOOD, brief={**BRIEF, "focus": "product"})
+        self.assertTrue(any("explainer" in e and "product" in e for e in out["errors"]), out["errors"])
+
+    def test_explain_focus_wants_two_explainers_when_two_are_selected(self):
+        b = {**BRIEF, "limit_s": 120, "focus": "explain",
+             "understanding": {"hidden_logic": [{"id": "H1", "selected": True}, {"id": "H2", "selected": True}]}}
+        _, out = check(GOOD, brief=b)
+        self.assertTrue(any("at least 2" in e for e in out["errors"]), out["errors"])
+
     def test_bad_heading_is_reported(self):
         _, out = check(GOOD.replace("## s06 · close · anim:close · target 8 s", "## s06 close anim"))
         self.assertTrue(any("heading" in e for e in out["errors"]))
