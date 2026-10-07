@@ -1,6 +1,7 @@
 """Make one voice clip per scene from script.md (docs/09). Free voices only.
 
   voice.py [--scene sNN] [--provider edge|kokoro] [--voice <id>] [--rate +0%] [--out unveo-out]
+  voice.py samples [--provider edge|kokoro]   one short clip per voice style, to choose from (voice/samples/)
 
 edge-tts (online, exact word timings) by default; Kokoro (offline) when edge fails, for every scene,
 so the voice never changes mid-video. Scenes whose text and voice settings are unchanged are skipped.
@@ -15,6 +16,13 @@ import script as scriptmod  # noqa: E402
 HOME = Path(os.environ.get("UNVEO_HOME", Path.home() / ".unveo"))
 KOKORO = {"en": ("bf_emma", "en-gb", 0.8), "hi": ("hf_alpha", "hi", 1.0)}  # voice, lang code, speed (docs/09 §2)
 EDGE_DEFAULT = {"en": "en-IN-NeerjaNeural", "hi": "hi-IN-SwaraNeural"}
+STYLES = {  # voice id, label shown to the user
+    "edge": {"en": [("en-IN-NeerjaNeural", "Neerja · warm, clear"), ("en-IN-NeerjaExpressiveNeural", "Neerja Expressive · lively"),
+                    ("en-IN-PrabhatNeural", "Prabhat · male, calm")],
+             "hi": [("hi-IN-SwaraNeural", "Swara · warm"), ("hi-IN-MadhurNeural", "Madhur · male")]},
+    "kokoro": {"en": [("bf_emma", "Emma · British"), ("bm_george", "George · British, male")],
+               "hi": [("hf_alpha", "Alpha"), ("hm_omega", "Omega · male")]},
+}
 
 
 def say_as(text, mapping):
@@ -60,7 +68,7 @@ async def edge_clip(text, voice_id, rate, path):
 _kokoro = None
 
 
-def kokoro_clip(text, lang, path):
+def kokoro_clip(text, lang, path, voice_id=None):
     global _kokoro
     import soundfile as sf
     from kokoro_onnx import Kokoro
@@ -68,6 +76,7 @@ def kokoro_clip(text, lang, path):
     if _kokoro is None:
         _kokoro = Kokoro(str(m / "kokoro-v1.0.int8.onnx"), str(m / "voices-v1.0.bin"))
     vid, code, speed = KOKORO[lang]
+    vid = voice_id or vid
     samples, sr = _kokoro.create(text, voice=vid, speed=speed, lang=code)
     wav = path.with_suffix(".wav")
     sf.write(str(wav), samples, sr)
@@ -76,21 +85,49 @@ def kokoro_clip(text, lang, path):
     return None
 
 
+def samples(o, brief, provider, rate):
+    lang = brief.get("language", "en")
+    name = brief.get("project", {}).get("name") or "your project"
+    text = (f"This is how the demo of {name} will sound, at this pace." if lang == "en"
+            else f"आपके {name} demo video की आवाज़ ऐसी होगी।")
+    d = o / "voice" / "samples"
+    d.mkdir(parents=True, exist_ok=True)
+    out = []
+    for vid, label in STYLES[provider][lang]:
+        f = d / f"{vid}.mp3"
+        if provider == "edge":
+            asyncio.run(edge_clip(say_as(text, brief.get("voice", {}).get("say_as")), vid, rate, f))
+        else:
+            kokoro_clip(text, lang, f, vid)
+        out.append({"voice": vid, "label": label, "file": str(f.relative_to(o))})
+    emit("voice", samples=out, rate=rate,
+         message=f"{len(out)} samples in {d}: play them, then pick a voice")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("cmd", nargs="?", choices=["make", "samples"], default="make")
     ap.add_argument("--scene")
+    ap.add_argument("--lang", choices=["en", "hi"], help="samples before brief.json exists")
+    ap.add_argument("--name", help="project name for the sample sentence")
     ap.add_argument("--provider", choices=["edge", "kokoro"])
     ap.add_argument("--voice")
     ap.add_argument("--rate")
     ap.add_argument("--out", default="unveo-out")
     a = ap.parse_args()
     o = out_dir(a.out)
-    brief = json.loads((o / "brief.json").read_text(encoding="utf-8"))
+    brief = json.loads((o / "brief.json").read_text(encoding="utf-8")) if (o / "brief.json").exists() else {}
+    if a.lang:
+        brief["language"] = a.lang
+    if a.name:
+        brief.setdefault("project", {})["name"] = a.name
     lang = brief.get("language", "en")
     v = brief.get("voice", {})
     provider = a.provider or v.get("provider", "edge")
     voice_id = a.voice or v.get("voice_id") or EDGE_DEFAULT[lang]
     rate = a.rate or v.get("rate", "+0%")
+    if a.cmd == "samples":
+        samples(o, brief, a.provider or "edge", a.rate or v.get("rate", "+10%"))
     scenes = [s for s in scriptmod.parse((o / "script.md").read_text(encoding="utf-8")) if s["narration"]]
     if a.scene:
         scenes = [s for s in scenes if s["id"] == a.scene]

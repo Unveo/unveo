@@ -102,6 +102,12 @@ def main():
                 leaks.append(str(f.relative_to(o)))
     gate("secrets", not leaks, ", ".join(leaks) or "no password in any output")
 
+    import stitch
+    shots = stitch.shots_map(o)
+    holes = [sc["id"] for sc in tl["scenes"] if sc["visual"] == "clip" and not stitch.find_clip(o, shots.get(sc["id"], f"shot-{sc['id'][1:]}"))]
+    gate("placeholders", not holes, f"{holes} still show a 'Recording needed' card: record the clips, then stitch.py ingest" if holes
+         else "every clip is recorded", blocking=False)
+
     rec = [sc for sc in tl["scenes"] if sc["segment"] == "product" and sc["visual"] in ("capture", "clip")]
     cap = sum(1 for sc in rec if sc["visual"] == "capture")
     gate("capture coverage", True, f"{cap} of {len(rec)} product recordings automatic", blocking=False)

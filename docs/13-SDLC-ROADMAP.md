@@ -121,6 +121,8 @@ Tasks:
 
 ## Later (after v0.1.0)
 
+- **Template and voice gallery** on the landing page: examples of every scene template and voice style; the intake points the user to it to choose (see 15-WEAK-POINTS.md).
+
 Captions and 9:16; mobile and terminal capture; auto-starting the dev server; per-hackathon presets (Devpost, MLH, SIH limits); a `npx unveo` wrapper if setup is a pain point; chat-app mode.
 
 ## Working agreements

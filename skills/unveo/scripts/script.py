@@ -23,8 +23,14 @@ TAG = re.compile(r"\[(src|brief|understanding):\s*((?:[^\[\]]|\[[^\]]*\])*)\]") 
 SENTENCE_END = re.compile(r"(?<=[.!?।])\s+")
 
 
-def budget_words(limit_s, lang="en"):
-    return round((limit_s * 0.92 - SILENT_S) * RATE[lang])
+def rate_factor(rate):
+    """'+10%' -> 1.10: a faster voice says more words in the same time."""
+    m = re.fullmatch(r"\s*([+-]?\d+)\s*%\s*", str(rate or "+0%"))
+    return 1 + int(m.group(1)) / 100 if m else 1.0
+
+
+def budget_words(limit_s, lang="en", rate="+0%"):
+    return round((limit_s * 0.92 - SILENT_S) * RATE[lang] * rate_factor(rate))
 
 
 def parse_all(text):
@@ -144,12 +150,12 @@ def check(out):
         if re.search(r"[–—]", s["narration"] + s["on_screen"]):
             errors.append(f"{sid}: no en or em dashes in narration or on-screen text")
         s["words"] = len(spoken(s["narration"]).split())
-        need = s["words"] / RATE.get(brief.get("language", "en"), 2.2)
+        need = s["words"] / (RATE.get(brief.get("language", "en"), 2.2) * rate_factor(brief.get("voice", {}).get("rate")))
         if need > s["target_s"] + 1.5:
             warnings.append(f"{sid}: {s['words']} words take about {need:.0f} s, but the target is {s['target_s']:g} s; "
                             "the voice length wins, so shorten the line or raise the target")
 
-    budget = budget_words(brief.get("limit_s", 120), brief.get("language", "en"))
+    budget = budget_words(brief.get("limit_s", 120), brief.get("language", "en"), brief.get("voice", {}).get("rate", "+0%"))
     total = sum(s["words"] for s in scenes)
     if total > budget * 1.05:
         errors.append(f"{total} words is over the budget of {budget}: cut about {total - budget} words, mostly from product scenes")
@@ -169,9 +175,10 @@ def main():
     ap.add_argument("--out", default="unveo-out")
     ap.add_argument("--limit", type=int, default=120)
     ap.add_argument("--lang", default="en")
+    ap.add_argument("--rate", default="+0%")
     a = ap.parse_args()
     if a.cmd == "budget":
-        emit("script", budget=budget_words(a.limit, a.lang))
+        emit("script", budget=budget_words(a.limit, a.lang, a.rate))
     try:
         res = check(a.out)
     except (OSError, ValueError) as e:

@@ -21,7 +21,7 @@ def good_brief():
                           "hidden_logic": [{"id": "H1", "title": "Risk", "pattern": "formula-breakdown",
                                             "source": ["lib/score.ts:3-9"], "shown_at_step": 2, "selected": True}],
                           "confirmed_at": "2026-10-07T12:00:00+05:30"},
-        "palette": {"name": "project", "tokens": TOKENS},
+        "palette": {"name": "project", "tokens": dict(TOKENS)},  # a copy: tests edit it
         "header": {"title": "Civic Watch", "event": "", "team": ""},
         "close": {"impact_line": "Citizens see where money is stuck.",
                   "links": [{"label": "Live app", "url": "https://civic-watch.vercel.app"}], "extra_line": ""},
@@ -44,6 +44,12 @@ class ValidateTest(unittest.TestCase):
         errs = " | ".join(brief.errors(b))
         for word in ("limit_s", "language", "at most 3"):
             self.assertIn(word, errs)
+
+    def test_voice_rate_must_be_a_sane_percentage(self):
+        b = good_brief(); b["voice"]["rate"] = "+80%"
+        self.assertTrue(any("rate" in e for e in brief.errors(b)))
+        b["voice"]["rate"] = "+20%"
+        self.assertEqual(brief.errors(b), [])
 
     def test_paid_or_unknown_voice_provider_is_rejected(self):
         b = good_brief(); b["voice"]["provider"] = "gemini"

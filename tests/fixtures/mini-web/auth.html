@@ -1,0 +1,7 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Sign in</title></head>
+<body><h1>Mini Risk</h1><button id="g">Sign in with Google</button><p id="who"></p>
+<a id="go" href="index.html" style="display:none">Open dashboard</a>
+<script>
+// Stands in for a person logging in by hand: after 1.5 s the page is "signed in" (never, with ?never=1).
+if (!location.search.includes("never")) setTimeout(() => { who.textContent = "Continuing as Test User"; go.style.display = "inline"; }, 1500);
+</script></body></html>

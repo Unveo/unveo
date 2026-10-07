@@ -83,6 +83,12 @@ class EndToEndTest(unittest.TestCase):
         tl = json.loads((self.out / "timeline.json").read_text())
         self.assertEqual([s["id"] for s in tl["scenes"]], ["s01", "s02", "s03", "s04"])
 
+    def test_samples_make_one_short_clip_per_voice_style(self):
+        code, res = run("voice.py", self.out, "samples", "--provider", "kokoro")
+        self.assertEqual(code, 0, res)
+        self.assertGreaterEqual(len(res["samples"]), 2)
+        self.assertTrue(all((self.out / s["file"]).exists() for s in res["samples"]))
+
     def test_over_the_limit_needs_the_agent(self):
         (self.out / "brief.json").write_text(json.dumps(brief(limit=30)))
         long = SCRIPT.replace("Pick a state to see the risk.", " ".join(["Pick a state to see the risk."] * 16))

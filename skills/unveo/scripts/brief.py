@@ -33,6 +33,10 @@ def errors(b):
         e.append("limit_s must be a whole number of seconds from 30 to 600")
     if b.get("language") not in ("en", "hi"):
         e.append("language must be 'en' or 'hi'")
+    rate = str(g("voice", "rate") or "+0%")
+    m = re.fullmatch(r"([+-]\d{1,2})%", rate)
+    if not m or not -10 <= int(m.group(1)) <= 30:
+        e.append("voice.rate must look like +10% and stay between -10% and +30%")
     if g("voice", "provider") not in PROVIDERS:
         e.append(f"voice.provider must be one of {sorted(PROVIDERS)} (free only)")
     u = b.get("understanding") or {}

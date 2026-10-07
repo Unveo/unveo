@@ -28,6 +28,18 @@ One scene in steps.json for each `capture` scene in script.md, with the same id.
 }
 ```
 
+## Logins
+
+- **Demo account:** `login.steps` types `$UNVEO_LOGIN_USER` / `$UNVEO_LOGIN_PASSWORD` (example above).
+- **The person logs in themselves** (Google or GitHub sign-in, OTP, CAPTCHA, anything):
+  ```json
+  "login": {"mode": "manual", "start": "/", "until": {"for": "text", "value": "Continuing as"}, "timeout_s": 600}
+  ```
+  - A visible browser opens at `start` (the real Chrome when installed, which Google allows more often), and the person logs in.
+  - unveo waits until `until` is true (text, url or selector that only shows when logged in), then runs the scenes **in that same window** and records them.
+  - The profile is kept in `~/.unveo/profiles/<site>`, so the recording usually doesn't need a second login.
+  - Pick `until` carefully: something that appears only after login ("Continuing as", "Log out", the dashboard URL).
+
 ## Actions
 
 | `do` | Needs | Notes |
@@ -49,6 +61,7 @@ One scene in steps.json for each `capture` scene in script.md, with the same id.
 
 Optional on any step:
 - `say`: the narration word this action should land on (used when recording).
+- `once`: true for actions that can't be undone for the user (a one-response-per-person form, an order); flagged like destructive steps.
 - `timeout_ms`: default 10000.
 - `approved`: see Safety.
 

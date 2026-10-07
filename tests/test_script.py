@@ -52,6 +52,11 @@ class BudgetTest(unittest.TestCase):
     def test_budget_words_match_the_spec_table(self):
         self.assertEqual([script.budget_words(s) for s in (60, 90, 120, 180)], [109, 170, 231, 352])
 
+    def test_faster_voice_fits_more_words(self):
+        self.assertEqual(script.budget_words(120, "en", "+10%"), 254)
+        self.assertEqual(script.budget_words(120, "en", "+0%"), 231)
+        self.assertEqual(script.rate_factor("-5%"), 0.95)
+
 
 class ParseTest(unittest.TestCase):
     def test_parses_scenes_and_strips_tags_from_spoken_text(self):

@@ -25,6 +25,9 @@ class RulesTest(unittest.TestCase):
         self.assertEqual(capture.flag({"do": "goto", "url": "/checkout"}), "payment")
         self.assertIsNone(capture.flag({"do": "click", "target": {"role": "button", "name": "Search"}}))
 
+    def test_one_time_actions_marked_once_are_flagged(self):
+        self.assertEqual(capture.flag({"do": "click", "target": {"role": "button", "name": "Submit"}, "once": True}), "destructive")
+
     def test_describe_in_plain_words(self):
         self.assertEqual(capture.describe({"do": "click", "target": {"role": "button", "name": "Search"}}), 'click "Search"')
         self.assertEqual(capture.describe({"do": "type", "target": {"label": "Email"}, "text": "$UNVEO_LOGIN_PASSWORD", "secret": True}),

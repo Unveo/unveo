@@ -45,7 +45,18 @@ def validate(steps):
     scenes = steps.get("scenes") or {}
     if not scenes:
         e.append("scenes is empty")
-    blocks = [("login", (steps.get("login") or {}).get("steps", []))]
+    login = steps.get("login") or {}
+    if login.get("mode") == "manual":
+        if not login.get("start"):
+            e.append("login.start (the page where the person logs in) is required for a manual login")
+        u = login.get("until") or {}
+        if u.get("for") not in WAITS - {"ms", "network-idle"}:
+            e.append("login.until must say how to tell the person is logged in: {\"for\": \"text\"|\"url\"|\"selector\", ...}")
+        elif u["for"] == "selector" and not u.get("target"):
+            e.append("login.until for selector needs a target")
+        elif u["for"] in ("url", "text") and "value" not in u:
+            e.append(f"login.until for {u['for']} needs a value")
+    blocks = [("login", login.get("steps", []))]
     for sid, sc in scenes.items():
         if not re.fullmatch(r"s\d{2}", sid):
             e.append(f"scene id {sid} must look like s05")
@@ -104,7 +115,7 @@ def flag(st):
     pool = " ".join(str(v) for v in (st.get("target") or {}).values()) + " " + str(st.get("url", ""))
     if do in ("click", "submit", "press", "type", "select", "goto") and PAYMENT.search(pool):
         return "payment"
-    if do in ("click", "submit") and DESTRUCTIVE.search(pool):
+    if do in ("click", "submit") and (DESTRUCTIVE.search(pool) or st.get("once")):  # once: can't be undone (one response per person)
         return "destructive"
     return None
 
@@ -141,6 +152,41 @@ def plan_line(st):
     return line
 
 
+def is_manual(steps):
+    return (steps.get("login") or {}).get("mode") == "manual"
+
+
+def login_plan(login):
+    u = login.get("until", {})
+    sign = u.get("value") or target_text(u.get("target"))
+    return (f"🔑 a browser window opens at {login.get('start')}; you log in yourself (any method, even Google or OTP); "
+            f"unveo carries on once it sees \"{sign}\"")
+
+
+PROFILE_ARGS = {"ignore_default_args": ["--enable-automation"], "args": ["--disable-blink-features=AutomationControlled"]}
+
+
+def profile_dir(steps):
+    """One browser profile per site, so a login can be remembered between the dry run and the recording."""
+    host = re.sub(r"[^\w.-]", "_", urlparse(steps["base_url"]).netloc)
+    d = Path(os.environ.get("UNVEO_HOME", Path.home() / ".unveo")) / "profiles" / host
+    d.mkdir(parents=True, exist_ok=True)
+    return str(d)
+
+
+def headed():
+    return os.environ.get("UNVEO_FORCE_HEADLESS") != "1"  # tests run headless; real manual logins need a window
+
+
+def login_wait_step(steps):
+    login = steps["login"]
+    return {"do": "wait", **login["until"], "timeout_ms": int(login.get("timeout_s", 600) * 1000)}
+
+
+LOGIN_HELP = ("Waiting for you to log in in the browser window that just opened (any login method works). "
+              "unveo continues by itself once you're in; don't close the window.")
+
+
 def substitute(text, env):
     def rep(m):
         v = env.get(m.group(1))
@@ -166,7 +212,7 @@ def check_cmd(out):
     steps = load_steps(out)
     plan = {}
     if steps.get("login"):
-        plan["login"] = [plan_line(s) for s in steps["login"]["steps"]]
+        plan["login"] = ([login_plan(steps["login"])] if is_manual(steps) else [plan_line(s) for s in steps["login"]["steps"]])
     for sid, sc in sorted(steps["scenes"].items()):
         plan[sid] = [plan_line(s) for s in ([sc["start"]] if sc.get("start") else []) + sc.get("steps", [])]
     emit("capture", plan=plan, message="steps.json OK")
@@ -259,11 +305,21 @@ def dry_run(out, only=None):
     for old in d.glob("*.png"):
         old.unlink()
     results, failures, skipped = [], [], []
-    blocks = ([("login", steps["login"]["steps"], None)] if steps.get("login") else []) + [
+    blocks = ([("login", steps["login"]["steps"], None)] if steps.get("login") and not is_manual(steps) else []) + [
         (sid, sc.get("steps", []), sc) for sid, sc in sorted(steps["scenes"].items()) if not only or sid == only]
     with sync_playwright() as p:
-        browser = p.chromium.launch()
-        page = browser.new_context(**ctx_args(steps)).new_page()
+        if is_manual(steps):
+            ctx = launch_profile_sync(p, steps)
+            browser = ctx
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            try:
+                manual_login_sync(page, steps, base)
+            except PWError:
+                ctx.close()
+                emit("capture", ok=False, user_action=True, message=login_timeout_msg(steps))
+        else:
+            browser = p.chromium.launch()
+            page = browser.new_context(**ctx_args(steps)).new_page()
         for sid, lst, sc in blocks:
             t0, err, idx = time.time(), None, None
             try:
@@ -306,6 +362,49 @@ def dry_run(out, only=None):
 
 
 # ---------- record (async, so screencast frames keep flowing while we wait for a word)
+
+def login_timeout_msg(steps):
+    return (f"Nobody finished logging in within {steps['login'].get('timeout_s', 600)} s. Ask the person to log in "
+            "in the window, then run this again; or record the logged-in scenes as clips.")
+
+
+def launch_profile_sync(p, steps):
+    kw = dict(user_data_dir=profile_dir(steps), headless=not headed(), **ctx_args(steps), **PROFILE_ARGS)
+    try:
+        return p.chromium.launch_persistent_context(channel="chrome", **kw)  # real Chrome: Google sign-in works more often
+    except Exception:
+        return p.chromium.launch_persistent_context(**kw)
+
+
+async def launch_profile_async(p, steps):
+    kw = dict(user_data_dir=profile_dir(steps), headless=not headed(), **ctx_args(steps), **PROFILE_ARGS)
+    try:
+        return await p.chromium.launch_persistent_context(channel="chrome", **kw)
+    except Exception:
+        return await p.chromium.launch_persistent_context(**kw)
+
+
+def manual_login_sync(page, steps, base):
+    page.goto(urljoin(base, steps["login"]["start"]), wait_until="load")
+    try:  # already logged in (the profile remembers)?
+        perform(page, {**login_wait_step(steps), "timeout_ms": 2500}, base, os.environ, False)
+        return
+    except Exception:
+        pass
+    log(LOGIN_HELP)
+    perform(page, login_wait_step(steps), base, os.environ, False)
+
+
+async def manual_login_async(page, steps, base):
+    await page.goto(urljoin(base, steps["login"]["start"]), wait_until="load")
+    try:
+        await aperform(page, {**login_wait_step(steps), "timeout_ms": 2500}, base, os.environ)
+        return
+    except Exception:
+        pass
+    log(LOGIN_HELP)
+    await aperform(page, login_wait_step(steps), base, os.environ)
+
 
 def norm(w):
     return re.sub(r"[^\w]", "", w.lower())
@@ -426,13 +525,23 @@ async def record_scenes(out, only):
              message=f"Set {' and '.join(env_missing)} in your terminal first, then run again.")
     base, results, failures = steps["base_url"], [], []
     async with async_playwright() as p:
-        browser = await p.chromium.launch()
-        ctx = await browser.new_context(**ctx_args(steps))
-        await ctx.add_init_script(path=str(CURSOR_JS))
-        page = await ctx.new_page()
-        if steps.get("login"):
-            for st in steps["login"]["steps"]:
-                await aperform(page, st, base, os.environ)
+        if is_manual(steps):
+            ctx = browser = await launch_profile_async(p, steps)
+            await ctx.add_init_script(path=str(CURSOR_JS))
+            page = ctx.pages[0] if ctx.pages else await ctx.new_page()
+            try:
+                await manual_login_async(page, steps, base)
+            except PWError:
+                await ctx.close()
+                emit("capture", ok=False, user_action=True, message=login_timeout_msg(steps))
+        else:
+            browser = await p.chromium.launch()
+            ctx = await browser.new_context(**ctx_args(steps))
+            await ctx.add_init_script(path=str(CURSOR_JS))
+            page = await ctx.new_page()
+            if steps.get("login"):
+                for st in steps["login"]["steps"]:
+                    await aperform(page, st, base, os.environ)
         first = True
         for scene in scenes:
             sid, sc = scene["id"], steps["scenes"][scene["id"]]

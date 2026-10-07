@@ -120,6 +120,16 @@ class StitchQaTest(unittest.TestCase):
         d, _ = info(o / "render/segments/s03.mp4")
         self.assertAlmostEqual(d, 2.0, delta=0.07)
 
+    def test_qa_warns_when_a_placeholder_card_is_in_the_video(self):
+        o, _ = project()
+        (o / "clips/shot-01.mp4").unlink()
+        run("stitch.py", o, "ingest", "--placeholders"); run("score.py", o); run("mix.py", o); run("stitch.py", o, "final")
+        code, res = run("qa.py", o)
+        g = next(x for x in res["gates"] if x["gate"] == "placeholders")
+        self.assertFalse(g["ok"])
+        self.assertFalse(g["blocking"])
+        self.assertIn("s03", g["detail"])
+
     def test_qa_fails_when_over_the_limit_or_links_differ(self):
         o, _ = project(limit=60)
         run("stitch.py", o, "ingest"); run("score.py", o); run("mix.py", o); run("stitch.py", o, "final")

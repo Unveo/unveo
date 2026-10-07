@@ -88,6 +88,18 @@ When you ask with choices: in Claude Code, use AskUserQuestion (at most 4 option
 > **Which language should the voiceover be in?**
 > English (Recommended) · Hindi
 
+**5b. Voice style and pace.** Make samples first, so the user can listen:
+`"<PY>" "<SKILL_DIR>/scripts/voice.py" samples --lang <en|hi> --name "<project name>" --rate +10%`
+Give the user the sample paths (`OUT/voice/samples/*.mp3`), one per style, then ask:
+> **Which voice should narrate? (play the samples first)**
+> `<label 1>` (Recommended) · `<label 2>` · `<label 3>`
+
+and then:
+> **How fast should it speak?**
+> Brisk, +10% (Recommended) · Normal, +0% · Fast, +20%
+
+Save them as `voice.voice_id` and `voice.rate` in brief.json (step 11). A faster pace fits more words in the time limit; `script.py` accounts for it.
+
 **6. Understand the project.** Read `<SKILL_DIR>/ANALYSIS.md` now and follow it. It covers what to read, how to find the journey and the hidden logic, and the `understanding.md` template. Write `OUT/understanding.md` with `Confirmed: no`. Keep editing that file in place until Q3 is confirmed.
 
 **7. App URL.** Probe each URL you have, in this order: `--url`, then up to 3 `url_candidates`. Use:
@@ -95,11 +107,12 @@ When you ask with choices: in Claude Code, use AskUserQuestion (at most 4 option
 - If there are no URLs, or every probe exits 2, ask:
   > **I couldn't find a live link to your app. Where is it running?**
   > Paste a URL · It runs locally (I'll start it and paste the localhost URL) · It's not a web app, I'll record clips myself
-- If `login_wall` is true, ask:
-  > **The app needs a login. Is there a demo account I can use?**
-  > Yes (I'll set it as environment variables) · Skip the logged-in parts · I'll record those parts myself
+- If `login_wall` is true, or the code shows a sign-in unveo can't type into (Google or GitHub sign-in, OTP, CAPTCHA), ask:
+  > **The app needs a login. How should unveo get past it?**
+  > I'll log in myself in a window unveo opens (Recommended) · A demo account (I'll set it as environment variables) · Skip the logged-in parts · I'll record those parts myself
 
-  For *Yes*, tell them to set `UNVEO_LOGIN_USER` and `UNVEO_LOGIN_PASSWORD` in their shell before the recording phase. If the repo itself publishes a demo account (README or login page), they may use it, but you still never copy it into any file.
+  - **Log in myself:** steps.json gets a manual login (CAPTURE.md). During the dry run and the recording, a real browser window opens; the user logs in there by any method; unveo carries on by itself once it sees they're in. The site remembers the login between runs. It needs a computer with a screen, so it won't work in cloud agents.
+  - **Demo account:** tell them to set `UNVEO_LOGIN_USER` and `UNVEO_LOGIN_PASSWORD` in their shell before the recording phase. If the repo itself publishes a demo account (README or login page), they may use it, but you still never copy it into any file.
 - **A pasted URL that fails:** say what failed (from `message`) and ask the same question again, once. After a second failure, or when the user says they'll record clips themselves, set `capture_enabled` to false and stop probing.
 - **App unreachable:** skip the login question. Work out from the code whether there's a sign-in, and note it under "Not sure about".
 - Put the result on the `App URL:` line of understanding.md. Examples:
@@ -142,7 +155,7 @@ Store links exactly as the user types them, character for character. Leave out t
               "login": {"needed": false, "user_env": "UNVEO_LOGIN_USER", "password_env": "UNVEO_LOGIN_PASSWORD"}},
   "limit_s": 120,
   "language": "en",
-  "voice": {"provider": "edge", "voice_id": "en-IN-NeerjaNeural", "rate": "+0%"},
+  "voice": {"provider": "edge", "voice_id": "en-IN-NeerjaNeural", "rate": "+10%"},
   "understanding": {"field": "", "problem": "", "product": "", "journey": ["…"],
     "hidden_logic": [{"id": "H1", "title": "", "pattern": "formula-breakdown", "source": ["path:12-40"],
                       "shown_at_step": 3, "selected": true}],
@@ -155,7 +168,7 @@ Store links exactly as the user types them, character for character. Leave out t
 ```
 
 - `source` is `{"kind": "github", "url": "<url>", "clone_path": "<root>"}` for a cloned repo.
-- The Hindi voice is `hi-IN-SwaraNeural`.
+- `voice.voice_id` and `voice.rate` come from step 5b (defaults `en-IN-NeerjaNeural` or `hi-IN-SwaraNeural`, and `+10%`).
 - `capture_enabled` is false when there's no reachable web app.
 - `journey` holds each step as written in understanding.md (`<action> → <what appears>`), without the `[route…, element…]` tag.
 - `confirmed_at` is the real current time: run `date -Iseconds` (on Windows PowerShell, `Get-Date -Format o`).
@@ -174,6 +187,8 @@ Run `"<PY>" "<SKILL_DIR>/scripts/script.py" check` and fix every listed error un
 - Run `"<PY>" "<SKILL_DIR>/scripts/capture.py" check` and fix every error.
 - Run `"<PY>" "<SKILL_DIR>/scripts/capture.py" dry-run`. Fix failures from their `closest` and screenshot, and re-run them with `--scene sNN`. That's at most 3 rounds per scene; a scene that still fails becomes a clip (CAPTURE.md, step 4).
 - If the app needs a login and the env variables aren't set, ask the user to set them now. Never ask for the values.
+- **Manual login:** before each `dry-run` and `record`, tell the user: "A browser window is opening. Log in there however you normally do; I'll carry on by myself once you're in. Please don't close it or click around after logging in." If it exits 2 with a login timeout, ask whether they want to try again or record those scenes as clips.
+- **One-time actions:** if a step can't be undone for the user (a form that accepts one response per person, an order, a vote), add `"once": true` to it. It's then flagged ⚠️ and skipped unless they approve it, and they should know it uses up their real entry (suggest a second account).
 - Re-run `script.py check` after any scene turns into a clip.
 - When it all passes, run `state.py set dryrun done`.
 

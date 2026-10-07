@@ -4,6 +4,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: semv
 
 ## [0.1.0-dev]
 ### Added
+- Manual login: a visible browser opens, the person logs in any way (Google, OTP, CAPTCHA), unveo records the rest in that window.
+- Voice style and pace at intake, with `voice.py samples`; default pace +10%; word budget scales with pace.
+- `"once": true` flags one-time actions (one response per person) like destructive steps.
+- QA warns when a placeholder card is still in the video.
+- docs/15-WEAK-POINTS.md: ranked weak points with status.
 - Phase 3 (Build) end to end: voice.py, plan_timeline.py, capture.py record, the film engine with 11 templates,
   render.py (stills, draft, final, pops, estimate), score.py, mix.py, stitch.py, qa.py.
 - First real video: MPLADS Ecosystem (its-sambhav/Orbit-SwarmHack), 1:48, every QA gate passing.
