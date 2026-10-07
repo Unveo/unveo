@@ -1,6 +1,6 @@
 """Synthesise the background music from the timeline (docs/09 §6). Free, offline, deterministic.
 
-  score.py [--out unveo-out]   ->  audio/score.wav (48 kHz stereo, the film's length)
+  score.py [--out unveo-out/.work]   ->  audio/score.wav (48 kHz stereo, the film's length)
 
 A soft pad on a 4-chord loop, a light pulse from the product segment on, a shimmer on each
 segment change, a swell under each explainer, and a fade over the close.

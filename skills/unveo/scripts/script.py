@@ -1,6 +1,6 @@
 """Check unveo-out/script.md against the pitch rules (docs/06).
 
-  script.py check [--out unveo-out]    word budget, source tags, headings, pitch order, explainers, shots
+  script.py check [--out unveo-out/.work]    word budget, source tags, headings, pitch order, explainers, shots
   script.py budget --limit 120         just the word budget
 
 Exit 2 lists every error so the agent can fix the script and check again.

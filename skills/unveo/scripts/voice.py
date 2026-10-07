@@ -1,6 +1,6 @@
 """Make one voice clip per scene from script.md (docs/09). Free voices only.
 
-  voice.py [--scene sNN] [--provider edge|kokoro|own] [--voice <id>] [--rate +10%] [--out unveo-out]
+  voice.py [--scene sNN] [--provider edge|kokoro|own] [--voice <id>] [--rate +10%] [--out unveo-out/.work]
   voice.py samples [--accent auto|us|uk|in|au|...] [--lang en|hi] [--name "<project>"] [--rate +10%]
 
 edge (default): each sentence is voiced on its own and joined with natural, varied pauses and a slight

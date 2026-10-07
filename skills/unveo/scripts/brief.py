@@ -1,6 +1,6 @@
 """Check unveo-out/brief.json before anything is written from it (docs/03 §7).
 
-  brief.py validate [--out unveo-out]   exit 0 if valid, 2 with a list of errors otherwise
+  brief.py validate [--out unveo-out/.work]   exit 0 if valid, 2 with a list of errors otherwise
   brief.py defaults --mode quick|guided --narration ai|own [--lang en|hi] [--limit S] [--repo-url URL]
       fills every answer that has a recommended default (focus, voice, speed, captions, palette, name),
       keeps whatever brief.json already holds, and lists what the agent still has to write.

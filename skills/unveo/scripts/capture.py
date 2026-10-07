@@ -1,10 +1,10 @@
 """Record the real web app (docs/10).
 
-  capture.py probe --url <url> [--out unveo-out]   open the app once: status, title, login wall, screenshot
-  capture.py check   [--out unveo-out]             validate capture/steps.json, flag risky steps, list the plan in plain words
-  capture.py dry-run [--out unveo-out] [--scene sNN]   run the steps fast, no recording; screenshots + failure details
+  capture.py probe --url <url> [--out unveo-out/.work]   open the app once: status, title, login wall, screenshot
+  capture.py check   [--out unveo-out/.work]             validate capture/steps.json, flag risky steps, list the plan in plain words
+  capture.py dry-run [--out unveo-out/.work] [--scene sNN]   run the steps fast, no recording; screenshots + failure details
 
-  capture.py record  [--out unveo-out] [--scene sNN]   record each capture scene, paced to its voice clip
+  capture.py record  [--out unveo-out/.work] [--scene sNN]   record each capture scene, paced to its voice clip
 """
 import argparse, asyncio, base64, difflib, json, os, re, subprocess, sys, tempfile, time
 from pathlib import Path

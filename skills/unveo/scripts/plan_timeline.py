@@ -1,6 +1,6 @@
 """Lay the scenes on one clock from their voice clips (docs/09 §5).
 
-  plan_timeline.py [--out unveo-out]   ->  timeline.json; exit 2 if the video would run over the limit
+  plan_timeline.py [--out unveo-out/.work]   ->  timeline.json; exit 2 if the video would run over the limit
 """
 import argparse, json, math, sys
 from pathlib import Path

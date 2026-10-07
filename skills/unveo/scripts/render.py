@@ -1,6 +1,8 @@
 """Render the animated scenes (docs/08). Every frame is window.seek(t) in headless Chromium, piped to ffmpeg.
 
-  render.py palettes                    the 6 colour schemes as stills/palettes.png (intake Q4)
+  render.py palettes                    the colour presets as stills/palettes.png (round A, Other)
+  render.py looks [--names a,b]         3 looks that fit the project, drawn in its colours -> stills/looks.png (round A)
+  render.py icons --search <word>       free-licence icons for motifs (lucide:landmark, mdi:rupee …)
   render.py stills [--at 3,18] [--all]  stills/sheet.png: animated scenes + one frame per recorded scene (Checkpoint C)
   render.py draft                       render/draft/sNN.mp4 at 960x540, 1 sample per frame (timing check)
   render.py final [--chunks N] [--scene sNN]   render/segments/sNN.mp4 at 1920x1080, 30 fps, 3 subframes (motion blur)

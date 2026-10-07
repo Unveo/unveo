@@ -1,6 +1,6 @@
 """Voice + music -> one track at -14 LUFS (docs/09 §7).
 
-  mix.py [--out unveo-out]   ->  audio/mix.wav
+  mix.py [--out unveo-out/.work]   ->  audio/mix.wav
 
 Each voice clip lands at its scene's start + lead; the music ducks 9 dB under the voice;
 two-pass loudnorm (I=-14, TP=-1.5) as in the upstream audio_template.py.

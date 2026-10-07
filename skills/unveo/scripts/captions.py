@@ -1,6 +1,6 @@
 """Captions from the narration, timed to the voice (docs/15 D3). Judges often watch muted.
 
-  captions.py [--out unveo-out]   ->  captions.srt (for YouTube/Devpost) + captions.ass (burned in by stitch.py)
+  captions.py [--out unveo-out/.work]   ->  captions.srt (for YouTube/Devpost) + captions.ass (burned in by stitch.py)
 
 brief.captions: "burned" (default) · "srt" (file only) · "off".
 Captions show the real words ("MPLADS"), even when voice.say_as makes the voice say "M P lads".

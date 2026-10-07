@@ -1,6 +1,6 @@
 """Map a project repo for the agent (docs/05). Stdlib only, deterministic, never reads .env values.
 
-  analyze_repo.py --repo <path | git URL> [--out unveo-out]   ->  <out>/repo_scan.json
+  analyze_repo.py --repo <path | git URL> [--out unveo-out/.work]   ->  <out>/repo_scan.json
 
 A git URL is shallow-cloned into ~/.unveo/repos/<owner>-<repo> (or pulled if already there).
 The scan finds candidates; the agent reads the files and decides.

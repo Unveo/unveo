@@ -1,10 +1,10 @@
 """Optional: record the narration in your own voice (docs/15 B6). Never required.
 
-  studio.py serve [--out unveo-out] [--port 0] [--no-open] [--timeout 3600]
+  studio.py serve [--out unveo-out/.work] [--port 0] [--no-open] [--timeout 3600]
 
-Opens a local teleprompter page: the line to read is highlighted; Record, Play it back, Re-record if
-needed, then Approve. The word being said lights up (Chrome's speech recognition) and a pace guide moves at the
-speed chosen in the brief. Approved takes are saved to unveo-out/your-voice/<scene>.webm with the time each word was heard
+Opens the yellow teleprompter page: one line at a time; Record, Play it back, Record again if needed,
+then Approve. A black box sits on the word being said (Chrome's speech recognition; the pace elsewhere) and one
+bar fills at the speed chosen in the brief. Approved takes are saved to unveo-out/your-voice/<scene>.webm with the time each word was heard
 (<scene>.words.json), so the video can follow the real voice; Finish ends the session.
 Then run `voice.py --provider own` to use them. The audio stays on this computer; in Chrome the live
 highlight uses the browser's built-in speech recognition, which sends audio to Google while you record.

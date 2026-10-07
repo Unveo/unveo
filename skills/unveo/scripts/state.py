@@ -1,7 +1,7 @@
 """Track which steps are done, for resume (docs/02 §3, docs/03 §7).
 
-  state.py set <step> <pending|done|approved|failed> [--hash <h>] [--out unveo-out]
-  state.py show [--out unveo-out]
+  state.py set <step> <pending|done|approved|failed> [--hash <h>] [--out unveo-out/.work]
+  state.py show [--out unveo-out/.work]
 """
 import argparse, json, sys, time
 from pathlib import Path

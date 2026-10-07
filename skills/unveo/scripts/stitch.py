@@ -4,7 +4,7 @@
   stitch.py draft                     draft segments + mix -> draft.mp4 (960x540)
   stitch.py final                     segments + audio/mix.wav -> final.mp4
 
-A clip longer than its scene is trimmed; a shorter one holds its last frame. Hard cuts between scenes.
+A clip longer than its scene is trimmed; a shorter one holds its last frame. Each cut blends in by the look's transition.
 """
 import argparse, json, re, subprocess, sys, tempfile
 from pathlib import Path
