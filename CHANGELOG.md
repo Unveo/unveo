@@ -4,6 +4,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: semv
 
 ## [0.1.0-dev]
 ### Added
+- Round 2 (from your review):
+  - Natural, global voice: accents from the system region, Multilingual voices first, sentence-by-sentence delivery with varied pauses, speed asked every run, stiff-wording warnings.
+  - Optional own-voice studio: highlight, record, play, re-record, approve.
+  - Focus question: product, balanced or explain.
+  - Zoom on the explained element; recordings now 1920x1080 at 100% (native-sharp).
+  - Captions burned in plus captions.srt.
+  - Per-video design brief (the app's font, motion, background), building blocks and compose scenes, overflow, contrast and crowding checks, QA feel report.
+  - setup_app.py: plan, install --yes, start --yes, stop for local Node and Python apps.
 - Manual login: a visible browser opens, the person logs in any way (Google, OTP, CAPTCHA), unveo records the rest in that window.
 - Voice style and pace at intake, with `voice.py samples`; default pace +10%; word budget scales with pace.
 - `"once": true` flags one-time actions (one response per person) like destructive steps.

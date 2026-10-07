@@ -51,6 +51,9 @@ unveo/
 │   │   ├── stitch.py             ingest · draft · final → final.mp4
 │   │   ├── qa.py                 quality gates → qa.md
 │   │   ├── brief.py              validate brief.json
+│   │   ├── captions.py           captions.srt + captions.ass from the voice timings
+│   │   ├── studio.py             optional own-voice teleprompter page
+│   │   ├── setup_app.py          plan, install, start and stop a local app
 │   │   ├── state.py              state.json bookkeeping
 │   │   ├── common.py             shared helpers: paths, ffmpeg exe, JSON out, hashing
 │   │   └── engine/               vendored from howseen-ai/claude-motion-design

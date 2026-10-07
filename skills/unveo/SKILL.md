@@ -114,7 +114,14 @@ Save them as `voice.voice_id` and `voice.rate` in brief.json (step 11). A faster
 `"<PY>" "<SKILL_DIR>/scripts/capture.py" probe --url <url>`
 - If there are no URLs, or every probe exits 2, ask:
   > **I couldn't find a live link to your app. Where is it running?**
-  > Paste a URL · It runs locally (I'll start it and paste the localhost URL) · It's not a web app, I'll record clips myself
+  > Set it up and run it for me (Recommended when the code is here) · Paste a URL · It runs locally (I'll start it and paste the localhost URL) · It's not a web app, I'll record clips myself
+- **Set it up and run it for me:**
+  1. Run `"<PY>" "<SKILL_DIR>/scripts/setup_app.py" plan --repo <root>`. It reports `where` (here: started inside the project; clone; elsewhere), the Node and Python parts, what's already installed, the run commands, missing env **names**, and `blockers`.
+  2. **Blockers** (a database, Docker services, an unsupported stack): explain them in one line and fall back to "Paste a URL" or clips.
+  3. **Missing env names:** ask the user to add them to the project's `.env` themselves. Never ask for the values in chat.
+  4. Show what will be installed and run, then ask once: **"Install these inside the project folder and start it?"** *Yes (Recommended)* · *No*.
+  5. On *Yes*, run `setup_app.py install --yes` (skip it if nothing needs installing), then `setup_app.py start --yes`. Use the first URL it reports as the app URL and probe it.
+  6. Remember to stop it at step 27.
 - If `login_wall` is true, or the code shows a sign-in unveo can't type into (Google or GitHub sign-in, OTP, CAPTCHA), ask:
   > **The app needs a login. How should unveo get past it?**
   > I'll log in myself in a window unveo opens (Recommended) · A demo account (I'll set it as environment variables) · Skip the logged-in parts · I'll record those parts myself
@@ -288,7 +295,7 @@ Captions show the real words even where `say_as` changes the pronunciation. `bri
 
 **26. QA.** Read `<SKILL_DIR>/QA.md`. Run `"<PY>" "<SKILL_DIR>/scripts/qa.py"`. Fix every failing blocking gate as QA.md says, re-run only the affected steps, then stitch and QA again. When it passes, `state.py set qa done`.
 
-**27. Done.** Open the folder (`open OUT` on macOS, `explorer OUT` on Windows, `xdg-open OUT` on Linux). Then say, filling in the values:
+**27. Done.** If step 7 started the app, run `"<PY>" "<SKILL_DIR>/scripts/setup_app.py" stop`. Then open the folder (`open OUT` on macOS, `explorer OUT` on Windows, `xdg-open OUT` on Linux). Then say, filling in the values:
 `final.mp4 · <m:ss> · 1920×1080 · <LUFS> LUFS · captions burned in. Script: unveo-out/script.md. Captions file: unveo-out/captions.srt. QA: unveo-out/qa.md.`
 Mention any `clip` scenes still showing placeholder cards.
 
