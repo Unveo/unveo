@@ -44,6 +44,18 @@ def shots_map(o):
     return out
 
 
+def shot_task(o, shot):
+    """The shot's 'What to do' lines from shots.md, joined into one sentence for the placeholder card."""
+    text = (o / "shots.md").read_text(encoding="utf-8") if (o / "shots.md").exists() else ""
+    m = re.search(rf"^## {re.escape(shot)} .*?What to do:\n(.*?)(?:\n\S|\Z)", text, re.S | re.M)
+    steps = [re.sub(r"^\s*\d+\.\s*", "", l).strip() for l in (m.group(1).splitlines() if m else []) if l.strip()]
+    steps = steps[:1] + [x[:1].lower() + x[1:] for x in steps[1:3]]  # "…, then click Start", not "then Click"
+    text = re.sub(r"\s*on https?://\S+,?", "", ", then ".join(steps), flags=re.I).strip()
+    if len(text) > 110:  # the card has room for about two lines
+        text = text[:110].rsplit(" ", 1)[0].rstrip(",.;") + "…"
+    return text[:1].upper() + text[1:] if text else "This part of the demo is recorded by the team."
+
+
 def find_clip(o, shot):
     for ext in (".mp4", ".mov", ".webm", ".mkv", ".MP4", ".MOV"):
         p = o / "clips" / f"{shot}{ext}"
@@ -56,7 +68,7 @@ def ingest(o, placeholders):
     tl = read_json(o / "timeline.json")
     bg = json.loads((o / "brief.json").read_text(encoding="utf-8")).get("palette", {}).get("tokens", {}).get("bg", "black")
     shots = shots_map(o)
-    missing, made = [], []
+    missing, missing_ids, made = [], [], []
     for s in tl["scenes"]:
         sid = s["id"]
         if s["visual"] == "capture":
@@ -65,9 +77,14 @@ def ingest(o, placeholders):
                 missing.append(f"capture/{sid}.mp4")
                 continue
         elif s["visual"] == "clip":
-            src = find_clip(o, shots.get(sid, f"shot-{sid[1:]}"))
+            shot = shots.get(sid, f"shot-{sid[1:]}")
+            src = find_clip(o, shot)
             if not src:
-                missing.append(f"clips/{shots.get(sid, 'shot-' + sid[1:])}.mp4")
+                missing.append(f"clips/{shot}.mp4")
+                missing_ids.append(sid)
+                data = o / "film" / "data" / f"{sid}.json"
+                data.parent.mkdir(parents=True, exist_ok=True)
+                data.write_text(json.dumps({"shot_id": shot, "what_to_record": shot_task(o, shot)}, ensure_ascii=False))
                 continue
         else:
             continue
@@ -77,10 +94,15 @@ def ingest(o, placeholders):
     if missing and not placeholders:
         emit("stitch", ok=False, user_action=True, missing=missing, made=made,
              message=f"Waiting for {', '.join(missing)}. Record them (see shots.md), or run with --placeholders.")
-    if missing:  # animated cards instead, rendered by render.py as the placeholder template
-        subprocess.run([sys.executable, str(Path(__file__).parent / "render.py"), "final", "--out", str(o)], check=False,
-                       capture_output=True)
-    emit("stitch", made=made, missing=missing, message=f"fitted {len(made)} recorded scene(s)")
+    if missing:  # animated cards instead, rendered by render.py with the placeholder template
+        for mode in ("final", "draft"):
+            p = subprocess.run([sys.executable, str(Path(__file__).parent / "render.py"), mode, "--out", str(o)]
+                               + ["--placeholders", ",".join(missing_ids)],
+                               capture_output=True, text=True)
+            if p.returncode:
+                emit("stitch", ok=False, message=f"placeholder render failed: {p.stdout.strip().splitlines()[-1] if p.stdout.strip() else p.stderr[-300:]}")
+    emit("stitch", made=made, missing=missing, placeholders=missing_ids,
+         message=f"fitted {len(made)} recorded scene(s)" + (f"; placeholder cards for {missing_ids}" if missing_ids else ""))
 
 
 def concat(o, folder, audio, dst, w, h):

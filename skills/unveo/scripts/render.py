@@ -237,11 +237,12 @@ def render_scene(pw, film, sc, path, width, sub):
     return page.errors
 
 
-def anim_scenes(scenes, only=None):
-    return [s for s in scenes if s["visual"] == "anim" and (not only or s["id"] == only)]
+def anim_scenes(scenes, only=None, extra=()):
+    """Animated scenes, plus any clip scenes rendered as placeholder cards (`extra`)."""
+    return [s for s in scenes if (s["visual"] == "anim" or s["id"] in extra) and (not only or s["id"] == only)]
 
 
-def video_cmd(out, mode, chunks=None, only=None):
+def video_cmd(out, mode, chunks=None, only=None, extra=()):
     from playwright.sync_api import sync_playwright
     film, scenes = prepare(out)
     o = Path(out)
@@ -249,7 +250,7 @@ def video_cmd(out, mode, chunks=None, only=None):
     folder.mkdir(parents=True, exist_ok=True)
     hashes_f = folder / ".hashes.json"
     hashes = json.loads(hashes_f.read_text()) if hashes_f.exists() else {}
-    todo = [s for s in anim_scenes(scenes, only)
+    todo = [s for s in anim_scenes(scenes, only, extra)
             if hashes.get(s["id"]) != scene_hash(film, s, mode) or not (folder / f"{s['id']}.mp4").exists()]
     t0 = time.time()
     chunks = max(1, min(chunks or min(4, max(1, (os.cpu_count() or 2) // 2)), len(todo) or 1))
@@ -278,7 +279,7 @@ def video_cmd(out, mode, chunks=None, only=None):
         hashes[s["id"]] = scene_hash(film, s, mode)
     hashes_f.write_text(json.dumps(hashes, indent=1))
     emit("render", rendered=[s["id"] for s in todo], seconds=round(time.time() - t0, 1),
-         outputs=[str(folder / f"{s['id']}.mp4") for s in anim_scenes(scenes, only)],
+         outputs=[str(folder / f"{s['id']}.mp4") for s in anim_scenes(scenes, only, extra)],
          message=f"{mode}: rendered {len(todo)} scene(s) in {time.time() - t0:.0f} s" + ("" if todo else " (all up to date)"))
 
 
@@ -320,8 +321,8 @@ def stills_cmd(out, at=None, every=False):
     with sync_playwright() as pw:
         for i, (s, t) in enumerate(picks):
             f = d / f"still-{i:02d}-{s['id']}.png"
-            if s["visual"] == "anim":
-                page = Page(pw, film, s["id"], 1920)
+            if s["visual"] == "anim" or (s["visual"] == "clip" and not any((o / "clips").glob("*"))):
+                page = Page(pw, film, s["id"], 1920)  # animated scene, or the placeholder card for a missing clip
                 page.shot(t, f)
                 errors += page.errors
                 page.close()
@@ -381,10 +382,13 @@ def main():
     st = sub.add_parser("stills")
     st.add_argument("--at")
     st.add_argument("--all", action="store_true")
-    sub.add_parser("draft").add_argument("--scene")
+    dr = sub.add_parser("draft")
+    dr.add_argument("--scene")
+    dr.add_argument("--placeholders", default="")
     fi = sub.add_parser("final")
     fi.add_argument("--chunks", type=int)
     fi.add_argument("--scene")
+    fi.add_argument("--placeholders", default="", help="clip scenes to render as placeholder cards, comma-separated")
     po = sub.add_parser("pops")
     po.add_argument("--file")
     sub.add_parser("estimate")
@@ -399,9 +403,9 @@ def main():
     elif a.cmd == "stills":
         stills_cmd(a.out, [float(x) for x in a.at.split(",")] if a.at else None, a.all)
     elif a.cmd == "draft":
-        video_cmd(a.out, "draft", only=a.scene)
+        video_cmd(a.out, "draft", only=a.scene, extra=tuple(x for x in a.placeholders.split(",") if x))
     elif a.cmd == "final":
-        video_cmd(a.out, "final", a.chunks, a.scene)
+        video_cmd(a.out, "final", a.chunks, a.scene, tuple(x for x in a.placeholders.split(",") if x))
     elif a.cmd == "pops":
         f = Path(a.file or Path(a.out) / "final.mp4")
         tl = Path(a.out) / "timeline.json"

@@ -4,7 +4,7 @@ UNVEO.scene("explainer-system-map", {
     const { h, esc, question, exampleTag } = CORE;
     root.__q = question(root, d.title);
     exampleTag(root, d);
-    const col = { client: 0, server: 1, db: 1, model: 2, job: 2, external: 2 };
+    const col = { client: 0, server: 1, db: 2, model: 2, job: 2, external: 2 };  // clients left, servers middle, everything they call on the right
     const low = { db: 1, job: 1, model: 1 };
     const nodes = (d.nodes || []).slice(0, 7), groups = {};
     nodes.forEach(n => { const k = `${col[n.kind] ?? 1}`; (groups[k] = groups[k] || []).push(n); });

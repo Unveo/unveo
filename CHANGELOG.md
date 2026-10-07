@@ -7,6 +7,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: semv
 - Phase 3 (Build) end to end: voice.py, plan_timeline.py, capture.py record, the film engine with 11 templates,
   render.py (stills, draft, final, pops, estimate), score.py, mix.py, stitch.py, qa.py.
 - First real video: MPLADS Ecosystem (its-sambhav/Orbit-SwarmHack), 1:48, every QA gate passing.
+### Fixed (found on the AI Developer Survey run)
+- Missing clips with --placeholders never got a card: render.py now renders them (final and draft), with the shot's task.
+- Placeholder card text overflowed; it now sizes to its text, and the task is shortened to two lines.
+- render.py stills now shows the placeholder card for a clip that isn't recorded yet.
+- system-map layout: data stores and outside services sit on the right, so lines no longer cross.
 ### Fixed (found on the MPLADS run)
 - render.py failed with the default relative --out folder.
 - model-io template: long model names overflowed; feature chips overlapped; score_label for probabilities.

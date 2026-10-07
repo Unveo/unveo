@@ -112,6 +112,14 @@ class StitchQaTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(res["missing"], ["clips/shot-01.mp4"])
 
+    def test_missing_clip_with_placeholders_gets_a_card_segment(self):
+        o, _ = project()
+        (o / "clips/shot-01.mp4").unlink()
+        code, res = run("stitch.py", o, "ingest", "--placeholders")
+        self.assertEqual(code, 0, res)
+        d, _ = info(o / "render/segments/s03.mp4")
+        self.assertAlmostEqual(d, 2.0, delta=0.07)
+
     def test_qa_fails_when_over_the_limit_or_links_differ(self):
         o, _ = project(limit=60)
         run("stitch.py", o, "ingest"); run("score.py", o); run("mix.py", o); run("stitch.py", o, "final")
