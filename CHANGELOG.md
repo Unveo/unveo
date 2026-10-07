@@ -12,6 +12,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: semv
   - Captions burned in plus captions.srt.
   - Per-video design brief (the app's font, motion, background), building blocks and compose scenes, overflow, contrast and crowding checks, QA feel report.
   - setup_app.py: plan, install --yes, start --yes, stop for local Node and Python apps.
+- From the own-voice test run:
+  - Own takes: silence judged against the mic's own noise floor; edges cut and reading pauses shortened to 0.45 s (83 s of takes became 65 s).
+  - `zoom.target` frames a different element than the one clicked (the whole form card), with a long hold for small apps.
+  - Compose areas centre vertically; headings balance their lines (no one-word last line).
+  - `compose` scenes pass `script.py check`; late screencast acks no longer print an error.
 - Manual login: a visible browser opens, the person logs in any way (Google, OTP, CAPTCHA), unveo records the rest in that window.
 - Voice style and pace at intake, with `voice.py samples`; default pace +10%; word budget scales with pace.
 - `"once": true` flags one-time actions (one response per person) like destructive steps.

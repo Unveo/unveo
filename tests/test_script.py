@@ -161,6 +161,10 @@ class CheckTest(unittest.TestCase):
         _, out = check(GOOD, brief=b)
         self.assertTrue(any("at least 2" in e for e in out["errors"]), out["errors"])
 
+    def test_compose_scenes_are_allowed(self):
+        _, out = check(GOOD.replace("## s03 · problem · anim:problem", "## s03 · problem · anim:compose"))
+        self.assertEqual(out["errors"], [])
+
     def test_bad_heading_is_reported(self):
         _, out = check(GOOD.replace("## s06 · close · anim:close · target 8 s", "## s06 close anim"))
         self.assertTrue(any("heading" in e for e in out["errors"]))

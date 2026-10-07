@@ -56,6 +56,23 @@ class DeliveryTest(unittest.TestCase):
         self.assertLess(len(y), len(x) - sr)
 
 
+class TightenTest(unittest.TestCase):
+    def test_mic_hiss_edges_and_long_pauses_are_cut(self):
+        sr = 24000
+        rng = np.random.default_rng(1)
+        hiss = lambda s: rng.normal(0, 0.012, int(s * sr))  # about -38 dB, a laptop mic in a quiet room
+        speech = lambda s: np.sin(np.arange(int(s * sr)) * 2 * np.pi * 200 / sr) * 0.3
+        x = np.concatenate([hiss(1.0), speech(2.0), hiss(1.5), speech(2.0), hiss(2.0)])
+        y = voice.tighten(x, sr)
+        self.assertAlmostEqual(len(y) / sr, 2.0 + 0.45 + 2.0 + 0.1, delta=0.15)
+
+    def test_natural_short_pauses_are_kept(self):
+        sr = 24000
+        speech = np.full(sr, 0.3)
+        x = np.concatenate([speech, np.zeros(int(0.35 * sr)), speech])
+        self.assertAlmostEqual(len(voice.tighten(x, sr)) / sr, 2.35, delta=0.05)  # nothing to cut
+
+
 class OwnVoiceTest(unittest.TestCase):
     def test_own_provider_builds_voice_json_from_approved_takes(self):
         o = Path(tempfile.mkdtemp())

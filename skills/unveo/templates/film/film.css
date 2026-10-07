@@ -1,7 +1,7 @@
 @font-face { font-family: "Geist"; src: url("fonts/geist.woff2") format("woff2"); font-weight: 100 900; }
 @font-face { font-family: "Geist Mono"; src: url("fonts/geistmono.woff2") format("woff2"); font-weight: 100 900; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { background: #000; overflow: hidden; }
+html, body { background: #000; overflow: hidden; text-wrap: pretty; }  /* no one-word last lines */
 #stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: hidden; transform-origin: 0 0;
   background: var(--bg); color: var(--ink); font-family: var(--font-body, "Geist"), system-ui, sans-serif; font-feature-settings: "tnum"; }
 :root { --font-display: "Geist"; --font-body: "Geist"; --motion-speed: 1; }

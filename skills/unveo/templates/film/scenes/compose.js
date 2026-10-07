@@ -21,7 +21,7 @@
       const layout = AREAS[d.layout] || AREAS.stack;
       root.__areas = {};
       Object.entries(layout).forEach(([name, [x, y, w, hh]]) => {
-        const a = CORE.h("div", "abs area", null, `left:${x}px;top:${y}px;width:${w}px;height:${hh}px;display:flex;flex-direction:column;gap:22px;overflow:hidden`);
+        const a = CORE.h("div", "abs area", null, `left:${x}px;top:${y}px;width:${w}px;height:${hh}px;display:flex;flex-direction:column;justify-content:center;gap:22px;overflow:hidden`);
         root.append(a);
         root.__areas[name] = a;
       });

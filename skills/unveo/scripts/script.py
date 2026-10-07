@@ -29,7 +29,7 @@ def explainer_bounds(focus, limit_s):
         lo = min(lo, hi)
     return lo, hi
 PATTERNS = ["pipeline-flow", "formula-breakdown", "model-io", "raw-vs-processed", "system-map"]
-TEMPLATES = {"title", "context", "problem", "product-intro", "close"} | {f"explainer-{p}" for p in PATTERNS}
+TEMPLATES = {"title", "context", "problem", "product-intro", "close", "compose"} | {f"explainer-{p}" for p in PATTERNS}
 HEADING = re.compile(r"^## (s\d{2}) · (\w+) · (anim:[\w-]+|capture|clip) · (?:target )?(\d+(?:\.\d+)?) s"
                      r"(?: · steps: (s\d{2}))?(?: · logic: (H\d+))?\s*$")
 TAG = re.compile(r"\[(src|brief|understanding):\s*((?:[^\[\]]|\[[^\]]*\])*)\]")  # paths may hold [state]

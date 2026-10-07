@@ -623,7 +623,8 @@ async def record_scenes(out, only):
 
             def on_frame(f, cdp=cdp, frames=frames):
                 frames.append((f["metadata"]["timestamp"], f["data"]))
-                asyncio.ensure_future(cdp.send("Page.screencastFrameAck", {"sessionId": f["sessionId"]}))
+                ack = asyncio.ensure_future(cdp.send("Page.screencastFrameAck", {"sessionId": f["sessionId"]}))
+                ack.add_done_callback(lambda t: t.exception())  # a late ack after the page closed is harmless
             cdp.on("Page.screencastFrame", on_frame)
             await cdp.send("Page.startScreencast", {"format": "jpeg", "quality": 92, "maxWidth": 1920, "maxHeight": 1080, "everyNthFrame": 1})
             t0, wall0 = time.monotonic(), time.time()
@@ -641,9 +642,9 @@ async def record_scenes(out, only):
                     if not same_origin(page.url, base):
                         raise RuntimeError(f"left the app: went outside {base} to {page.url}")
                     if st.get("zoom"):
-                        box = await locate(page, st["target"]).first.bounding_box()
+                        z = st["zoom"] if isinstance(st["zoom"], dict) else {}
+                        box = await locate(page, z.get("target") or st["target"]).first.bounding_box()  # frame a whole card, act on its button
                         if box:
-                            z = st["zoom"] if isinstance(st["zoom"], dict) else {}
                             zooms.append({"t_s": round(time.monotonic() - t0, 2), "scale": float(z.get("scale", ZOOM_SCALE)),
                                           "hold_s": float(z.get("hold_s", ZOOM_HOLD_S)),
                                           "box": [round(box[k]) for k in ("x", "y", "width", "height")]})  # frames are CSS-pixel sized

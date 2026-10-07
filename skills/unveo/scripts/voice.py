@@ -20,7 +20,7 @@ import script as scriptmod  # noqa: E402
 
 HOME = Path(os.environ.get("UNVEO_HOME", Path.home() / ".unveo"))
 SR = 24000
-VERSION = "v2"  # bump to re-voice everything when the delivery changes
+VERSION = "v3"  # bump to re-voice everything when the delivery changes
 
 # Free edge-tts voices by accent, the most natural first (Multilingual voices have the most human prosody).
 VOICES = {
@@ -123,6 +123,31 @@ def trim_edges(x, sr=SR, threshold_db=-45, keep_s=0.05):
     a = max(0, loud[0] - int(keep_s * sr))
     b = min(len(x), loud[-1] + int(keep_s * sr))
     return x[a:b], a / sr
+
+
+def tighten(x, sr=SR, max_gap_s=0.45, keep_s=0.05, win_s=0.02):
+    """Own takes: cut the edges and shorten reading pauses to max_gap_s. Silence is judged against the take's own
+    noise floor (a mic hisses above a fixed -45 dB), so hesitations before and after speaking go too."""
+    n = int(win_s * sr)
+    if len(x) < n * 4:
+        return x
+    rms = np.sqrt(np.mean(x[: len(x) // n * n].reshape(-1, n) ** 2, axis=1)) + 1e-9
+    floor, peak = np.percentile(rms, 10), np.percentile(rms, 95)
+    loud = rms > max(floor * 3, peak * 0.1)  # ponytail: energy gate, a real VAD if soft speakers get clipped
+    idx = np.flatnonzero(loud)
+    if not len(idx):
+        return x
+    keep = int(keep_s * sr)
+    out, run_start, prev = [], idx[0], idx[0]
+    for i in list(idx[1:]) + [None]:
+        if i is not None and (i - prev) * win_s <= max_gap_s:
+            prev = i
+            continue
+        out.append(x[max(0, run_start * n - keep): min(len(x), (prev + 1) * n + keep)])
+        if i is not None:
+            out.append(np.zeros(int(max_gap_s * sr) - 2 * keep))
+            run_start = prev = i
+    return np.concatenate(out)
 
 
 def say_as(text, mapping):
@@ -305,7 +330,7 @@ def main():
             else:
                 raise RuntimeError(f"edge-tts unavailable: {last}")
         elif prov == "own":
-            x, _ = trim_edges(decode(own_take(o, sid)))
+            x = tighten(decode(own_take(o, sid)))
             encode_mp3(x, path)
             words, timing = None, "estimated"
         else:

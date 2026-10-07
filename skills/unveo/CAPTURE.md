@@ -62,7 +62,7 @@ One scene in steps.json for each `capture` scene in script.md, with the same id.
 Optional on any step:
 - `say`: the narration word this action should land on (used when recording).
 - `once`: true for actions that can't be undone for the user (a one-response-per-person form, an order); flagged like destructive steps.
-- `zoom`: `true` or `{"scale": 1.6, "hold_s": 2}` on a step with a `target`. The camera eases in on that element (0.6 s), holds, then eases back out. Use it on the exact number, badge or button the voice names at that moment. **One per scene at most**, scale 1.2–2.0, so it stays subtle and never feels flashy.
+- `zoom`: `true` or `{"scale": 1.6, "hold_s": 2}` on a step with a `target`. The camera eases in on that element (0.6 s), holds, then eases back out. Use it on the exact number, badge or button the voice names at that moment. **One per scene at most**, scale 1.2–2.0, so it stays subtle and never feels flashy. Add `"target"` inside `zoom` to frame a different element than the one acted on, such as the whole form card while clicking its first option; a long `hold_s` keeps a small app readable for the whole scene.
 
 ## Screen size
 

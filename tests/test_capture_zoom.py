@@ -62,7 +62,7 @@ class RecordZoomTest(unittest.TestCase):
             (out / d).mkdir()
         step = {"do": "hover", "target": {"role": "button", "name": "Search"}, "say": "search"}
         if zoom:
-            step["zoom"] = {"scale": 2.0, "hold_s": 1.5}
+            step["zoom"] = zoom if isinstance(zoom, dict) else {"scale": 2.0, "hold_s": 1.5}
         (out / "capture/steps.json").write_text(json.dumps({"version": 1, "base_url": self.base,
                                                             "scenes": {"s05": {"start": {"do": "goto", "url": "/"}, "steps": [step]}}}))
         (out / "voice/voice.json").write_text(json.dumps({"version": 1, "clips": [
@@ -90,6 +90,10 @@ class RecordZoomTest(unittest.TestCase):
         self.assertEqual(len(res["scenes"][0]["zooms"]), 1)
         t = res["scenes"][0]["zooms"][0]["t_s"] + 1.0  # inside the hold
         self.assertGreater(np.abs(self.frame(zoomed, t) - self.frame(plain, t)).mean(), 8)
+
+    def test_zoom_can_frame_a_different_element_than_the_one_acted_on(self):
+        _, res = self.record({"scale": 1.3, "hold_s": 1.0, "target": {"css": "body"}})
+        self.assertGreater(res["scenes"][0]["zooms"][0]["box"][2], 1000)  # the page, not the small Search button
 
 
 if __name__ == "__main__":

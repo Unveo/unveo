@@ -8,7 +8,7 @@
 
   const B = {
     kicker: { build: pr => T("div", "eyebrow", esc(pr.text)) },
-    heading: { build: pr => T("div", null, esc(pr.text), "font:650 64px/1.1 var(--font-display);letter-spacing:-.02em"), fit: true },
+    heading: { build: pr => T("div", null, esc(pr.text), "font:650 64px/1.1 var(--font-display);letter-spacing:-.02em;text-wrap:balance"), fit: true },
     text: { build: pr => T("div", null, esc(pr.text), "font:450 34px/1.4 var(--font-body);color:var(--ink);opacity:.86"), fit: true },
     "big-number": {
       build: pr => {
