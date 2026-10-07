@@ -125,29 +125,106 @@ def trim_edges(x, sr=SR, threshold_db=-45, keep_s=0.05):
     return x[a:b], a / sr
 
 
-def tighten(x, sr=SR, max_gap_s=0.45, keep_s=0.05, win_s=0.02):
+def tighten(x, sr=SR, max_gap_s=0.45, keep_s=0.05, win_s=0.02, with_map=False):
     """Own takes: cut the edges and shorten reading pauses to max_gap_s. Silence is judged against the take's own
-    noise floor (a mic hisses above a fixed -45 dB), so hesitations before and after speaking go too."""
+    noise floor (a mic hisses above a fixed -45 dB), so hesitations before and after speaking go too.
+    with_map=True also returns the kept segments as (src_start_s, src_end_s, dst_start_s), for remap()."""
     n = int(win_s * sr)
+    whole = [(0.0, len(x) / sr, 0.0)]
     if len(x) < n * 4:
-        return x
+        return (x, whole) if with_map else x
     rms = np.sqrt(np.mean(x[: len(x) // n * n].reshape(-1, n) ** 2, axis=1)) + 1e-9
     floor, peak = np.percentile(rms, 10), np.percentile(rms, 95)
     loud = rms > max(floor * 3, peak * 0.1)  # ponytail: energy gate, a real VAD if soft speakers get clipped
     idx = np.flatnonzero(loud)
     if not len(idx):
-        return x
+        return (x, whole) if with_map else x
     keep = int(keep_s * sr)
-    out, run_start, prev = [], idx[0], idx[0]
+    gap = np.zeros(int(max_gap_s * sr) - 2 * keep)
+    out, segs, pos, run_start, prev = [], [], 0, idx[0], idx[0]
     for i in list(idx[1:]) + [None]:
         if i is not None and (i - prev) * win_s <= max_gap_s:
             prev = i
             continue
-        out.append(x[max(0, run_start * n - keep): min(len(x), (prev + 1) * n + keep)])
+        a, b = max(0, run_start * n - keep), min(len(x), (prev + 1) * n + keep)
+        segs.append((a / sr, b / sr, pos / sr))
+        out.append(x[a:b])
+        pos += b - a
         if i is not None:
-            out.append(np.zeros(int(max_gap_s * sr) - 2 * keep))
+            out.append(gap)
+            pos += len(gap)
             run_start = prev = i
-    return np.concatenate(out)
+    y = np.concatenate(out)
+    return (y, segs) if with_map else y
+
+
+def remap(t, segs):
+    """A time in the raw take -> the same moment in the tightened clip. Inside a cut, it snaps to the speech that follows."""
+    for a, b, d in segs:
+        if t < a:
+            return d
+        if t <= b:
+            return d + t - a
+    a, b, d = segs[-1]
+    return d + b - a
+
+
+def spread_over_speech(text, segs):
+    """Estimated word timings over the spoken parts only, never inside a pause."""
+    words = text.split()
+    spans = [(d, d + b - a) for a, b, d in segs]
+    total = sum(e - s for s, e in spans) or 1e-6
+    weight = [len(w) + 1 for w in words]
+    unit = total / (sum(weight) or 1)
+
+    def at(speech_t):  # seconds of speech so far -> clip time
+        for s, e in spans:
+            if speech_t <= e - s:
+                return s + speech_t
+            speech_t -= e - s
+        return spans[-1][1]
+
+    out, acc = [], 0.0
+    for w, k in zip(words, weight):
+        out.append({"w": w, "t0": round(at(acc + 1e-6), 3), "t1": round(at(acc + k * unit), 3)})
+        acc += k * unit
+    return out
+
+
+RECOGNITION_LAG_S = 0.45  # Chrome's speech recognition reports a word about this long after it starts
+
+
+def spoken_words(text, heard, segs):
+    """The studio's recognised word times (seconds into the raw take) -> voice.json words in the tightened clip.
+    Words it didn't catch are placed between their neighbours by length."""
+    words = text.split()
+    norm = lambda w: re.sub(r"[^\w]", "", w.lower())
+    times = [None] * len(words)
+    if len(heard) == len(words):
+        times = [h.get("t") for h in heard]
+    else:  # match in order
+        k = 0
+        for h in heard:
+            for j in range(k, min(len(words), k + 4)):
+                if norm(words[j]) == norm(h.get("w", "")):
+                    times[j], k = h.get("t"), j + 1
+                    break
+    t0 = [None if t is None else remap(max(0.0, t - RECOGNITION_LAG_S), segs) for t in times]
+    end = segs[-1][2] + segs[-1][1] - segs[-1][0]
+    est = spread_over_speech(text, segs)
+    known = [i for i, t in enumerate(t0) if t is not None]
+    if not known:
+        return est, "estimated"
+    for i, t in enumerate(t0):  # fill gaps from the estimate, shifted to agree with the nearest known word
+        if t is None:
+            j = min(known, key=lambda k: abs(k - i))
+            t0[i] = est[i]["t0"] + (t0[j] - est[j]["t0"])
+    for i in range(1, len(t0)):
+        t0[i] = max(t0[i], t0[i - 1] + 0.05)
+    t0 = [min(t, end - 0.05) for t in t0]
+    out = [{"w": w, "t0": round(t, 3), "t1": round(max(t + 0.05, (t0[i + 1] - 0.02) if i + 1 < len(t0) else end), 3)}
+           for i, (w, t) in enumerate(zip(words, t0))]
+    return out, "spoken"
 
 
 def say_as(text, mapping):
@@ -312,7 +389,8 @@ def main():
 
     def want(sid, prov):
         take = own_take(o, sid) if prov == "own" else None
-        extra = (take.stat().st_size, take.stat().st_mtime) if take else ()
+        wf = o / "voice" / "own" / f"{sid}.words.json"
+        extra = (take.stat().st_size, take.stat().st_mtime, wf.stat().st_mtime if wf.exists() else 0) if take else ()
         return sha1_of(VERSION, texts[sid], prov, voice_id, rate, *extra)
 
     def make(sid, prov):
@@ -330,9 +408,11 @@ def main():
             else:
                 raise RuntimeError(f"edge-tts unavailable: {last}")
         elif prov == "own":
-            x = tighten(decode(own_take(o, sid)))
+            x, segs = tighten(decode(own_take(o, sid)), with_map=True)
             encode_mp3(x, path)
-            words, timing = None, "estimated"
+            wf = o / "voice" / "own" / f"{sid}.words.json"
+            heard = json.loads(wf.read_text(encoding="utf-8")).get("words", []) if wf.exists() else []
+            words, timing = spoken_words(texts[sid], heard, segs)
         else:
             kokoro_clip(texts[sid], accent, path)
             words, timing = None, "estimated"

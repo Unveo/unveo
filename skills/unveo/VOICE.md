@@ -31,10 +31,20 @@
 
 ## Your own voice (optional)
 
-1. `studio.py serve` opens a local page that highlights one line at a time.
-2. The user records it, plays it back, re-records if they want, and approves.
-3. Takes are saved to `voice/own/<scene>.webm`. Finish ends the session.
-4. `voice.py --provider own` trims the silence, measures each take, and uses them like any other voice. The video's timing follows their reading.
-5. Missing lines are listed (exit 2): record them, or switch those scenes back to a generated voice.
+Chosen in the start round. The voice is recorded **before** the screen, so the recording follows the real voice.
 
-Nothing leaves the computer.
+1. `studio.py serve` opens a local page with the unveo logo, one line at a time.
+2. While recording:
+   - **The highlight:** a yellow highlighter sits on the word being said (Chrome or Edge speech recognition), and words already read fade.
+   - **The pace guide:** an underline moves at the speed chosen in the brief, and the clock shows `2.1 s / 9.6 s` with "on pace" or "1.2 s behind".
+   - **Other browsers:** with no speech recognition, the yellow follows the pace.
+   - **Stopping:** recording stops by itself 0.6 s after the last word.
+3. The user plays it back, re-records if they want, and approves.
+4. **What's saved:** the take goes to `voice/own/<scene>.webm`, and the time each word was heard goes to `<scene>.words.json`. Finish ends the session.
+5. **Building the clips:** `voice.py --provider own` does three things:
+   - **Silence:** cuts the edges and the long pauses, judged against the mic's own noise.
+   - **Word timings:** carries the heard word times through those cuts (`timing: "spoken"`), so captions, compose blocks and explainer beats land on the real words. Without a words file, the timings are estimated over the spoken parts only.
+   - **Rest:** uses the takes like any other voice.
+6. Missing lines are listed (exit 2): record them, or switch those scenes back to a generated voice.
+
+The audio stays on the computer. The live highlight uses the browser's speech recognition, which in Chrome sends the audio to Google while recording.

@@ -8,7 +8,7 @@ Each explainer scene gets `OUT/film/data/<scene>.json`, filled **from the code y
 - Outside APIs stay black boxes: what goes in, what comes back.
 - More than 5 inputs or 6 stages: show the biggest and say "+ N more" in the narration. Never invent.
 - `title` is the judge's question, matching the narration ("How is Priority calculated?").
-- `beats`: optional start times (s) inside the scene, one per beat. Take them from `voice/voice.json` word timings plus the scene's `lead_s`, so each beat lands on its word. Without beats, they spread evenly.
+- `beats`: **required when the scene is voiced**, one per beat. Each is a time in seconds inside the scene, or `"word:<word>"` to start just as that word is spoken, e.g. `[0, "word:google", "word:every"]`. `render.py stills` stops with a `sync` issue when a voiced explainer has none, or a `word:` isn't in the narration. Without beats the animation spreads evenly and drifts from the voice.
 
 ## formula-breakdown (scores, rankings, indices). Beats: question · inputs · weights · combine · result
 ```json

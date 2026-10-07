@@ -221,14 +221,30 @@ def design_css(film, design):
 
 
 def resolve_word_times(data, words, lead):
-    """compose blocks may say "at": "word:priority": start when that word is spoken."""
+    """compose blocks ("at") and explainer beats may say "word:priority": start when that word is spoken."""
+    def when(v):
+        if not (isinstance(v, str) and v.startswith("word:")):
+            return v
+        key = v[5:].strip().lower()
+        hit = next((w for w in words if re.sub(r"\W", "", w["w"].lower()).startswith(key)), None)
+        return round(lead + hit["t0"] - 0.15, 2) if hit else None
     for b in data.get("blocks", []):
-        at = b.get("at")
-        if isinstance(at, str) and at.startswith("word:"):
-            key = at[5:].strip().lower()
-            hit = next((w for w in words if re.sub(r"\W", "", w["w"].lower()).startswith(key)), None)
-            b["at"] = round(lead + hit["t0"] - 0.15, 2) if hit else None
+        b["at"] = when(b.get("at"))
+    if "beats" in data:
+        data["beats"] = [when(v) for v in data["beats"]]
     return data
+
+
+def sync_issues(scenes, data_by_id):
+    """A voiced explainer must time its beats to the narration (s06 in the survey test drifted without them)."""
+    out = []
+    for s in scenes:
+        if str(s.get("template", "")).startswith("explainer-") and s.get("voice"):
+            beats = (data_by_id.get(s["id"]) or {}).get("beats")
+            if not beats or any(b is None for b in beats):
+                out.append({"scene": s["id"], "kind": "sync",
+                            "detail": "explainer has no beats (or a word: beat wasn't found); set beats from the narration's words"})
+    return out
 
 
 def prepare(out):
@@ -255,13 +271,13 @@ def prepare(out):
     for s in tl["scenes"]:
         f = film / "data" / f"{s['id']}.json"
         data = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
-        if s.get("template") == "compose":
+        if s.get("template") == "compose" or str(s.get("template", "")).startswith("explainer-"):
             data = resolve_word_times(data, words_by.get(s["id"], []), s.get("lead_s", 0))
         tpl = s.get("template") if s["visual"] == "anim" else "placeholder"
         if s["visual"] != "anim":
             data = data or {"shot_id": s["id"], "what_to_record": "The recorded app plays here."}
         scenes.append({"id": s["id"], "template": tpl or "placeholder", "dur_s": s["dur_s"], "start_s": s.get("start_s", 0),
-                       "visual": s["visual"], "data": data})
+                       "visual": s["visual"], "voice": s.get("voice"), "data": data})
     (film / "timeline.js").write_text("window.TIMELINE = " + json.dumps({"fps": FPS, "design": design, "scenes": scenes}, ensure_ascii=False) + ";\n")
     return film, scenes
 
@@ -430,7 +446,8 @@ def stills_cmd(out, at=None, every=False):
         chosen = anims if every else [anims[round(i * (len(anims) - 1) / 3)] for i in range(min(4, len(anims)))] if anims else []
         picks = [(s, s["dur_s"] * 0.8) for s in dict.fromkeys(s["id"] for s in chosen) for s in [next(x for x in anims if x["id"] == s)]]
         picks += [(s, s["dur_s"] / 2) for s in scenes if s["visual"] in ("capture", "clip")]
-    files, errors, issues, warnings = [], [], [], []
+    files, errors, warnings = [], [], []
+    issues = sync_issues(scenes, {s["id"]: s["data"] for s in scenes})
     with sync_playwright() as pw:
         for i, (s, t) in enumerate(picks):
             f = d / f"still-{i:02d}-{s['id']}.png"

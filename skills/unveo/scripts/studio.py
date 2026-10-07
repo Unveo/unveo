@@ -3,8 +3,11 @@
   studio.py serve [--out unveo-out] [--port 0] [--no-open] [--timeout 3600]
 
 Opens a local teleprompter page: the line to read is highlighted; Record, Play it back, Re-record if
-needed, then Approve. Approved takes are saved to voice/own/<scene>.webm; Finish ends the session.
-Then run `voice.py --provider own` to use them. Nothing leaves this computer.
+needed, then Approve. The word being said lights up (Chrome's speech recognition) and a pace guide moves at the
+speed chosen in the brief. Approved takes are saved to voice/own/<scene>.webm with the time each word was heard
+(<scene>.words.json), so the video can follow the real voice; Finish ends the session.
+Then run `voice.py --provider own` to use them. The audio stays on this computer; in Chrome the live
+highlight uses the browser's built-in speech recognition, which sends audio to Google while you record.
 """
 import argparse, http.server, json, re, socketserver, sys, threading, webbrowser
 from pathlib import Path
@@ -13,15 +16,25 @@ sys.path.insert(0, str(Path(__file__).parent))
 from common import emit, out_dir  # noqa: E402
 import script as scriptmod  # noqa: E402
 
-PAGE = Path(__file__).resolve().parents[1] / "templates" / "studio" / "index.html"
+TEMPLATES = Path(__file__).resolve().parents[1] / "templates"
+PAGE = TEMPLATES / "studio" / "index.html"
+FILES = {"/logo.png": TEMPLATES / "brand" / "logo.png", "/favicon.png": TEMPLATES / "brand" / "favicon.png"}
 EXTS = (".webm", ".wav", ".m4a", ".mp3", ".ogg", ".mp4")
 
 
 def lines(o):
+    """Each line to read, with the pace to read it at (the speed chosen in the brief) and how long that takes."""
     scenes = [s for s in scriptmod.parse((o / "script.md").read_text(encoding="utf-8")) if s["narration"]]
+    brief = json.loads((o / "brief.json").read_text(encoding="utf-8")) if (o / "brief.json").exists() else {}
+    wps = scriptmod.RATE.get(brief.get("language", "en"), 2.2) * scriptmod.rate_factor((brief.get("voice") or {}).get("rate"))
     own = o / "voice" / "own"
-    return [{"id": s["id"], "segment": s["segment"], "text": scriptmod.spoken(s["narration"]),
-             "approved": any((own / f"{s['id']}{e}").exists() for e in EXTS)} for s in scenes]
+    out = []
+    for s in scenes:
+        text = scriptmod.spoken(s["narration"])
+        out.append({"id": s["id"], "segment": s["segment"], "text": text, "lang": brief.get("language", "en"), "wps": round(wps, 3),
+                    "target_s": round(len(text.split()) / wps, 2),
+                    "approved": any((own / f"{s['id']}{e}").exists() for e in EXTS)})
+    return out
 
 
 def main():
@@ -54,6 +67,8 @@ def main():
                 self.send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
             elif self.path == "/lines":
                 self.send(200, lines(o))
+            elif self.path in FILES and FILES[self.path].exists():
+                self.send(200, FILES[self.path].read_bytes(), "image/png")
             else:
                 self.send(404, {"ok": False})
 
@@ -65,6 +80,13 @@ def main():
                 for e in EXTS:
                     (own / f"{m.group(1)}{e}").unlink(missing_ok=True)
                 (own / f"{m.group(1)}.webm").write_bytes(body)
+                self.send(200, {"ok": True})
+            elif (w := re.fullmatch(r"/words/(s\d{2})", self.path)) and w.group(1) in {l["id"] for l in lines(o)}:
+                try:
+                    words = [{"w": str(x["w"]), "t": None if x.get("t") is None else float(x["t"])} for x in json.loads(body)["words"]]
+                except (ValueError, KeyError, TypeError):
+                    return self.send(400, {"ok": False})
+                (own / f"{w.group(1)}.words.json").write_text(json.dumps({"words": words}))
                 self.send(200, {"ok": True})
             elif self.path == "/finish":
                 self.send(200, {"ok": True})

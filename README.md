@@ -1,3 +1,5 @@
+<img src="skills/brand/logo.png" alt="unveo" width="88">
+
 # unveo
 
 **Turn your hackathon repo into a judge-ready demo video, before the deadline.**

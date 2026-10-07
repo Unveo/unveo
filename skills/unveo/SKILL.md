@@ -182,8 +182,8 @@ Then ask:
   2. Give the user `first_clip` from the JSON and ask: **"Here's the first line. How does it sound?"** *Sounds good (Recommended)* · *Faster* · *Slower* · *Different voice*.
   3. For a change, update `voice.rate` (±5%) or `voice.voice_id`, then run voice.py again (it re-voices everything).
 - **Own voice:**
-  1. Tell the user: "A page is opening in your browser. Read each highlighted line, listen back, re-record if you like, then approve. Press Finish when done."
-  2. Run `"<PY>" "<SKILL_DIR>/scripts/studio.py" serve`. It waits until they press Finish.
+  1. Tell the user: "A page is opening in your browser (Chrome works best). Press Record and read the line: the yellow follows your voice and the underline shows the pace. Listen back, re-record if you like, approve. Press Finish when done."
+  2. Run `"<PY>" "<SKILL_DIR>/scripts/studio.py" serve`. It waits until they press Finish. This happens before any screen recording, so the screen follows their voice.
   3. If it exits 2 with `missing`, ask whether to record the rest now or switch those lines to a generated voice.
   4. Then run `voice.py --provider own`.
 - Then `state.py set voice done`.
@@ -206,7 +206,7 @@ Then ask:
 **19. Design and scene data.**
 1. Read `<SKILL_DIR>/DESIGN.md`. Write `OUT/film/design.json`: a concept chosen for this project, with the app's own font, calm motion and a plain background unless the product calls for more.
 2. Read `<SKILL_DIR>/ENGINE.md` and `<SKILL_DIR>/EXPLAINERS.md`. Write `OUT/film/data/<id>.json` for every `anim:` scene in timeline.json. Use a template where it fits; compose your own scene (`anim:compose`) where the story needs something the templates don't do.
-3. Set explainer `beats` and compose `at` values from the word timings in voice.json.
+3. Set explainer `beats` (required for a voiced explainer) and compose `at` values as `"word:<word>"` keys, picking the words in the narration where each beat should land.
 
 **20. Stills.** Run `"<PY>" "<SKILL_DIR>/scripts/render.py" stills`.
 - Fix every `page_errors` and `design_issues` item (text out of frame or box), and run it again.
