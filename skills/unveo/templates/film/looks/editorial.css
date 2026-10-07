@@ -1,0 +1,7 @@
+/* look: editorial. Serif headlines, paper, quiet italic kickers, cards like printed inserts. */
+.eyebrow { font: italic 400 30px var(--font-display); letter-spacing: 0; text-transform: none; color: var(--accent); }
+.card { border-radius: 6px; box-shadow: 0 1px 0 rgba(0,0,0,.06), 0 10px 30px rgba(0,0,0,.05); }
+.chip { border-radius: 6px; }
+.tag { border-radius: 4px; font-family: var(--font-body); letter-spacing: .02em; }
+.scene[data-template="title"]::after, .scene[data-template="close"]::after {
+  content: ""; position: absolute; left: 160px; right: 160px; bottom: 120px; height: 1px; background: color-mix(in srgb, var(--ink) 25%, transparent); }

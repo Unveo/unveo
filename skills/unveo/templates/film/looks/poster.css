@@ -1,0 +1,6 @@
+/* look: poster. Huge, heavy type; the opening and the end card sit on the accent colour. */
+.scene[data-template="title"], .scene[data-template="close"] {
+  --bg: var(--accent-solid); --ink: var(--on-accent); --muted: color-mix(in srgb, var(--on-accent) 75%, transparent); --accent: var(--on-accent); --surface: color-mix(in srgb, var(--on-accent) 12%, transparent);
+  background: var(--bg); color: var(--ink); }
+.eyebrow { font: 800 24px var(--font-body); letter-spacing: .08em; text-transform: uppercase; color: var(--ink); }
+.card, .chip { border-radius: 18px; box-shadow: none; }

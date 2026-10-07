@@ -165,6 +165,12 @@ class CheckTest(unittest.TestCase):
         _, out = check(GOOD.replace("## s03 · problem · anim:problem", "## s03 · problem · anim:compose"))
         self.assertEqual(out["errors"], [])
 
+    def test_only_fixed_templates_in_the_middle_is_a_warning(self):
+        _, fixed = check(GOOD)
+        self.assertTrue(any("compose" in w for w in fixed["warnings"]), fixed["warnings"])
+        _, mixed = check(GOOD.replace("## s03 · problem · anim:problem", "## s03 · problem · anim:compose"))
+        self.assertFalse(any("compose" in w for w in mixed["warnings"]), mixed["warnings"])
+
     def test_bad_heading_is_reported(self):
         _, out = check(GOOD.replace("## s06 · close · anim:close · target 8 s", "## s06 close anim"))
         self.assertTrue(any("heading" in e for e in out["errors"]))

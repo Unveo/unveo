@@ -23,15 +23,58 @@ def duration(p):
     return int(h) * 3600 + int(m) * 60 + float(s)
 
 
-def fit(src, dst, dur, w=1920, h=1080, bg="black"):
-    """Scale/pad to w x h at 30 fps, no audio, exactly `dur` seconds (trim, or hold the last frame)."""
+def frame_assets(frame, w, h, folder):
+    """The look's backdrop (colour, soft shadow, window bar) and the recording's rounded mask, drawn once and cached."""
+    from PIL import Image, ImageDraw, ImageFilter
+    import hashlib
+    window = frame["kind"] == "window"
+    k = w / 1920
+    iw = round(w * (0.86 if window else 0.88) / 2) * 2
+    ih = round(iw * 9 / 16 / 2) * 2
+    bar = round(44 * k) if window else 0
+    x, y = (w - iw) // 2, (h - ih - bar) // 2 + bar
+    r = round((14 if window else 22) * k)
+    key = hashlib.sha1(json.dumps([frame, w, h]).encode()).hexdigest()[:10]
+    folder.mkdir(parents=True, exist_ok=True)
+    bg_png, mask_png = folder / f"frame-{key}.png", folder / f"mask-{key}.png"
+    if not bg_png.exists():
+        img = Image.new("RGB", (w, h), frame["bg"])
+        shadow = Image.new("L", (w, h), 0)
+        ImageDraw.Draw(shadow).rounded_rectangle((x, y - bar + round(14 * k), x + iw, y + ih + round(14 * k)), r, fill=70)
+        img.paste(Image.new("RGB", (w, h), "#000000"), mask=shadow.filter(ImageFilter.GaussianBlur(28 * k)))
+        d = ImageDraw.Draw(img)
+        if window:
+            d.rounded_rectangle((x, y - bar, x + iw, y + r * 2), r, fill=frame["chrome"])
+            dot = "#4a4d55" if frame.get("dark") else "#c4c2bb"
+            for i in range(3):
+                cx, cy = x + round((24 + i * 22) * k), y - bar // 2
+                d.ellipse((cx - round(6 * k), cy - round(6 * k), cx + round(6 * k), cy + round(6 * k)), fill=dot)
+        img.save(bg_png)
+        mask = Image.new("L", (iw, ih), 0)
+        ImageDraw.Draw(mask).rounded_rectangle((0, -r if window else 0, iw - 1, ih - 1), r, fill=255)  # window: square top
+        mask.save(mask_png)
+    return bg_png, mask_png, x, y, iw, ih
+
+
+def fit(src, dst, dur, w=1920, h=1080, bg="black", frame=None):
+    """Scale/pad to w x h at 30 fps, no audio, exactly `dur` seconds (trim, or hold the last frame).
+    frame (from looks.frame): set the recording in a window or on a floating card over the look's background."""
     have = duration(src)
     hold = max(0.0, dur - have)
-    vf = (f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color={bg},fps=30,setsar=1"
-          + (f",tpad=stop_mode=clone:stop_duration={hold + 0.1:.3f}" if hold > 0 else "")
-          + ",scale=out_range=tv:out_color_matrix=bt709")
+    tail = (f",tpad=stop_mode=clone:stop_duration={hold + 0.1:.3f}" if hold > 0 else "") + ",scale=out_range=tv:out_color_matrix=bt709"
     dst.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-i", str(src), "-vf", vf, "-t", f"{dur:.3f}", "-an", *ENC, str(dst)], check=True)
+    if not frame:
+        vf = f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color={bg},fps=30,setsar=1" + tail
+        subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-i", str(src), "-vf", vf, "-t", f"{dur:.3f}", "-an", *ENC, str(dst)], check=True)
+        return
+    bg_png, mask_png, x, y, iw, ih = frame_assets(frame, w, h, dst.parent.parent / "frames")
+    t = f"{have + 0.2:.3f}"
+    fc = (f"[1:v]scale={iw}:{ih}:force_original_aspect_ratio=decrease,pad={iw}:{ih}:(ow-iw)/2:(oh-ih)/2:color={frame['bg']},"
+          f"fps=30,format=rgba[v];[2:v]format=gray[m];[v][m]alphamerge[vm];"
+          f"[0:v][vm]overlay={x}:{y}:shortest=1,setsar=1{tail}[out]")
+    subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-loop", "1", "-framerate", "30", "-t", t, "-i", str(bg_png), "-i", str(src),
+                    "-loop", "1", "-framerate", "30", "-t", t, "-i", str(mask_png), "-filter_complex", fc, "-map", "[out]",
+                    "-t", f"{dur:.3f}", "-an", *ENC, str(dst)], check=True)
 
 
 def shots_map(o):
@@ -66,7 +109,13 @@ def find_clip(o, shot):
 
 def ingest(o, placeholders):
     tl = read_json(o / "timeline.json")
-    bg = json.loads((o / "brief.json").read_text(encoding="utf-8")).get("palette", {}).get("tokens", {}).get("bg", "black")
+    import looks
+    tokens = json.loads((o / "brief.json").read_text(encoding="utf-8")).get("palette", {}).get("tokens", {})
+    look = (json.loads((o / "film" / "design.json").read_text(encoding="utf-8")) if (o / "film" / "design.json").exists() else {}).get("look")
+    if look and "accent" in tokens:
+        tokens = looks.palette(tokens, look)
+    bg = tokens.get("bg", "black")
+    frame = looks.frame(look, tokens) if look and "accent" in tokens else None
     shots = shots_map(o)
     missing, missing_ids, made = [], [], []
     for s in tl["scenes"]:
@@ -88,8 +137,8 @@ def ingest(o, placeholders):
                 continue
         else:
             continue
-        fit(src, o / "render" / "segments" / f"{sid}.mp4", s["dur_s"], bg=bg)
-        fit(src, o / "render" / "draft" / f"{sid}.mp4", s["dur_s"], 960, 540, bg=bg)
+        fit(src, o / "render" / "segments" / f"{sid}.mp4", s["dur_s"], bg=bg, frame=frame)
+        fit(src, o / "render" / "draft" / f"{sid}.mp4", s["dur_s"], 960, 540, bg=bg, frame=frame)
         made.append(sid)
     if missing and (o / "shots.md").exists():  # the person's copy of what to record, next to where the clips go
         clips_dir(o).mkdir(parents=True, exist_ok=True)

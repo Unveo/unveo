@@ -28,6 +28,7 @@
         const el = document.createElement("div");
         el.className = "scene";
         el.dataset.id = s.id;
+        el.dataset.template = s.template;
         stage.append(el);
         const def = SCENES[s.template] || SCENES.placeholder;
         def.build(el, s.data || {}, s);

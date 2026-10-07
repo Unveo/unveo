@@ -1,0 +1,7 @@
+/* look: notebook. Warm paper, a soft serif, hand-drawn underlines, cards like pinned notes. */
+.eyebrow { font: italic 400 34px var(--font-display); text-transform: none; letter-spacing: 0; color: var(--ink);
+  padding-bottom: 10px; background: no-repeat left bottom / 220px 12px
+  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 220 12'%3E%3Cpath d='M2 8 C 40 2, 80 11, 120 6 S 190 3, 218 7' fill='none' stroke='%23d9a400' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E"); }
+.card { border-radius: 4px; box-shadow: 2px 3px 0 rgba(42,38,32,.10); }
+.chip { border-radius: 4px; }
+.tag { border-radius: 4px; font-family: var(--font-body); }

@@ -2,16 +2,34 @@
 
 The goal: a judge should never think "an AI made this". The real app is the hero, and animation only explains what the screen can't.
 
+## 0. Looks: why two unveo videos never look alike
+
+A **look** is a whole visual language. Six exist (`scripts/looks.py`, `templates/film/looks/*.css`):
+
+| Look | Type | Ground | Recordings |
+|---|---|---|---|
+| editorial | serif headlines, italic kickers | paper | in a light browser window |
+| swiss | tight sans, accent-block kickers, a hard grid line | plain | full-screen |
+| terminal | mono headings, `$` kickers, hairline cards | dark | in a dark window |
+| notebook | soft serif, hand-drawn underlines | warm paper | in a light window |
+| poster | huge heavy type; title and end card on the accent colour | plain | floating, soft shadow |
+| product | the app's own font, flat and quiet | white | large, floating |
+
+- **What a look sets:** the font, colour and framing defaults. `design.json` can still override any field.
+- **Choosing:** `render.py looks` offers 3 the person hasn't seen recently, and **never the last video's**. `~/.unveo/history.json` is written when QA passes.
+- **Repeats:** `render.py stills` warns when this video's look repeats the last one.
+- **Matching the audience:** a civic dashboard suits editorial or swiss, a developer tool terminal, a student or community app notebook or poster, and a polished SaaS product.
+
 ## 1. Write a design brief: `OUT/film/design.json`
 
 ```json
-{"concept": "quiet editorial, like a research report",
+{"look": "editorial", "concept": "quiet editorial, like a research report",
  "display_font": "IBM Plex Sans", "body_font": "IBM Plex Sans",
  "motion": "calm", "background": "plain", "layout_family": "editorial", "accent_use": "sparing"}
 ```
 
 - **`concept`:** one line, chosen for *this* project. A civic dashboard might be "quiet report", a dev tool "clean terminal", a student app "notebook". Let the project's own UI and audience decide.
-- **Fonts:** use the app's own font, the first entry in `repo_scan.json` → `fonts`. render.py fetches it from Google Fonts once (free) and falls back to Geist.
+- **Fonts:** the look's pair by default (`product` uses the app's own font, the first entry in `repo_scan.json` → `fonts`). render.py fetches Google Fonts once (free) and falls back to Geist.
 - **`motion`:** `calm` (default) or `lively` (25% faster entrances, for consumer and playful products).
 - **`background`:** `plain` (default), `paper` (faint grain), or `app-shot` (the app's own screenshot, heavily blurred and faint).
 - **`layout_family`:** `editorial`, `grid` or `centered`. Use the same family for most scenes, so the video feels like one piece.

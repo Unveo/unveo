@@ -257,12 +257,22 @@ def prepare(out):
             dst = film / src.relative_to(TEMPLATES)
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(src, dst)
+    import looks
+    design = json.loads((film / "design.json").read_text(encoding="utf-8")) if (film / "design.json").exists() else {}
+    look = design.get("look")
+    scan = json.loads((o / "repo_scan.json").read_text(encoding="utf-8")) if (o / "repo_scan.json").exists() else {}
+    design = {**looks.defaults(look, (scan.get("fonts") or [None])[0]), **design}  # the look's defaults; the agent's choices win
     tokens = json.loads((o / "brief.json").read_text(encoding="utf-8"))["palette"]["tokens"]
-    (film / "palette.css").write_text(":root {\n" + "".join(f"  --{k}: {v};\n" for k, v in tokens.items()) + "}\n")
+    tokens = looks.palette(tokens, look) if "accent" in tokens else tokens
+    accent = tokens.get("accent", "#4f46e5")
+    on_accent = "#111111" if contrast("#111111", accent) >= contrast("#ffffff", accent) else "#ffffff"
+    (film / "palette.css").write_text(":root {\n" + "".join(f"  --{k}: {v};\n" for k, v in tokens.items())
+                                      + f"  --on-accent: {on_accent};\n  --accent-solid: {accent};\n}}\n")
+    css = TEMPLATES / "looks" / f"{look}.css"
+    (film / "look.css").write_text(css.read_text(encoding="utf-8") if look and css.exists() else "/* look: none */\n")
     if (o / "capture" / "probe.png").exists():
         (film / "assets").mkdir(exist_ok=True)
         shutil.copyfile(o / "capture" / "probe.png", film / "assets" / "probe.png")
-    design = json.loads((film / "design.json").read_text(encoding="utf-8")) if (film / "design.json").exists() else {}
     design_css(film, design)
     vpath = o / "voice" / "voice.json"
     words_by = {c["scene"]: c.get("words", []) for c in read_json(vpath)["clips"]} if vpath.exists() else {}
@@ -283,7 +293,7 @@ def prepare(out):
 
 
 def scene_hash(film, sc, mode):
-    code = "".join((film / n).read_text(encoding="utf-8") for n in ("core.js", "film.js", "film.css", "palette.css", "design.css", "blocks.js"))
+    code = "".join((film / n).read_text(encoding="utf-8") for n in ("core.js", "film.js", "film.css", "palette.css", "design.css", "look.css", "blocks.js"))
     tpl = film / "scenes" / f"{sc['template']}.js"
     return sha1_of(code, tpl.read_text(encoding="utf-8") if tpl.exists() else "", json.dumps(sc, sort_keys=True), mode)
 
@@ -427,6 +437,65 @@ def work_cmd(out, mode, ids):
     emit("render", page_errors=errors)
 
 
+def looks_cmd(out, names=None):
+    """3 looks this video could have (never the last video's), each as a title card, a compose frame and the
+    framed app, in the brief's colours -> stills/looks.png. The look question in round A shows this sheet."""
+    import looks, stitch, tempfile
+    from playwright.sync_api import sync_playwright
+    from PIL import Image, ImageDraw, ImageFont
+    o = out_dir(out)
+    brief = json.loads((o / "brief.json").read_text(encoding="utf-8"))
+    names = names or looks.candidates(looks.history())
+    u = brief.get("understanding") or {}
+    title = (brief.get("header") or {}).get("title") or (brief.get("project") or {}).get("name") or "Your project"
+    blocks = {"layout": "split", "blocks": [
+        {"type": "kicker", "area": "left", "props": {"text": "The problem"}, "at": 0},
+        {"type": "heading", "area": "left", "props": {"text": re.split(r"[;:—]| - ", u.get("problem") or "What this solves")[0].strip()}, "at": 0.1},
+        {"type": "list", "area": "right", "props": {"items": (u.get("journey") or ["Open it", "Try it", "See the result"])[:4]}, "at": 0.2}]}
+    probe = o / "capture" / "probe.png"
+    w, h = 640, 360
+    sheet = Image.new("RGB", (3 * w, len(names) * (h + 44)), "white")
+    draw = ImageDraw.Draw(sheet)
+    with sync_playwright() as pw, tempfile.TemporaryDirectory() as tmp:
+        for row, name in enumerate(names):
+            t = Path(tmp) / name
+            (t / "film" / "data").mkdir(parents=True)
+            (t / "brief.json").write_text(json.dumps(brief), encoding="utf-8")
+            for f in ("repo_scan.json",):
+                if (o / f).exists():
+                    shutil.copyfile(o / f, t / f)
+            (t / "film" / "design.json").write_text(json.dumps({"look": name}))
+            (t / "film" / "data" / "s01.json").write_text(json.dumps({"title": title}))
+            (t / "film" / "data" / "s02.json").write_text(json.dumps(blocks))
+            (t / "timeline.json").write_text(json.dumps({"version": 1, "fps": FPS, "scenes": [
+                {"id": "s01", "visual": "anim", "template": "title", "dur_s": 2.5, "start_s": 0},
+                {"id": "s02", "visual": "anim", "template": "compose", "dur_s": 3.0, "start_s": 2.5}]}))
+            film, _ = prepare(t)
+            tiles = []
+            for sid, at in (("s01", 2.3), ("s02", 2.8)):
+                page = Page(pw, film, sid, 1920)
+                page.shot(at, t / f"{sid}.png")
+                page.close()
+                tiles.append(Image.open(t / f"{sid}.png").convert("RGB"))
+            tokens = looks.palette(brief["palette"]["tokens"], name)
+            fr = looks.frame(name, tokens)
+            app = Image.open(probe).convert("RGB").resize((1920, 1080)) if probe.exists() else Image.new("RGB", (1920, 1080), tokens["surface"])
+            if fr:
+                bg_png, mask_png, x, y, iw, ih = stitch.frame_assets(fr, 1920, 1080, t / "frames")
+                canvas = Image.open(bg_png).convert("RGB")
+                canvas.paste(app.resize((iw, ih)), (x, y), Image.open(mask_png))
+                app = canvas
+            tiles.append(app)
+            for col, tile in enumerate(tiles):
+                sheet.paste(tile.resize((w - 8, h - 8)), (col * w + 4, row * (h + 44) + 4))
+            draw.text((8, row * (h + 44) + h + 8), f"{row + 1}. {name}: {looks.LOOKS[name]['label']}", fill="#111",
+                      font=ImageFont.load_default(size=22))
+    (o / "stills").mkdir(exist_ok=True)
+    sheet.save(o / "stills" / "looks.png")
+    emit("looks", looks=[{"name": n, "label": looks.LOOKS[n]["label"]} for n in names], outputs=[str(o / "stills" / "looks.png")],
+         message=f"{len(names)} looks on stills/looks.png: {', '.join(names)}")
+
+
 def videos(d):
     return sorted(f for f in Path(d).glob("*") if f.suffix.lower() in (".mp4", ".mov", ".webm", ".mkv")) if Path(d).exists() else []
 
@@ -452,6 +521,11 @@ def stills_cmd(out, at=None, every=False):
         picks += [(s, s["dur_s"] / 2) for s in scenes if s["visual"] in ("capture", "clip")]
     files, errors, warnings = [], [], []
     issues = sync_issues(scenes, {s["id"]: s["data"] for s in scenes})
+    import looks
+    look = (json.loads((film / "design.json").read_text(encoding="utf-8")) if (film / "design.json").exists() else {}).get("look")
+    last = (looks.history() or [{}])[-1].get("look")
+    if look and look == last:
+        warnings.append({"scene": "*", "kind": "repeat", "detail": f"the last video used the '{look}' look too; pick another (looks.candidates)"})
     with sync_playwright() as pw:
         for i, (s, t) in enumerate(picks):
             f = d / f"still-{i:02d}-{s['id']}.png"
@@ -520,6 +594,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("palettes")
+    lk = sub.add_parser("looks")
+    lk.add_argument("--names", help="comma-separated looks to preview instead of the 3 suggested")
     st = sub.add_parser("stills")
     st.add_argument("--at")
     st.add_argument("--all", action="store_true")
@@ -541,6 +617,8 @@ def main():
     a = ap.parse_args()
     if a.cmd == "palettes":
         palettes_cmd(a.out)
+    elif a.cmd == "looks":
+        looks_cmd(a.out, a.names.split(",") if a.names else None)
     elif a.cmd == "stills":
         stills_cmd(a.out, [float(x) for x in a.at.split(",")] if a.at else None, a.all)
     elif a.cmd == "draft":

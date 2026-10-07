@@ -1,0 +1,5 @@
+/* look: terminal. Dark ground, mono headings, prompt-style kickers, hairline borders instead of shadows. */
+.eyebrow { font: 500 24px "Geist Mono", ui-monospace, monospace; text-transform: none; letter-spacing: 0; color: var(--accent); }
+.eyebrow::before { content: "$ "; color: var(--muted); }
+.card, .chip { border-radius: 10px; box-shadow: none; border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent); }
+.tag { border-radius: 6px; }

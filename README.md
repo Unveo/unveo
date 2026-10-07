@@ -63,23 +63,28 @@ In Codex use `$unveo`; in other agents just ask: *"use unveo to make our hackath
 
 **What happens**
 1. **Setup check:** installs anything missing.
-2. **Five quick questions:** time limit, language, "did I understand your project?", colors, and team and links.
-3. **You approve the script** and the recording plan.
-4. **unveo records your app** and builds the animations.
-5. **You approve 4 stills**, then it renders.
-6. **`unveo-out/final.mp4`**, ready to upload.
+2. **One question round:** Quick or Guided, the length, the language, and whether an AI voice or *you* narrate. Quick mode takes the recommended answer for everything else.
+3. **You approve the script** and the recording plan (and, in Quick mode, unveo's summary of your project).
+4. **Your own voice (optional):** a teleprompter page with the unveo logo. A yellow highlighter follows the word you're saying, and an underline shows the pace. It's recorded before the screen, so the video follows your voice.
+5. **unveo records your app.** If it needs a login, the browser shows a dotted arrow to what you click, and then the yellow "Recording…" screens. None of that ends up in the video.
+6. **You approve the stills**, in a look this video gets (6 looks; never the same one twice in a row).
+7. **`unveo-out/demo-video.mp4`**, ready to upload.
 
-Options: `--limit 90` · `--lang hi` · `--url https://your.app` · `--no-capture` · `resume` · `rerender s06` · `check`.
+Options: `--quick` · `--own-voice` · `--limit 90` · `--lang hi` · `--url https://your.app` · `--no-capture` · `resume` · `rerender s06` · `check`.
 
 ## What's in `unveo-out/`
 
 | File | What it is |
 |---|---|
-| `final.mp4` | Your video: 1920×1080, 30 fps, under your limit |
-| `script.md` | The narration, scene by scene, with the source of every claim |
-| `shots.md` | Only if some parts need you to record them (mobile apps, logins unveo can't automate) |
-| `brief.json` | Your answers, so the next run doesn't ask again |
-| `qa.md` | The quality report |
+| `demo-video.mp4` | Your video: 1920×1080, 30 fps, captions burned in, under your limit |
+| `subtitles.srt` | The captions as a file, for YouTube or Devpost |
+| `script.md` | The narration with times, easy to read |
+| `quality-check.md` | The quality report |
+| `preview.png` | The stills you approved |
+| `your-voice/` | Your takes, if you narrated |
+| `your-clips/` | Only if some parts need you to record them, with `what-to-record.md` |
+
+Everything else unveo needs (answers, recordings, renders) is in the hidden `.work/` folder. The folder ignores itself in git.
 
 ## FAQ
 

@@ -171,6 +171,11 @@ def main():
         lines += ["", "## How to fix"] + [f"- **{g['gate']}**: {FIX.get(g['gate'], '')}" for g in fails]
     (o / "qa.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     published = publish(o, brief, tl)
+    design = json.loads((o / "film" / "design.json").read_text(encoding="utf-8")) if (o / "film" / "design.json").exists() else {}
+    if ok and design.get("look"):  # so the next video gets a different look
+        import looks
+        looks.remember(None, {"project": brief.get("project", {}).get("name", ""), "look": design["look"],
+                              "fonts": [design.get("display_font"), design.get("body_font")]})
     if not ok:
         emit("qa", ok=False, user_action=True, gates=gates, outputs=published, message=head)
     emit("qa", gates=gates, outputs=published, message=head)

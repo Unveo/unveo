@@ -12,6 +12,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: semv
   - Captions burned in plus captions.srt.
   - Per-video design brief (the app's font, motion, background), building blocks and compose scenes, overflow, contrast and crowding checks, QA feel report.
   - setup_app.py: plan, install --yes, start --yes, stop for local Node and Python apps.
+- Round 3 (from your review of the own-voice run):
+  - Batched question rounds and Quick mode; `brief.py defaults`.
+  - Studio redesign with the unveo logo: the highlighter follows your voice, a pace underline, a clock, auto-stop; spoken word timings keep the video in sync.
+  - Browser guide: login pointer, recording and done screens, never in the video.
+  - Tidy output: `unveo-out/demo-video.mp4` and friends on top, working files in `.work/`.
+  - Six looks with a preview sheet and a history, so no two videos in a row look alike; framed recordings.
 - From the own-voice test run:
   - Own takes: silence judged against the mic's own noise floor; edges cut and reading pauses shortened to 0.45 s (83 s of takes became 65 s).
   - `zoom.target` frames a different element than the one clicked (the whole form card), with a long hold for small apps.

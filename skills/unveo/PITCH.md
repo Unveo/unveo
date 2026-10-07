@@ -4,10 +4,12 @@
 
 | Segment | Share | Scenes, in order | Visual |
 |---|---|---|---|
-| `context` | 10% | `s01` title card (2.5 s, no voice) + 1 context scene | `anim:title`, `anim:context` |
-| `problem` | 15% | 1–2 problem scenes | `anim:problem` |
+| `context` | 10% | `s01` title card (2.5 s, no voice) + 1 context scene | `anim:title`, then `anim:compose` (or `anim:context`) |
+| `problem` | 15% | 1–2 problem scenes | `anim:compose` or `anim:problem` |
 | `product` | 65% | 1 `anim:product-intro` (4–6 s), then 1 scene per journey step, with the selected explainers cut in | `capture` (or `clip`) + `anim:explainer-<pattern>` |
 | `close` | 10% | 1 close scene: the impact line spoken, links held about 3 s | `anim:close` |
+
+Prefer `anim:compose` for the context, problem and intro beats: it's laid out for this story (DESIGN.md §2). The fixed templates are a fallback; a script that uses only them gets a warning.
 
 **Focus** (brief.focus) changes the balance:
 

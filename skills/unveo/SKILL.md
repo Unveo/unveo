@@ -101,13 +101,14 @@ At 60 s add "60 s fits about 3 screens, or 2 screens and 1 explanation." Save `v
 - **Login:** if `login_wall` is true, or the code shows a sign-in unveo can't type into (Google or GitHub sign-in, OTP, CAPTCHA), the login question joins round A (Quick mode: manual login, no question).
 - Put the result on the `App URL:` line of understanding.md, e.g. `https://x.vercel.app (loads ✓, no login)`.
 
-**7. Round A, ✅ Checkpoint A (Guided; one call).** Print `understanding.md`, then the end card you'd use (header, links, the drafted impact line: who benefits and how, no numbers you can't source). Run `"<PY>" "<SKILL_DIR>/scripts/render.py" palettes` and give `OUT/stills/palettes.png`; read `<SKILL_DIR>/PALETTES.md` to pick 3 presets that fit the field. Ask:
+**7. Round A, ✅ Checkpoint A (Guided; one call).** Print `understanding.md`, then the end card you'd use (header, links, the drafted impact line: who benefits and how, no numbers you can't source). Run `"<PY>" "<SKILL_DIR>/scripts/render.py" looks`: it picks 3 looks this video hasn't had lately (never the last video's) and draws each in the app's colours, as a title card, a story frame and the framed app, on `OUT/stills/looks.png`. Give that path, and look at it if you can view images. Ask:
 > 1. **Did I get your project and the end card right?** Yes (Recommended) · Mostly, I'll correct a few things · No, let me explain
 > 2. **Which hidden logic should I animate?** (multi-select) the top 4 H-items, the recommended ones marked; the count follows the focus (product 0–1, balanced 1–3, explain 2–3; one fewer at 60 s). With 1 H-item: *Animate <title>?* With none, leave this out.
 > 3. **The app needs a login. How should unveo get past it?** (only when needed) I'll log in myself in a window unveo opens (Recommended) · A demo account (environment variables) · Skip the logged-in parts · I'll record those parts myself
-> 4. **Which colours?** Your app's own colours (Recommended) · `<preset 1>` · `<preset 2>` · `<preset 3>`
+> 4. **Which look? (see looks.png)** `<look 1: label>` (Recommended: the one that best fits the project's audience) · `<look 2>` · `<look 3>` (*Other*: any look from `looks.py`, or a colour preset from `render.py palettes` / PALETTES.md)
 
-- **Quick mode:** no round A. Take the top explainers, manual login when needed, the app's colours, and show the understanding at the top of Checkpoint B instead.
+- **Quick mode:** no round A. Take the top explainers, manual login when needed, the app's colours and the first look from `render.py looks`, and show the understanding at the top of Checkpoint B instead.
+- Save the chosen look as `"look"` in `OUT/film/design.json` (step 19 adds the rest).
 - Apply corrections and repeat only the corrected question until it's *Yes*. Store links exactly as typed; leave out local links (brief.py rejects them). Use `""` for blank event and team.
 - **Log in myself:** steps.json gets a manual login (CAPTURE.md). A real browser window opens during the dry run and the recording, shows the user what to click, and unveo carries on once they're in. It needs a screen, so it won't work in cloud agents.
 - **Demo account:** they set `UNVEO_LOGIN_USER` and `UNVEO_LOGIN_PASSWORD` in their shell. Never copy a published demo account into any file.
@@ -205,7 +206,7 @@ Then ask:
 - When it's done, `state.py set capture done`.
 
 **19. Design and scene data.**
-1. Read `<SKILL_DIR>/DESIGN.md`. Write `OUT/film/design.json`: a concept chosen for this project, with the app's own font, calm motion and a plain background unless the product calls for more.
+1. Read `<SKILL_DIR>/DESIGN.md`. Write `OUT/film/design.json`: the chosen `look` plus a one-line concept for this project. The look sets the fonts, colours, motion and how recordings are framed; override a field only with a reason. Compose at least one of the context, problem and product-intro scenes for this story (script.py warns otherwise).
 2. Read `<SKILL_DIR>/ENGINE.md` and `<SKILL_DIR>/EXPLAINERS.md`. Write `OUT/film/data/<id>.json` for every `anim:` scene in timeline.json. Use a template where it fits; compose your own scene (`anim:compose`) where the story needs something the templates don't do.
 3. Set explainer `beats` (required for a voiced explainer) and compose `at` values as `"word:<word>"` keys, picking the words in the narration where each beat should land.
 

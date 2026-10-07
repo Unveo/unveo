@@ -205,6 +205,10 @@ def check(out):
         w = sum(s["words"] for s in scenes if s["segment"] == seg)
         if total and abs(w / total - share) > 0.12:
             warnings.append(f"{seg} has {w / total:.0%} of the words; the pitch aims for {share:.0%}")
+    middle = [s for s in scenes if s["template"] in ("context", "problem", "product-intro", "compose")]
+    if middle and not any(s["template"] == "compose" for s in middle):
+        warnings.append("context, problem and product-intro all use the fixed templates: compose at least one of them "
+                        "for this story (DESIGN.md), so the video doesn't look like every other unveo video")
     return {"scenes": [{k: s[k] for k in ("id", "segment", "visual", "template", "target_s", "words")} for s in scenes],
             "words": total, "budget": budget, "errors": errors, "warnings": warnings}
 

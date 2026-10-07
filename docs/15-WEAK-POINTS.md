@@ -68,6 +68,21 @@ Ranked by how often each one would hurt a real team at a deadline.
 | E4 | **Recording runs in real time,** and a visible window can be disturbed by the user | Documented ("don't click around"). 🔵 A recording overlay that says "unveo is recording" |
 | E5 | **Long renders on slow laptops** (about 1 min per minute of animation on an M-series Mac) | Parallel chunks and re-rendering only changed scenes. 🔵 A lower-quality fast mode |
 
+## Round 3 (from the own-voice test run, 7 Oct 2026)
+
+| # | Weak point | Status / fix |
+|---|---|---|
+| R1 | **Too many questions:** 16 separate round trips, about 9 minutes of answering | ✅ Batched rounds of up to 4 questions per call, and **Quick mode** (2 stops plus the studio). `brief.py defaults` fills every recommended answer. The `.gitignore` question is gone (the output folder ignores itself) |
+| R2 | **Every video looked alike:** 5 fixed templates, no memory of past videos. The same chat added some bias, but the skill itself was the cause | ✅ Six **looks** (type, ground, kickers, how recordings are framed), offered 3 at a time as a preview sheet. `~/.unveo/history.json` stops a repeat of the last look. Compose is the default for the story scenes, and the script check warns when only fixed templates are used |
+| R3 | **No guidance in the browser window** while logging in or recording | ✅ `templates/guide.js`: a yellow pill and a dotted box with an arrow on the sign-in button, a yellow "Recording sNN · hands off" screen, `● REC` in the tab title, and a green done screen. All removed before the camera starts (tested: no yellow in the video) |
+| R4 | **Teleprompter:** no logo, no pace, no highlight | ✅ Redesigned with the logo. A yellow highlighter follows the voice (Chrome speech recognition; the pace in other browsers), an underline shows the chosen pace, plus a clock, an "on pace / behind" note, and auto-stop |
+| R5 | **s06 explainer drifted from the voice:** no beats, and own takes had only estimated word timings | ✅ Heard word times are saved with each take and carried through the silence cuts (`timing: spoken`). Explainer beats take `word:` keys, and a voiced explainer without beats blocks the stills |
+| R6 | **Own takes were too long** (mic hiss above a fixed −45 dB gate; 1 to 2 s pauses) | ✅ Silence is judged against the take's own noise floor; edges are cut and long pauses shortened to 0.45 s (83 s of takes became 65 s) |
+| R7 | **Cluttered output folder** (JSON, internal files next to the video) | ✅ `unveo-out/` holds only demo-video.mp4, subtitles.srt, a clean script.md, quality-check.md, preview.png, your-voice/ and your-clips/. Everything else is in the hidden `.work/` |
+| R8 | **Zoom framed the clicked element, not the area** (off-centre on a small checkbox) | ✅ `zoom.target` frames a different element, such as the whole form card |
+| R9 | **A scene that continues from the previous page can't be re-recorded alone** (s08 started where s07 left off) | 🟡 Re-record those scenes together. 🔵 Let `record --scene` replay the earlier scenes' steps without recording them |
+| R10 | **Transitions are still hard cuts** in every look | 🔵 Per-look transitions (fade, wipe, slide) in stitch |
+
 ## Planned: the template and voice gallery (from your review, 7 Oct 2026)
 
 A page on unveo's landing site that shows every scene template and every voice style (with pace), with a short example of each. During intake (SKILL step 5b, and Q4 for colours), the agent tells the user: "Open <gallery link> to see and hear the options, then pick." Until the site exists, step 5b uses `voice.py samples`, which makes local clips of the voices.
