@@ -105,6 +105,19 @@ def ingest(o, placeholders):
          message=f"fitted {len(made)} recorded scene(s)" + (f"; placeholder cards for {missing_ids}" if missing_ids else ""))
 
 
+def burn_filter(o, w):
+    """subtitles=… for the final video when brief.captions is 'burned' (the default); regenerates the captions first."""
+    brief = json.loads((o / "brief.json").read_text(encoding="utf-8"))
+    mode = brief.get("captions", "burned")
+    if w != 1920 or mode == "off" or not (o / "voice" / "voice.json").exists():
+        return ""
+    import captions
+    if not captions.build(o) or mode != "burned":  # "srt": the file only
+        return ""
+    esc = lambda p: str(Path(p).resolve()).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
+    return f",subtitles=filename='{esc(o / 'captions.ass')}':fontsdir='{esc(captions.FONTS)}'"
+
+
 def concat(o, folder, audio, dst, w, h):
     tl = read_json(o / "timeline.json")
     segs = []
@@ -120,7 +133,7 @@ def concat(o, folder, audio, dst, w, h):
         cmd = [ffmpeg_exe(), "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(lst)]
         if audio.exists():
             cmd += ["-i", str(audio), "-map", "0:v", "-map", "1:a", "-c:a", "aac", "-b:a", "192k", "-ar", "48000"]
-        cmd += ["-vf", f"scale={w}:{h},setsar=1", *ENC, "-t", f"{total:.3f}", "-movflags", "+faststart", str(dst)]
+        cmd += ["-vf", f"scale={w}:{h},setsar=1" + burn_filter(o, w), *ENC, "-t", f"{total:.3f}", "-movflags", "+faststart", str(dst)]
         subprocess.run(cmd, check=True)
     return total
 

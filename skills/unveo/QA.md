@@ -13,6 +13,7 @@
 | explainers | Every explainer cites files that exist | Fix `source` in its data JSON |
 | end card | Links on the close scene equal brief.close.links | Copy them exactly |
 | secrets | No login password in any output | Delete the file and re-record with `"secret": true` |
+| captions | `captions.srt` exists (unless captions are off) and no caption runs past the end | Re-run `stitch.py final` |
 
 These two are reported but don't block: capture coverage, and size (a warning above 500 MB).
 After fixing, re-run only the affected steps, then `stitch.py final` and `qa.py` again.

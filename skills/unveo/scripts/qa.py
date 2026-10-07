@@ -18,6 +18,7 @@ FIX = {
     "explainers": "Give every explainer data file a 'source' list of real file:line ranges.",
     "end card": "Copy close.links from brief.json into the close scene's data, exactly.",
     "secrets": "Delete the file that holds the password, and re-record with \"secret\": true.",
+    "captions": "Run stitch.py final again (it rebuilds captions.srt and captions.ass from voice.json).",
 }
 
 
@@ -102,6 +103,13 @@ def main():
                 leaks.append(str(f.relative_to(o)))
     gate("secrets", not leaks, ", ".join(leaks) or "no password in any output")
 
+    mode = brief.get("captions", "burned")
+    if mode != "off":
+        srt = o / "captions.srt"
+        ends = [s for s in re.findall(r"--> (\d+):(\d+):(\d+),(\d+)", srt.read_text(encoding="utf-8"))] if srt.exists() else []
+        last = max((int(h) * 3600 + int(m) * 60 + int(s_) + int(ms) / 1000 for h, m, s_, ms in ends), default=0)
+        gate("captions", srt.exists() and ends and last <= dur + 0.05,
+             f"{len(ends)} captions ({mode}), last ends at {last:.1f} s" if ends else "captions.srt is missing: run stitch.py final")
     import stitch
     shots = stitch.shots_map(o)
     holes = [sc["id"] for sc in tl["scenes"] if sc["visual"] == "clip" and not stitch.find_clip(o, shots.get(sc["id"], f"shot-{sc['id'][1:]}"))]

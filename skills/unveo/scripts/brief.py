@@ -31,6 +31,8 @@ def errors(b):
     lim = b.get("limit_s")
     if not isinstance(lim, int) or not 30 <= lim <= 600:
         e.append("limit_s must be a whole number of seconds from 30 to 600")
+    if b.get("captions", "burned") not in ("burned", "srt", "off"):
+        e.append("captions must be 'burned', 'srt' or 'off'")
     if b.get("focus", "balanced") not in ("product", "balanced", "explain"):
         e.append("focus must be 'product', 'balanced' or 'explain'")
     if b.get("language") not in ("en", "hi"):

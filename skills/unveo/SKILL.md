@@ -164,6 +164,7 @@ Store links exactly as the user types them, character for character. Leave out t
   "limit_s": 120,
   "language": "en",
   "focus": "balanced",
+  "captions": "burned",
   "voice": {"provider": "edge", "voice_id": "<from step 5b>", "rate": "+10%"},
   "understanding": {"field": "", "problem": "", "product": "", "journey": ["…"],
     "hidden_logic": [{"id": "H1", "title": "", "pattern": "formula-breakdown", "source": ["path:12-40"],
@@ -272,12 +273,16 @@ For placeholders, run it with `--placeholders`.
 
 **24. Music and mix.** Run `"<PY>" "<SKILL_DIR>/scripts/score.py"`, then `"<PY>" "<SKILL_DIR>/scripts/mix.py"`.
 
-**25. Stitch.** Run `"<PY>" "<SKILL_DIR>/scripts/stitch.py" final`.
+**25. Stitch.** Run `"<PY>" "<SKILL_DIR>/scripts/stitch.py" final`. It also builds the captions from the voice timings:
+- `captions.srt`, for YouTube or Devpost uploads
+- `captions.ass`, burned into final.mp4 because judges often watch muted
+
+Captions show the real words even where `say_as` changes the pronunciation. `brief.captions` is `burned` (the default), `srt` (the file only) or `off`.
 
 **26. QA.** Read `<SKILL_DIR>/QA.md`. Run `"<PY>" "<SKILL_DIR>/scripts/qa.py"`. Fix every failing blocking gate as QA.md says, re-run only the affected steps, then stitch and QA again. When it passes, `state.py set qa done`.
 
 **27. Done.** Open the folder (`open OUT` on macOS, `explorer OUT` on Windows, `xdg-open OUT` on Linux). Then say, filling in the values:
-`final.mp4 · <m:ss> · 1920×1080 · <LUFS> LUFS. Script: unveo-out/script.md. QA: unveo-out/qa.md.`
+`final.mp4 · <m:ss> · 1920×1080 · <LUFS> LUFS · captions burned in. Script: unveo-out/script.md. Captions file: unveo-out/captions.srt. QA: unveo-out/qa.md.`
 Mention any `clip` scenes still showing placeholder cards.
 
 ## Changing one thing later

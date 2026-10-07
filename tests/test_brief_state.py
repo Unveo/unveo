@@ -51,6 +51,10 @@ class ValidateTest(unittest.TestCase):
         b["voice"]["rate"] = "+20%"
         self.assertEqual(brief.errors(b), [])
 
+    def test_captions_mode_must_be_known(self):
+        b = good_brief(); b["captions"] = "maybe"
+        self.assertTrue(any("captions" in e for e in brief.errors(b)))
+
     def test_focus_must_be_known(self):
         b = good_brief(); b["focus"] = "cinematic"
         self.assertTrue(any("focus" in e for e in brief.errors(b)))

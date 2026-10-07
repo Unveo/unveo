@@ -104,6 +104,9 @@ class StitchQaTest(unittest.TestCase):
         code, res = run("qa.py", o)
         self.assertEqual(code, 0, res)
         self.assertTrue((o / "qa.md").read_text().startswith("PASS"))
+        cap = next(g for g in res["gates"] if g["gate"] == "captions")
+        self.assertTrue(cap["ok"], cap)
+        self.assertTrue((o / "captions.srt").exists())
 
     def test_missing_clip_needs_the_user(self):
         o, _ = project()
