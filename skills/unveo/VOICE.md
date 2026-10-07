@@ -34,11 +34,11 @@
 Chosen in the start round. The voice is recorded **before** the screen, so the recording follows the real voice.
 
 1. `studio.py serve` opens a local page with the unveo logo, one line at a time.
-2. While recording:
-   - **The highlight:** a yellow highlighter sits on the word being said (Chrome or Edge speech recognition), and words already read fade.
-   - **The pace guide:** an underline moves at the speed chosen in the brief, and the clock shows `2.1 s / 9.6 s` with "on pace" or "1.2 s behind".
-   - **Other browsers:** with no speech recognition, the yellow follows the pace.
+2. While recording, there's **one** marker on the text: a black box on the word you're on. Words you've said fade.
+   - **Following you:** in Chrome or Edge the box follows your voice (speech recognition). Until it hears you, and in other browsers, it moves at the chosen pace.
+   - **The pace bar:** at the bottom it fills at the chosen speed. A round marker shows where you are, with "On pace", "A bit quicker" or "Slow down a little", and a clock (`2.3 s of 9.6 s`).
    - **Stopping:** recording stops by itself 0.6 s after the last word.
+   - **The page:** bold brand yellow with the logo. A rail of slashes, one per line, shows what's recorded and lets you jump between lines. A one-line hint shows the first time.
 3. The user plays it back, re-records if they want, and approves.
 4. **What's saved:** the take goes to `unveo-out/your-voice/<scene>.webm`, and the time each word was heard goes to `<scene>.words.json`. Finish ends the session.
 5. **Building the clips:** `voice.py --provider own` does three things:

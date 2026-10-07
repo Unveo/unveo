@@ -112,7 +112,7 @@ class StudioSyncTest(unittest.TestCase):
         r = urllib.request.urlopen(self.url + "/logo.png", timeout=5)
         self.assertEqual(r.headers["Content-Type"], "image/png")
 
-    def test_pace_highlight_moves_while_recording(self):
+    def test_one_indicator_and_the_pace_bar_move_while_recording(self):
         from playwright.sync_api import sync_playwright
         with sync_playwright() as pw:
             b = pw.chromium.launch(args=["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"])
@@ -121,13 +121,18 @@ class StudioSyncTest(unittest.TestCase):
             page.wait_for_selector("#read .w")
             page.click("#record")
             page.wait_for_timeout(1600)
-            pace = page.evaluate("document.querySelectorAll('#read .w.pace, #read .w.paced').length")
+            now = page.evaluate("document.querySelectorAll('#read .w.now').length")
+            said = page.evaluate("document.querySelectorAll('#read .w.said').length")
+            fill = page.evaluate("parseFloat(document.getElementById('pacefill').style.width)")
+            underline = page.evaluate("document.querySelectorAll('#read .pace, #read .paced').length")
             readout = page.text_content("#clock")
             page.click("#record")
             b.close()
-        self.assertGreaterEqual(pace, 2)
-        self.assertRegex(readout, r"\d\.\d s")
-
+        self.assertEqual(now, 1)          # exactly one word is marked
+        self.assertGreaterEqual(said, 1)
+        self.assertGreater(fill, 5)
+        self.assertEqual(underline, 0)    # no second indicator
+        self.assertRegex(readout, r"\d\.\d s of \d\.\d s")
 
 if __name__ == "__main__":
     unittest.main()
