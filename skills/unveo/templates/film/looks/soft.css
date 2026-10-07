@@ -1,0 +1,4 @@
+/* look: soft. Rounded and friendly: pastel surfaces, big radii, gentle shadows. */
+.eyebrow { font: 700 24px var(--font-body); letter-spacing: 0; text-transform: none; color: var(--accent); }
+.card, .chip { border-radius: 32px; box-shadow: 0 14px 40px color-mix(in srgb, var(--accent) 14%, transparent); }
+.ico svg { background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: 28%; padding: 18%; box-sizing: border-box; }

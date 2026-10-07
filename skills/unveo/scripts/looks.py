@@ -4,7 +4,7 @@
 A look = design.json defaults (fonts, motion, background) + a palette shift + templates/film/looks/<name>.css
 + how recordings are framed. The agent may still override any design.json field.
 """
-import json, os, sys
+import json, os, re, sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -27,6 +27,32 @@ LOOKS = {
     "product": {"label": "Product: your app's own font, white, the app large on a soft shadow",
                 "display_font": "app", "body_font": "app", "motion": "calm", "background": "plain",
                 "frame": "float", "palette": None},
+    "blueprint": {"label": "Blueprint: grid paper, line icons, the app on a laptop",
+                  "display_font": "Space Grotesk", "body_font": "IBM Plex Sans", "motion": "calm", "background": "plain",
+                  "frame": "laptop", "palette": "blueprint"},
+    "civic": {"label": "Civic: sober and official, a serif with a seal-like frame",
+              "display_font": "Source Serif 4", "body_font": "Source Sans 3", "motion": "calm", "background": "paper",
+              "frame": "window", "palette": "warm"},
+    "neo-brutal": {"label": "Neo-brutal: thick borders, offset shadows, brand yellow",
+                   "display_font": "Bricolage Grotesque", "body_font": "Work Sans", "motion": "lively", "background": "plain",
+                   "frame": "tilt", "palette": "yellow"},
+    "soft": {"label": "Soft: rounded shapes, gentle pastels, friendly",
+             "display_font": "Nunito", "body_font": "Nunito Sans", "motion": "calm", "background": "plain",
+             "frame": "float", "palette": "soft"},
+}
+
+# which looks suit which kind of project (words in understanding.field / problem); the agent still decides
+FITS = {
+    "civic": "government public civic parliament mp mla constituency fund budget policy election citizen ward municipal scheme",
+    "editorial": "research report data journalism survey news study public fund policy",
+    "swiss": "dashboard analytics finance metrics business saas operations logistics",
+    "terminal": "developer cli api code devtool infrastructure security ai model ml",
+    "notebook": "education student learning school notes campus community study",
+    "poster": "event social community music festival campaign launch",
+    "product": "saas app startup product tool productivity",
+    "blueprint": "engineering hardware iot architecture system infrastructure maps planning construction",
+    "neo-brutal": "hackathon creative startup fun game playful",
+    "soft": "health wellness mental care kids family accessibility ngo",
 }
 
 
@@ -39,6 +65,10 @@ TRANSITIONS = {
     "notebook": {"rec": "fade", "anim": "dissolve"},
     "poster": {"rec": "slideleft", "anim": "slideleft"},
     "product": {"rec": "smoothleft", "anim": "fade"},
+    "blueprint": {"rec": "wiperight", "anim": "fade"},
+    "civic": {"rec": "fade", "anim": "dissolve"},
+    "neo-brutal": {"rec": "slideup", "anim": None},
+    "soft": {"rec": "circleopen", "anim": "fade"},
 }
 
 
@@ -94,12 +124,17 @@ def remember(h, entry):
     (home(h) / "history.json").write_text(json.dumps(items[-50:], indent=2), encoding="utf-8")
 
 
-def candidates(hist, n=3):
-    """n looks to offer: never the last video's look; never-used first, then the longest unused."""
+def candidates(hist, n=3, field=""):
+    """n looks to offer, best fit for the project first. History only nudges: the last video's look drops a few places
+    (never excluded; a repeat is a soft warning in stills)."""
+    words = set(re.findall(r"[a-z]+", field.lower()))
     last = hist[-1]["look"] if hist else None
-    used = {h.get("look"): i for i, h in enumerate(hist)}
-    order = sorted((k for k in LOOKS if k != last), key=lambda k: (k in used, used.get(k, -1), list(LOOKS).index(k)))
-    return order[:n]
+    used = {h.get("look") for h in hist}
+
+    def score(k):
+        fit = len(words & set(FITS.get(k, "").split()))
+        return fit * 3 - (4 if k == last else 0) - (0.5 if k in used else 0)
+    return sorted(LOOKS, key=lambda k: (-score(k), list(LOOKS).index(k)))[:n]
 
 
 def defaults(look, app_font=None):
@@ -118,6 +153,12 @@ def palette(tokens, look):
         return render.complete("#0f1013", "#ecece6", tokens["accent"], tokens["accent2"])
     if kind == "warm":
         return render.complete("#f5efe3", "#2a2620", tokens["accent"], tokens["accent2"])
+    if kind == "blueprint":
+        return render.complete("#0f2a4a", "#eaf2ff", "#7cc4ff", tokens["accent2"])
+    if kind == "yellow":
+        return render.complete("#fdfa8d", "#111111", tokens["accent"], tokens["accent2"])
+    if kind == "soft":
+        return render.complete("#f6f3ff", "#2b2640", tokens["accent"], tokens["accent2"])
     return dict(tokens)
 
 

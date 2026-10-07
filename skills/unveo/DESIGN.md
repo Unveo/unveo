@@ -4,7 +4,7 @@ The goal: a judge should never think "an AI made this". The real app is the hero
 
 ## 0. Looks: why two unveo videos never look alike
 
-A **look** is a whole visual language. Six exist (`scripts/looks.py`, `templates/film/looks/*.css`):
+A **look** is a whole visual language. Ten exist (`scripts/looks.py`, `templates/film/looks/*.css`):
 
 | Look | Type | Ground | Recordings |
 |---|---|---|---|
@@ -14,9 +14,13 @@ A **look** is a whole visual language. Six exist (`scripts/looks.py`, `templates
 | notebook | soft serif, hand-drawn underlines | warm paper | in a light window |
 | poster | huge heavy type; title and end card on the accent colour | plain | floating, soft shadow |
 | product | the app's own font, flat and quiet | white | large, floating |
+| blueprint | technical grotesk, line icons | navy grid paper | on a laptop |
+| civic | book serif, notice-style cards, a seal ring on title and close | warm paper | in a window |
+| neo-brutal | thick borders, hard offset shadows | brand yellow | tilted |
+| soft | rounded, pastel icon tiles | lavender white | floating |
 
 - **What a look sets:** the font, colour and framing defaults. `design.json` can still override any field.
-- **Choosing:** `render.py looks` offers 3 the person hasn't seen recently, and **never the last video's**. `~/.unveo/history.json` is written when QA passes.
+- **Choosing:** `render.py looks` offers the 3 that **fit the project's field best** (civic projects get civic or editorial, developer tools terminal or blueprint, health soft…). History only nudges: the last video's look drops a few places but is never banned. `~/.unveo/history.json` is written when QA passes.
 - **Repeats:** `render.py stills` warns when this video's look repeats the last one.
 - **Matching the audience:** a civic dashboard suits editorial or swiss, a developer tool terminal, a student or community app notebook or poster, and a polished SaaS product.
 
@@ -35,10 +39,37 @@ Every cut blends: the next scene starts on time and fades or wipes in over the p
 
 The title and close always fade. Override with `"transition": {"type": "<xfade name>", "dur": 0.6}` in design.json; `"dur": 0` gives hard cuts.
 
+### Motifs: the project's own world, not generic shapes
+
+Pick 2 or 3 icons that belong to the project and put them in `design.json` as `"motifs"`. They appear on the title card, chapter cards and the end card, and any block can use them.
+- **Civic or MPLADS:** `lucide:landmark`, `mdi:rupee`, `lucide:map-pin`
+- **A survey:** `lucide:clipboard-list`, `lucide:message-circle`
+- **Health:** `lucide:heart-pulse`, `lucide:stethoscope`
+- **Developer tools:** `lucide:terminal`, `lucide:code`
+
+How to find them:
+- **Search:** `render.py icons --search <word>` lists free icons; try synonyms when a word finds nothing.
+- **Licences:** only sets that need no credits (MIT, Apache, ISC, CC0, OFL) are allowed. Anything else is a blocking design issue.
+- **Offline:** about 50 Lucide icons ship with unveo.
+- **Record:** `.work/icons.json` lists each icon used and its licence.
+
+### More pieces for story scenes
+
+- **Blocks:** `icon`, `icon-row`, `stat` (number, icon and label), `timeline`, `compare` (before and after), `callout` (a screenshot with numbered pins), `device` (a screenshot in a laptop or phone) and `badge-cloud` join the earlier blocks.
+- **Layouts:** `hero-icon`, `three-col`, `asymmetric` and `full-bleed-shot`.
+- **Scenes:**
+
+  | Scene | Data |
+  |---|---|
+  | `anim:chapter` | `{number, title, icon}`, a section divider |
+  | `anim:stat-hero` | `{value, label, icon, source}` |
+  | `anim:before-after` | `{title, before: {title, items}, after: {title, items}}` |
+  | `anim:annotated-shot` | `{title, src, pins: [{x, y, label}]}`, for a beat the recording can't show |
+
 ## 1. Write a design brief: `OUT/film/design.json`
 
 ```json
-{"look": "editorial", "concept": "quiet editorial, like a research report",
+{"look": "editorial", "motifs": ["lucide:landmark", "mdi:rupee"], "concept": "quiet editorial, like a research report",
  "display_font": "IBM Plex Sans", "body_font": "IBM Plex Sans",
  "motion": "calm", "background": "plain", "layout_family": "editorial", "accent_use": "sparing"}
 ```

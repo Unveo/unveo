@@ -18,16 +18,16 @@ TOKENS = {"bg": "#ffffff", "surface": "#f4f4f5", "ink": "#18181b", "muted": "#71
 
 
 class CatalogueTest(unittest.TestCase):
-    def test_six_distinct_looks(self):
-        self.assertEqual(set(looks.LOOKS), {"editorial", "swiss", "terminal", "notebook", "poster", "product"})
-        self.assertEqual(len({l["display_font"] for l in looks.LOOKS.values()}), 6)
+    def test_ten_distinct_looks(self):
+        self.assertTrue({"editorial", "swiss", "terminal", "notebook", "poster", "product"} <= set(looks.LOOKS))
+        self.assertEqual(len({l["display_font"] for l in looks.LOOKS.values()}), len(looks.LOOKS))
 
-    def test_candidates_never_repeat_the_last_video_and_prefer_unused(self):
+    def test_without_a_field_the_last_look_drops_back_and_unused_lead(self):
         history = [{"look": "editorial"}, {"look": "swiss"}, {"look": "terminal"}]
         picks = looks.candidates(history)
         self.assertEqual(len(picks), 3)
         self.assertNotIn("terminal", picks)
-        self.assertEqual(set(picks), {"notebook", "poster", "product"})  # never used beats used
+        self.assertFalse({"editorial", "swiss"} & set(picks))  # never used beats used
 
     def test_history_is_recorded_and_read_back(self):
         with tempfile.TemporaryDirectory() as home:

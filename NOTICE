@@ -25,3 +25,9 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+Lucide icons (skills/unveo/templates/film/icons/lucide.json): a small bundled subset of Lucide,
+ISC License, Copyright (c) Lucide Contributors (https://github.com/lucide-icons/lucide).
+Icons fetched at render time come from the Iconify API (https://iconify.design) and only from sets
+whose licence needs no attribution (MIT, Apache-2.0, ISC, CC0-1.0, OFL-1.1); each one used is listed
+in unveo-out/.work/icons.json with its licence.

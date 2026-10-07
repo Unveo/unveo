@@ -1,0 +1,6 @@
+/* look: blueprint. Navy grid paper, line work, a technical feel. */
+#stage { background-image: linear-gradient(color-mix(in srgb, var(--ink) 7%, transparent) 1px, transparent 1px),
+  linear-gradient(90deg, color-mix(in srgb, var(--ink) 7%, transparent) 1px, transparent 1px); background-size: 48px 48px; }
+.eyebrow { font: 500 22px "Geist Mono", ui-monospace, monospace; letter-spacing: .04em; text-transform: none; color: var(--accent); }
+.card, .chip { background: color-mix(in srgb, var(--bg) 70%, transparent); box-shadow: none; border: 1.5px solid color-mix(in srgb, var(--accent) 70%, transparent); border-radius: 4px; }
+.ico svg { stroke-width: 1.5; }

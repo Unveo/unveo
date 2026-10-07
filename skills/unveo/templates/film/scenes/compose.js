@@ -7,6 +7,10 @@
     "grid-2x2": { a: [120, 120, 820, 400], b: [980, 120, 820, 400], c: [120, 560, 820, 400], d: [980, 560, 820, 400] },
     center: { main: [360, 200, 1200, 680] },
     hero: { title: [120, 140, 1680, 300], main: [120, 480, 1680, 480] },
+    "hero-icon": { icon: [140, 240, 460, 600], main: [680, 180, 1120, 720] },
+    "three-col": { a: [120, 160, 520, 760], b: [700, 160, 520, 760], c: [1280, 160, 520, 760] },
+    asymmetric: { wide: [120, 140, 1120, 800], side: [1300, 140, 500, 800] },
+    "full-bleed-shot": { shot: [0, 0, 1920, 860], caption: [120, 890, 1680, 150] },
   };
   function fitArea(area) {  // shrink every text in the area together until it fits; never overflow
     const els = [...area.querySelectorAll("[data-fit], [data-fit] *")].filter(e => e.style.fontSize || getComputedStyle(e).fontSize);
@@ -16,6 +20,7 @@
       els.forEach(e => { e.style.fontSize = Math.max(14, parseFloat(getComputedStyle(e).fontSize) * 0.93) + "px"; });
     }
   }
+  window.COMPOSE_AREAS = AREAS;
   UNVEO.scene("compose", {
     build(root, d) {
       const layout = AREAS[d.layout] || AREAS.stack;

@@ -207,7 +207,7 @@ Then ask:
 - When it's done, `state.py set capture done`.
 
 **19. Design and scene data.**
-1. Read `<SKILL_DIR>/DESIGN.md`. Write `OUT/film/design.json`: the chosen `look` plus a one-line concept for this project. The look sets the fonts, colours, motion and how recordings are framed; override a field only with a reason. Compose at least one of the context, problem and product-intro scenes for this story (script.py warns otherwise).
+1. Read `<SKILL_DIR>/DESIGN.md`. Write `OUT/film/design.json`: the chosen `look`, 2–3 `motifs` from the project's world (`render.py icons --search <word>`), and a one-line concept for this project. The look sets the fonts, colours, motion and how recordings are framed; override a field only with a reason. Compose at least one of the context, problem and product-intro scenes for this story (script.py warns otherwise).
 2. Read `<SKILL_DIR>/ENGINE.md` and `<SKILL_DIR>/EXPLAINERS.md`. Write `OUT/film/data/<id>.json` for every `anim:` scene in timeline.json. Use a template where it fits; compose your own scene (`anim:compose`) where the story needs something the templates don't do.
 3. Set explainer `beats` (required for a voiced explainer) and compose `at` values as `"word:<word>"` keys, picking the words in the narration where each beat should land.
 

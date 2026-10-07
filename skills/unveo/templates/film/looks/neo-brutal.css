@@ -1,0 +1,4 @@
+/* look: neo-brutal. Thick ink borders, hard offset shadows, flat yellow. Loud on purpose, so used sparingly. */
+.eyebrow { display: inline-block; background: var(--ink); color: var(--bg); padding: 6px 14px; font: 700 22px var(--font-body); letter-spacing: 0; text-transform: none; border-radius: 6px; }
+.card, .chip { background: #ffffff; border: 4px solid var(--ink); border-radius: 14px; box-shadow: 8px 8px 0 var(--ink); }
+.tag { border: 3px solid var(--ink); color: var(--ink); }

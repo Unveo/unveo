@@ -193,6 +193,110 @@ def fetch_font(name):
     return []
 
 
+FREE_ICON_LICENCES = {"MIT", "Apache-2.0", "ISC", "CC0-1.0", "OFL-1.1", "Unlicense", "BSD-3-Clause"}  # no credits needed
+UA = {"User-Agent": "unveo/0.1 (+https://github.com/Unveo/unveo)"}
+
+
+def icon_api():
+    return os.environ.get("UNVEO_ICON_API", "https://api.iconify.design").rstrip("/")
+
+
+def icon_home():
+    return Path(os.environ.get("UNVEO_HOME", Path.home() / ".unveo")) / "icons"
+
+
+def icon_licences():
+    """Iconify set prefix -> SPDX licence, fetched once a week and cached; {} when offline with no cache."""
+    import urllib.request
+    f = icon_home() / "collections.json"
+    if f.exists() and time.time() - f.stat().st_mtime < 7 * 86400:
+        return json.loads(f.read_text())
+    try:
+        data = json.load(urllib.request.urlopen(urllib.request.Request(icon_api() + "/collections", headers=UA), timeout=15))
+        out = {k: ((v.get("license") or {}).get("spdx") or "unknown") for k, v in data.items()}
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps(out))
+        return out
+    except Exception:
+        return json.loads(f.read_text()) if f.exists() else {}
+
+
+def bundled_icons():
+    return json.loads((TEMPLATES / "icons" / "lucide.json").read_text())
+
+
+def fetch_icon(name):
+    """'set:name' -> (svg, None), or (None, why). Only sets whose licence needs no credits (user's choice: icons only)."""
+    import urllib.request
+    if name in bundled_icons():
+        return bundled_icons()[name], None
+    if not re.fullmatch(r"[a-z0-9-]+:[a-z0-9-]+", name or ""):
+        return None, f"{name!r} isn't an icon name like 'tabler:building-bank'"
+    prefix, icon = name.split(":")
+    cached = icon_home() / prefix / f"{icon}.svg"
+    lic = icon_licences().get(prefix)
+    if lic is None:
+        return (cached.read_text(), None) if cached.exists() else (None, f"{name}: unknown icon set (or offline); use a lucide: icon")
+    if lic not in FREE_ICON_LICENCES:
+        return None, f"{name}: the {prefix} set is {lic}, which needs credits; pick one from an MIT, Apache, ISC or CC0 set"
+    if cached.exists():
+        return cached.read_text(), None
+    try:
+        svg = urllib.request.urlopen(urllib.request.Request(f"{icon_api()}/{prefix}/{icon}.svg", headers=UA), timeout=15).read().decode()
+    except Exception as e:
+        return None, f"{name}: couldn't fetch it ({e}); use a lucide: icon offline"
+    cached.parent.mkdir(parents=True, exist_ok=True)
+    cached.write_text(svg)
+    return svg, None
+
+
+def search_icons(query, limit=20):
+    """Free-licence icon names for a word ('parliament', 'rupee'), for the agent to pick motifs from."""
+    import urllib.parse, urllib.request
+    lic = icon_licences()
+    local = [n for n in bundled_icons() if query.lower() in n]
+    try:
+        url = f"{icon_api()}/search?query={urllib.parse.quote(query)}&limit=64"
+        found = json.load(urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=15)).get("icons", [])
+    except Exception:
+        found = []
+    return (local + [n for n in found if lic.get(n.split(":")[0]) in FREE_ICON_LICENCES])[:limit]
+
+
+def icon_names(obj):
+    """Every icon a scene's data asks for: values under "icon" and "motifs"."""
+    out = set()
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k == "icon" and isinstance(v, str):
+                out.add(v)
+            elif k == "motifs" and isinstance(v, list):
+                out |= {x for x in v if isinstance(x, str)}
+            else:
+                out |= icon_names(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            out |= icon_names(v)
+    return out
+
+
+def write_icons(o, film, design, scenes):
+    """film/icons.js (inlined SVG, coloured by CSS) + .work/icons.json (what was used, under which licence)."""
+    names = icon_names(design) | set().union(*(icon_names(s.get("data")) for s in scenes))
+    svgs, problems, audit = {}, [], {}
+    lic = icon_licences() if any(n not in bundled_icons() for n in names) else {}
+    for n in sorted(names):
+        svg, why = fetch_icon(n)
+        if svg:
+            svgs[n] = re.sub(r'\s(width|height)="[^"]*"', "", svg, count=2)
+            audit[n] = "ISC (lucide, bundled)" if n in bundled_icons() else lic.get(n.split(":")[0], "unknown")
+        else:
+            problems.append({"scene": "*", "kind": "icon", "detail": why})
+    (film / "icons.js").write_text("window.ICONS = " + json.dumps(svgs) + ";\n")
+    (Path(o) / "icons.json").write_text(json.dumps(audit, indent=1))
+    (film / "icon-issues.json").write_text(json.dumps(problems))
+
+
 def design_css(film, design):
     """design.json -> design.css: the app's fonts, motion speed and background treatment (DESIGN.md)."""
     lines, families = [], {}
@@ -289,6 +393,7 @@ def prepare(out):
             data = data or {"shot_id": s["id"], "what_to_record": "The recorded app plays here."}
         scenes.append({"id": s["id"], "template": tpl or "placeholder", "dur_s": s["dur_s"], "start_s": s.get("start_s", 0),
                        "visual": s["visual"], "voice": s.get("voice"), "handle_s": handle.get(s["id"], 0.0), "data": data})
+    write_icons(o, film, design, scenes)
     (film / "timeline.js").write_text("window.TIMELINE = " + json.dumps({"fps": FPS, "design": design, "scenes": scenes}, ensure_ascii=False) + ";\n")
     return film, scenes
 
@@ -447,7 +552,8 @@ def looks_cmd(out, names=None):
     from PIL import Image, ImageDraw, ImageFont
     o = out_dir(out)
     brief = json.loads((o / "brief.json").read_text(encoding="utf-8"))
-    names = names or looks.candidates(looks.history())
+    u0 = brief.get("understanding") or {}
+    names = names or looks.candidates(looks.history(), field=f"{u0.get('field', '')} {u0.get('problem', '')} {u0.get('product', '')}")
     u = brief.get("understanding") or {}
     title = (brief.get("header") or {}).get("title") or (brief.get("project") or {}).get("name") or "Your project"
     blocks = {"layout": "split", "blocks": [
@@ -523,6 +629,7 @@ def stills_cmd(out, at=None, every=False):
         picks += [(s, s["dur_s"] / 2) for s in scenes if s["visual"] in ("capture", "clip")]
     files, errors, warnings = [], [], []
     issues = sync_issues(scenes, {s["id"]: s["data"] for s in scenes})
+    issues += json.loads((film / "icon-issues.json").read_text()) if (film / "icon-issues.json").exists() else []
     import looks
     look = (json.loads((film / "design.json").read_text(encoding="utf-8")) if (film / "design.json").exists() else {}).get("look")
     last = (looks.history() or [{}])[-1].get("look")
@@ -609,6 +716,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("palettes")
+    ic = sub.add_parser("icons")
+    ic.add_argument("--search", required=True, help="a word from the project's world: parliament, rupee, clinic, vote")
     lk = sub.add_parser("looks")
     lk.add_argument("--names", help="comma-separated looks to preview instead of the 3 suggested")
     st = sub.add_parser("stills")
@@ -632,6 +741,9 @@ def main():
     a = ap.parse_args()
     if a.cmd == "palettes":
         palettes_cmd(a.out)
+    elif a.cmd == "icons":
+        found = search_icons(a.search)
+        emit("icons", icons=found, message=f"{len(found)} free icon(s) for '{a.search}'" + ("" if found else ": try a synonym (government, landmark, capitol)"))
     elif a.cmd == "looks":
         looks_cmd(a.out, a.names.split(",") if a.names else None)
     elif a.cmd == "stills":

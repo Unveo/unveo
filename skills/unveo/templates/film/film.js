@@ -3,6 +3,7 @@
    &w=960 renders smaller (draft). */
 (function () {
   const SCENES = {};
+  window.__unveoScenes = SCENES;  // story.js builds on compose
   const q = new URLSearchParams(location.search);
   const only = q.get("scene"), W = Number(q.get("w") || 1920);
   const built = {};
