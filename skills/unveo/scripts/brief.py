@@ -10,7 +10,7 @@ from common import emit  # noqa: E402
 
 TOKENS = ("bg", "surface", "ink", "muted", "accent", "accent2", "good", "bad")
 PATTERNS = {"pipeline-flow", "formula-breakdown", "model-io", "raw-vs-processed", "system-map"}
-PROVIDERS = {"edge", "kokoro"}  # free only (ADR-002)
+PROVIDERS = {"edge", "kokoro", "own"}  # free only (ADR-002); own = the team's recorded voice
 URL = re.compile(r"^https?://\S+$")
 
 

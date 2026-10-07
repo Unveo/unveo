@@ -24,6 +24,13 @@ A scene's `target` is your estimate (words ÷ 2.2). The real length comes from i
 
 ## 3. How to write for judges
 
+**Write the way people talk.** A natural voice starts with a natural script:
+- Use contractions: "it's", "you'll", "don't".
+- Mix sentence lengths. A short one. Then a longer one that carries a full thought.
+- Talk to the judge ("you"), not about "the user".
+- Avoid lists read aloud, and "brochure" words like leverage, seamless, utilize, cutting-edge, empower or revolutionize. `script.py check` warns about them.
+- Read it aloud once in your head: if you wouldn't say it to a person, rewrite it.
+
 - **One idea per scene:** one or two sentences, 6 to 15 s each.
 - **Say what's on screen as it happens.** Capture narration follows the clicks: "Pick a state, and every project shows its risk score."
 - **The explainer bridge:**

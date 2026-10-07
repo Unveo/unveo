@@ -88,6 +88,27 @@ def check_source(value, repo, lines_cache):
     return None
 
 
+STIFF = re.compile(r"\b(leverag\w*|seamless\w*|utiliz\w*|cutting-edge|state-of-the-art|revolutioni\w*|game-?chang\w*|"
+                   r"empower\w*|in conclusion|robust solution|harness\w* the power)\b", re.I)
+CONTRACTION = re.compile(r"\b\w+'(s|re|ve|ll|d|t|m)\b", re.I)
+
+
+def style_warnings(scenes):
+    """Things that make narration sound written by a machine (docs/15 B6). Warnings only: the writer decides."""
+    w = []
+    for s in scenes:
+        for m in STIFF.finditer(spoken(s["narration"])):
+            w.append(f"{s['id']}: \"{m.group(0)}\" sounds scripted; say it the way you'd say it to a judge")
+    text = " ".join(spoken(s["narration"]) for s in scenes)
+    words = len(text.split())
+    if words >= 40 and not CONTRACTION.search(text.replace("\u2019", "'")):
+        w.append("no contractions anywhere (it's, you'll, don't): people talk that way, and the voice sounds more natural with them")
+    lens = [len(x.split()) for x in re.split(r"(?<=[.!?])\s+", text) if x.strip()]
+    if len(lens) >= 5 and (sum((n - sum(lens) / len(lens)) ** 2 for n in lens) / len(lens)) ** 0.5 < 3:
+        w.append("every sentence is about the same length; mix short ones with longer ones so it doesn't tick like a metronome")
+    return w
+
+
 def has_field(d, dotted):
     for k in dotted.split("."):
         if not isinstance(d, dict) or k not in d:
@@ -155,6 +176,7 @@ def check(out):
             warnings.append(f"{sid}: {s['words']} words take about {need:.0f} s, but the target is {s['target_s']:g} s; "
                             "the voice length wins, so shorten the line or raise the target")
 
+    warnings += style_warnings(scenes)
     budget = budget_words(brief.get("limit_s", 120), brief.get("language", "en"), brief.get("voice", {}).get("rate", "+0%"))
     total = sum(s["words"] for s in scenes)
     if total > budget * 1.05:

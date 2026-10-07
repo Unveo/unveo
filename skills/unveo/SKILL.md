@@ -88,17 +88,19 @@ When you ask with choices: in Claude Code, use AskUserQuestion (at most 4 option
 > **Which language should the voiceover be in?**
 > English (Recommended) · Hindi
 
-**5b. Voice style and pace.** Make samples first, so the user can listen:
+**5b. Voice and pace (ask every run, never assume).** Make samples first, so the user can listen:
 `"<PY>" "<SKILL_DIR>/scripts/voice.py" samples --lang <en|hi> --name "<project name>" --rate +10%`
-Give the user the sample paths (`OUT/voice/samples/*.mp3`), one per style, then ask:
+The first samples match the user's region (from their system settings), then one from each other accent. No accent is forced. Give the paths (`OUT/voice/samples/*.mp3`), then ask:
 > **Which voice should narrate? (play the samples first)**
-> `<label 1>` (Recommended) · `<label 2>` · `<label 3>`
+> `<region voice 1>` (Recommended) · `<region voice 2>` · `<another accent>` · Use my own voice
 
-and then:
+*Other* accepts any sample's name or accent. Then ask:
 > **How fast should it speak?**
 > Brisk, +10% (Recommended) · Normal, +0% · Fast, +20%
 
 Save them as `voice.voice_id` and `voice.rate` in brief.json (step 11). A faster pace fits more words in the time limit; `script.py` accounts for it.
+
+**Use my own voice** is optional and never the default. It sets `voice.provider` to `own`. At step 16, instead of a generated voice, run the studio (below).
 
 **6. Understand the project.** Read `<SKILL_DIR>/ANALYSIS.md` now and follow it. It covers what to read, how to find the journey and the hidden logic, and the `understanding.md` template. Write `OUT/understanding.md` with `Confirmed: no`. Keep editing that file in place until Q3 is confirmed.
 
@@ -155,7 +157,7 @@ Store links exactly as the user types them, character for character. Leave out t
               "login": {"needed": false, "user_env": "UNVEO_LOGIN_USER", "password_env": "UNVEO_LOGIN_PASSWORD"}},
   "limit_s": 120,
   "language": "en",
-  "voice": {"provider": "edge", "voice_id": "en-IN-NeerjaNeural", "rate": "+10%"},
+  "voice": {"provider": "edge", "voice_id": "<from step 5b>", "rate": "+10%"},
   "understanding": {"field": "", "problem": "", "product": "", "journey": ["…"],
     "hidden_logic": [{"id": "H1", "title": "", "pattern": "formula-breakdown", "source": ["path:12-40"],
                       "shown_at_step": 3, "selected": true}],
@@ -168,7 +170,7 @@ Store links exactly as the user types them, character for character. Leave out t
 ```
 
 - `source` is `{"kind": "github", "url": "<url>", "clone_path": "<root>"}` for a cloned repo.
-- `voice.voice_id` and `voice.rate` come from step 5b (defaults `en-IN-NeerjaNeural` or `hi-IN-SwaraNeural`, and `+10%`).
+- `voice.voice_id`, `voice.rate` and `voice.provider` (`edge`, or `own`) come from step 5b.
 - `capture_enabled` is false when there's no reachable web app.
 - `journey` holds each step as written in understanding.md (`<action> → <what appears>`), without the `[route…, element…]` tag.
 - `confirmed_at` is the real current time: run `date -Iseconds` (on Windows PowerShell, `Get-Date -Format o`).
@@ -213,7 +215,17 @@ Then ask:
 
 ## Phase 3: Build
 
-**16. Voice.** Read `<SKILL_DIR>/VOICE.md`. Add `voice.say_as` entries for acronyms first. Run `"<PY>" "<SKILL_DIR>/scripts/voice.py"`. If it reports a switch to Kokoro, tell the user in one line. Then `state.py set voice done`.
+**16. Voice.** Read `<SKILL_DIR>/VOICE.md`. Add `voice.say_as` entries for acronyms first.
+- **Generated voice** (edge or kokoro):
+  1. Run `"<PY>" "<SKILL_DIR>/scripts/voice.py"`. If it reports a switch to Kokoro, tell the user in one line.
+  2. Give the user `first_clip` from the JSON and ask: **"Here's the first line. How does it sound?"** *Sounds good (Recommended)* · *Faster* · *Slower* · *Different voice*.
+  3. For a change, update `voice.rate` (±5%) or `voice.voice_id`, then run voice.py again (it re-voices everything).
+- **Own voice:**
+  1. Tell the user: "A page is opening in your browser. Read each highlighted line, listen back, re-record if you like, then approve. Press Finish when done."
+  2. Run `"<PY>" "<SKILL_DIR>/scripts/studio.py" serve`. It waits until they press Finish.
+  3. If it exits 2 with `missing`, ask whether to record the rest now or switch those lines to a generated voice.
+  4. Then run `voice.py --provider own`.
+- Then `state.py set voice done`.
 
 **17. Timeline.** Run `"<PY>" "<SKILL_DIR>/scripts/plan_timeline.py"`.
 - **Exit 2** (over the limit):

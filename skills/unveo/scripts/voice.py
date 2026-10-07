@@ -1,28 +1,128 @@
 """Make one voice clip per scene from script.md (docs/09). Free voices only.
 
-  voice.py [--scene sNN] [--provider edge|kokoro] [--voice <id>] [--rate +0%] [--out unveo-out]
-  voice.py samples [--provider edge|kokoro]   one short clip per voice style, to choose from (voice/samples/)
+  voice.py [--scene sNN] [--provider edge|kokoro|own] [--voice <id>] [--rate +10%] [--out unveo-out]
+  voice.py samples [--accent auto|us|uk|in|au|...] [--lang en|hi] [--name "<project>"] [--rate +10%]
 
-edge-tts (online, exact word timings) by default; Kokoro (offline) when edge fails, for every scene,
-so the voice never changes mid-video. Scenes whose text and voice settings are unchanged are skipped.
+edge (default): each sentence is voiced on its own and joined with natural, varied pauses and a slight
+change of pace, so it doesn't read like one flat machine take. Exact word timings.
+kokoro: offline fallback, used for every scene if edge fails, so the voice never changes mid-video.
+own: the team's own approved takes from the teleprompter studio (studio.py), in voice/own/sNN.*.
+Scenes whose text and voice settings are unchanged are skipped.
 """
-import argparse, asyncio, json, os, re, subprocess, sys
+import argparse, asyncio, json, locale, os, platform, re, subprocess, sys, tempfile
 from pathlib import Path
+
+import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
 from common import emit, ffmpeg_exe, log, out_dir, read_json, sha1_of, write_json  # noqa: E402
 import script as scriptmod  # noqa: E402
 
 HOME = Path(os.environ.get("UNVEO_HOME", Path.home() / ".unveo"))
-KOKORO = {"en": ("bf_emma", "en-gb", 0.8), "hi": ("hf_alpha", "hi", 1.0)}  # voice, lang code, speed (docs/09 §2)
-EDGE_DEFAULT = {"en": "en-IN-NeerjaNeural", "hi": "hi-IN-SwaraNeural"}
-STYLES = {  # voice id, label shown to the user
-    "edge": {"en": [("en-IN-NeerjaNeural", "Neerja · warm, clear"), ("en-IN-NeerjaExpressiveNeural", "Neerja Expressive · lively"),
-                    ("en-IN-PrabhatNeural", "Prabhat · male, calm")],
-             "hi": [("hi-IN-SwaraNeural", "Swara · warm"), ("hi-IN-MadhurNeural", "Madhur · male")]},
-    "kokoro": {"en": [("bf_emma", "Emma · British"), ("bm_george", "George · British, male")],
-               "hi": [("hf_alpha", "Alpha"), ("hm_omega", "Omega · male")]},
+SR = 24000
+VERSION = "v2"  # bump to re-voice everything when the delivery changes
+
+# Free edge-tts voices by accent, the most natural first (Multilingual voices have the most human prosody).
+VOICES = {
+    "us": [("en-US-AvaMultilingualNeural", "Ava · US · warm", "f"), ("en-US-AndrewMultilingualNeural", "Andrew · US · warm", "m"),
+           ("en-US-EmmaMultilingualNeural", "Emma · US · bright", "f"), ("en-US-BrianMultilingualNeural", "Brian · US · relaxed", "m")],
+    "uk": [("en-GB-SoniaNeural", "Sonia · UK", "f"), ("en-GB-RyanNeural", "Ryan · UK", "m"), ("en-GB-LibbyNeural", "Libby · UK", "f"),
+           ("en-GB-ThomasNeural", "Thomas · UK", "m")],
+    "in": [("en-IN-NeerjaExpressiveNeural", "Neerja · India · lively", "f"), ("en-IN-NeerjaNeural", "Neerja · India", "f"),
+           ("en-IN-PrabhatNeural", "Prabhat · India", "m")],
+    "au": [("en-AU-WilliamMultilingualNeural", "William · Australia · warm", "m"), ("en-AU-NatashaNeural", "Natasha · Australia", "f")],
+    "ca": [("en-CA-ClaraNeural", "Clara · Canada", "f"), ("en-CA-LiamNeural", "Liam · Canada", "m")],
+    "ie": [("en-IE-EmilyNeural", "Emily · Ireland", "f"), ("en-IE-ConnorNeural", "Connor · Ireland", "m")],
+    "nz": [("en-NZ-MollyNeural", "Molly · New Zealand", "f"), ("en-NZ-MitchellNeural", "Mitchell · New Zealand", "m")],
+    "za": [("en-ZA-LeahNeural", "Leah · South Africa", "f"), ("en-ZA-LukeNeural", "Luke · South Africa", "m")],
+    "sg": [("en-SG-LunaNeural", "Luna · Singapore", "f"), ("en-SG-WayneNeural", "Wayne · Singapore", "m")],
+    "hi": [("hi-IN-SwaraNeural", "Swara · Hindi", "f"), ("hi-IN-MadhurNeural", "Madhur · Hindi", "m")],
 }
+REGION = {"US": "us", "GB": "uk", "UK": "uk", "IN": "in", "AU": "au", "CA": "ca", "IE": "ie", "NZ": "nz", "ZA": "za", "SG": "sg"}
+KOKORO = {"us": ("af_heart", "en-us", 0.9), "uk": ("bf_emma", "en-gb", 0.85), "hi": ("hf_alpha", "hi", 1.0)}
+
+
+# ---------- choosing a voice
+
+def accent_for_locale(loc):
+    m = re.match(r"([a-z]{2})[_-]([A-Za-z]{2})", str(loc or ""))
+    if not m:
+        return "us"
+    return "hi" if m.group(1) == "hi" else REGION.get(m.group(2).upper(), "us")
+
+
+def default_accent():
+    candidates = [os.environ.get("LC_ALL"), os.environ.get("LANG")]
+    try:
+        if platform.system() == "Darwin":
+            candidates.insert(0, subprocess.run(["defaults", "read", "-g", "AppleLocale"], capture_output=True, text=True, timeout=5).stdout.strip())
+        elif platform.system() == "Windows":
+            candidates.insert(0, subprocess.run(["powershell", "-NoProfile", "-Command", "(Get-Culture).Name"],
+                                                capture_output=True, text=True, timeout=10).stdout.strip())
+        candidates.append(locale.getlocale()[0])
+    except Exception:
+        pass
+    for c in candidates:
+        if c and re.match(r"[a-z]{2}[_-][A-Za-z]{2}", c):
+            return accent_for_locale(c)
+    return "us"
+
+
+def accent_of(voice_id):
+    m = re.match(r"([a-z]{2})-([A-Z]{2})-", voice_id or "")
+    return "hi" if m and m.group(1) == "hi" else REGION.get(m.group(2), "us") if m else "us"
+
+
+def default_voice(lang):
+    return VOICES["hi" if lang == "hi" else default_accent()][0][0]
+
+
+# ---------- natural delivery (pure functions, tested)
+
+def split_sentences(text):
+    return [s for s in re.split(r"(?<=[.!?।])\s+", text.strip()) if s.strip()]
+
+
+def _unit(*parts):
+    return int(sha1_of(*parts)[:8], 16) / 0xFFFFFFFF
+
+
+def pause_after(sentence, sid, i):
+    """0.28-0.55 s: longer after long sentences and questions, a little random so it never ticks like a metronome."""
+    base = 0.30 + min(0.12, 0.006 * len(sentence.split())) + (0.06 if sentence.rstrip().endswith("?") else 0)
+    return round(min(0.55, max(0.28, base + (_unit(sid, i, "pause") - 0.5) * 0.08)), 3)
+
+
+def vary_rate(rate, sid, i):
+    """The chosen pace, shifted up to ±3% per sentence."""
+    m = re.fullmatch(r"([+-]?\d+)%", str(rate or "+0%").strip())
+    base = int(m.group(1)) if m else 0
+    v = base + round((_unit(sid, i, "rate") - 0.5) * 6)
+    return f"{v:+d}%"
+
+
+def join_sentences(clips, words, pauses, sr=SR):
+    """Concatenate sentence audio with silence between; shift each sentence's word timings into the joined clip."""
+    out, all_words, t = [], [], 0.0
+    for k, (a, w) in enumerate(zip(clips, words)):
+        out.append(a)
+        all_words += [{"w": x["w"], "t0": round(x["t0"] + t, 3), "t1": round(x["t1"] + t, 3)} for x in w]
+        t += len(a) / sr
+        if k < len(pauses):
+            gap = np.zeros(int(pauses[k] * sr))
+            out.append(gap)
+            t += len(gap) / sr
+    return np.concatenate(out) if out else np.zeros(0), all_words
+
+
+def trim_edges(x, sr=SR, threshold_db=-45, keep_s=0.05):
+    """Cut silence at both ends (keep 50 ms); returns the audio and how much was cut from the start."""
+    loud = np.flatnonzero(np.abs(x) > 10 ** (threshold_db / 20))
+    if not len(loud):
+        return x, 0.0
+    a = max(0, loud[0] - int(keep_s * sr))
+    b = min(len(x), loud[-1] + int(keep_s * sr))
+    return x[a:b], a / sr
 
 
 def say_as(text, mapping):
@@ -32,7 +132,7 @@ def say_as(text, mapping):
 
 
 def estimate_words(text, dur):
-    """Spread the clip over its words by length (Kokoro has no word timings)."""
+    """Spread the clip over its words by length (Kokoro and own takes have no word timings)."""
     words = text.split()
     total = sum(len(w) + 1 for w in words) or 1
     t, out = 0.0, []
@@ -43,6 +143,19 @@ def estimate_words(text, dur):
     if out:
         out[-1]["t1"] = round(dur, 3)
     return out
+
+
+# ---------- audio in and out
+
+def decode(path, sr=SR):
+    raw = subprocess.run([ffmpeg_exe(), "-v", "quiet", "-i", str(path), "-ac", "1", "-ar", str(sr), "-f", "f32le", "-"],
+                         capture_output=True, check=True).stdout
+    return np.frombuffer(raw, np.float32).astype(np.float64)
+
+
+def encode_mp3(x, path, sr=SR):
+    subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-f", "f32le", "-ar", str(sr), "-ac", "1", "-i", "-",
+                    "-c:a", "libmp3lame", "-q:a", "2", str(path)], input=x.astype(np.float32).tobytes(), check=True)
 
 
 def duration(path):
@@ -65,52 +178,77 @@ async def edge_clip(text, voice_id, rate, path):
     return words
 
 
+def edge_scene(sid, text, voice_id, rate, path):
+    """Voice each sentence, then join with natural pauses."""
+    sents = split_sentences(text)
+    clips, words = [], []
+    with tempfile.TemporaryDirectory() as tmp:
+        for i, s in enumerate(sents):
+            f = Path(tmp) / f"{i}.mp3"
+            w = asyncio.run(edge_clip(s, voice_id, vary_rate(rate, sid, i), f))
+            a, lead = trim_edges(decode(f))
+            clips.append(a)
+            words.append([{"w": x["w"], "t0": max(0.0, x["t0"] - lead), "t1": max(0.0, x["t1"] - lead)} for x in w])
+    audio, all_words = join_sentences(clips, words, [pause_after(s, sid, i) for i, s in enumerate(sents[:-1])])
+    encode_mp3(audio, path)
+    return all_words
+
+
 _kokoro = None
 
 
-def kokoro_clip(text, lang, path, voice_id=None):
+def kokoro_clip(text, accent, path, voice_id=None):
     global _kokoro
     import soundfile as sf
     from kokoro_onnx import Kokoro
     m = HOME / "models/kokoro"
     if _kokoro is None:
         _kokoro = Kokoro(str(m / "kokoro-v1.0.int8.onnx"), str(m / "voices-v1.0.bin"))
-    vid, code, speed = KOKORO[lang]
-    vid = voice_id or vid
-    samples, sr = _kokoro.create(text, voice=vid, speed=speed, lang=code)
-    wav = path.with_suffix(".wav")
-    sf.write(str(wav), samples, sr)
-    subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-i", str(wav), "-c:a", "libmp3lame", "-q:a", "2", str(path)], check=True)
-    wav.unlink()
+    vid, code, speed = KOKORO.get(accent, KOKORO["uk"] if accent != "us" else KOKORO["us"])
+    samples, sr = _kokoro.create(text, voice=voice_id or vid, speed=speed, lang=code)
+    with tempfile.TemporaryDirectory() as tmp:
+        wav = Path(tmp) / "k.wav"
+        sf.write(str(wav), samples, sr)
+        a, _ = trim_edges(decode(wav))
+    encode_mp3(a, path)
+
+
+def own_take(o, sid):
+    for ext in (".webm", ".wav", ".m4a", ".mp3", ".ogg", ".mp4"):
+        p = o / "voice" / "own" / f"{sid}{ext}"
+        if p.exists():
+            return p
     return None
 
 
-def samples(o, brief, provider, rate):
+# ---------- commands
+
+def samples(o, brief, accent, rate):
     lang = brief.get("language", "en")
     name = brief.get("project", {}).get("name") or "your project"
-    text = (f"This is how the demo of {name} will sound, at this pace." if lang == "en"
+    text = (f"Here's how the demo of {name} will sound. It's quick, clear, and easy to follow." if lang == "en"
             else f"आपके {name} demo video की आवाज़ ऐसी होगी।")
+    accent = "hi" if lang == "hi" else (default_accent() if accent in (None, "auto") else accent)
+    picks = list(VOICES[accent]) + ([] if lang == "hi" else [VOICES[a][0] for a in VOICES if a not in (accent, "hi")][:4])
     d = o / "voice" / "samples"
     d.mkdir(parents=True, exist_ok=True)
     out = []
-    for vid, label in STYLES[provider][lang]:
+    for vid, label, gender in picks:
         f = d / f"{vid}.mp3"
-        if provider == "edge":
-            asyncio.run(edge_clip(say_as(text, brief.get("voice", {}).get("say_as")), vid, rate, f))
-        else:
-            kokoro_clip(text, lang, f, vid)
-        out.append({"voice": vid, "label": label, "file": str(f.relative_to(o))})
-    emit("voice", samples=out, rate=rate,
-         message=f"{len(out)} samples in {d}: play them, then pick a voice")
+        edge_scene(vid, say_as(text, brief.get("voice", {}).get("say_as")), vid, rate, f)
+        out.append({"voice": vid, "label": label, "gender": gender, "accent": accent_of(vid), "file": str(f)})
+    emit("voice", samples=out, rate=rate, accent=accent,
+         message=f"{len(out)} samples in {d}; the first {len(VOICES[accent])} match your region ({accent})")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", nargs="?", choices=["make", "samples"], default="make")
     ap.add_argument("--scene")
-    ap.add_argument("--lang", choices=["en", "hi"], help="samples before brief.json exists")
+    ap.add_argument("--accent", default="auto")
+    ap.add_argument("--lang", choices=["en", "hi"], help="for samples before brief.json exists")
     ap.add_argument("--name", help="project name for the sample sentence")
-    ap.add_argument("--provider", choices=["edge", "kokoro"])
+    ap.add_argument("--provider", choices=["edge", "kokoro", "own"])
     ap.add_argument("--voice")
     ap.add_argument("--rate")
     ap.add_argument("--out", default="unveo-out")
@@ -123,11 +261,12 @@ def main():
         brief.setdefault("project", {})["name"] = a.name
     lang = brief.get("language", "en")
     v = brief.get("voice", {})
-    provider = a.provider or v.get("provider", "edge")
-    voice_id = a.voice or v.get("voice_id") or EDGE_DEFAULT[lang]
-    rate = a.rate or v.get("rate", "+0%")
     if a.cmd == "samples":
-        samples(o, brief, a.provider or "edge", a.rate or v.get("rate", "+10%"))
+        samples(o, brief, a.accent, a.rate or v.get("rate", "+10%"))
+    provider = a.provider or v.get("provider", "edge")
+    voice_id = a.voice or v.get("voice_id") or default_voice(lang)
+    rate = a.rate or v.get("rate", "+10%")
+    accent = accent_of(voice_id)
     scenes = [s for s in scriptmod.parse((o / "script.md").read_text(encoding="utf-8")) if s["narration"]]
     if a.scene:
         scenes = [s for s in scenes if s["id"] == a.scene]
@@ -136,29 +275,42 @@ def main():
     vpath = vdir / "voice.json"
     old = read_json(vpath) if vpath.exists() else {"clips": []}
     clips = {c["scene"]: c for c in old["clips"]}
-    if old.get("provider") == "kokoro" and not a.provider:
+    if old.get("provider") == "kokoro" and provider == "edge" and not a.provider:
         provider = "kokoro"  # a fallback sticks for the whole video
     texts = {s["id"]: say_as(scriptmod.spoken(s["narration"]), v.get("say_as")) for s in scenes}
-    want = lambda sid, prov: sha1_of(texts[sid], prov, voice_id if prov == "edge" else KOKORO[lang][0], rate)
+
+    if provider == "own":
+        missing = [s["id"] for s in scenes if not own_take(o, s["id"])]
+        if missing:
+            emit("voice", ok=False, user_action=True, missing=missing,
+                 message=f"No approved take yet for {missing}. Record them in the studio (studio.py serve).")
+
+    def want(sid, prov):
+        take = own_take(o, sid) if prov == "own" else None
+        extra = (take.stat().st_size, take.stat().st_mtime) if take else ()
+        return sha1_of(VERSION, texts[sid], prov, voice_id, rate, *extra)
 
     def make(sid, prov):
         path = vdir / f"{sid}.mp3"
+        timing = "exact"
         if prov == "edge":
             last = None
             for attempt in range(3):
                 try:
-                    words = asyncio.run(edge_clip(texts[sid], voice_id, rate, path))
-                    if path.stat().st_size > 0:
-                        break
+                    words = edge_scene(sid, texts[sid], voice_id, rate, path)
+                    break
                 except Exception as e:  # network or service error
                     last = e
                     log(f"edge-tts failed for {sid} (attempt {attempt + 1}): {e}")
             else:
                 raise RuntimeError(f"edge-tts unavailable: {last}")
-            timing = "exact"
-        else:
+        elif prov == "own":
+            x, _ = trim_edges(decode(own_take(o, sid)))
+            encode_mp3(x, path)
             words, timing = None, "estimated"
-            kokoro_clip(texts[sid], lang, path)
+        else:
+            kokoro_clip(texts[sid], accent, path)
+            words, timing = None, "estimated"
         dur = duration(path)
         clips[sid] = {"scene": sid, "file": f"voice/{sid}.mp3", "dur_s": dur, "hash": want(sid, prov),
                       "timing": timing, "words": words or estimate_words(texts[sid], dur)}
@@ -181,10 +333,12 @@ def main():
                 make(s["id"], provider)
                 voiced.append(s["id"])
     order = [s["id"] for s in scriptmod.parse((o / "script.md").read_text(encoding="utf-8")) if s["narration"]]
-    write_json(vpath, {"provider": provider, "voice": voice_id if provider == "edge" else KOKORO[lang][0],
+    write_json(vpath, {"provider": provider, "voice": voice_id if provider == "edge" else provider,
                        "lang": lang, "rate": rate, "clips": [clips[i] for i in order if i in clips]})
     total = sum(clips[i]["dur_s"] for i in order if i in clips)
+    first = next((clips[i]["file"] for i in order if i in clips), None)
     emit("voice", outputs=[str(vpath)], provider=provider, voiced=voiced, speech_s=round(total, 1),
+         first_clip=str(o / first) if first else None,
          message=f"{len(voiced)} clip(s) made with {provider}; {total:.1f} s of speech in all")
 
 

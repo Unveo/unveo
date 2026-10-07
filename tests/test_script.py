@@ -132,6 +132,18 @@ class CheckTest(unittest.TestCase):
         _, out = check(GOOD.replace("## s03 · problem · anim:problem · target 12 s", "## s03 · problem · anim:problem · target 2 s"))
         self.assertTrue(any(w.startswith("s03:") for w in out["warnings"]), out["warnings"])
 
+    def test_stiff_wording_gets_a_warning(self):
+        _, out = check(GOOD.replace("Civic Watch tracks every project in one place.",
+                                    "Civic Watch seamlessly leverages data to track every project."))
+        self.assertTrue(any("leverages" in w or "seamlessly" in w for w in out["warnings"]), out["warnings"])
+
+    def test_no_contractions_in_a_long_script_gets_a_warning(self):
+        robotic = GOOD.replace("Citizens rarely see which ones are stuck.", "Citizens do not see which ones are stuck. It is not easy.")
+        robotic = robotic.replace("Pick a state, and each project shows its risk score.",
+                                  "You can pick a state and you will see that each project shows its risk score in the table.")
+        _, out = check(robotic)
+        self.assertTrue(any("contraction" in w for w in out["warnings"]), out["warnings"])
+
     def test_bad_heading_is_reported(self):
         _, out = check(GOOD.replace("## s06 · close · anim:close · target 8 s", "## s06 close anim"))
         self.assertTrue(any("heading" in e for e in out["errors"]))
