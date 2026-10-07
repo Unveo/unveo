@@ -13,6 +13,7 @@ Animated scenes are one HTML page (`OUT/film/index.html`). render.py copies the 
 | `explainer-*` | See EXPLAINERS.md | |
 | `close` | `{"title", "impact_line", "links": [{"label","url"}], "extra_line"}` | `impact_line` and `links` **copied exactly** from brief.close; QA compares them |
 | `placeholder` | `{"shot_id", "what_to_record"}` | Used automatically for missing clips |
+| `compose` | `{"layout", "blocks": [...]}` | Your own scene from building blocks; see DESIGN.md. Prefer it whenever a template doesn't fit the story |
 
 On-screen text summarises; the voice explains. Don't put the narration sentence on screen word for word.
 

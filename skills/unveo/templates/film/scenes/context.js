@@ -9,7 +9,7 @@ window.CORE_LIST = {
     const { h, esc, words, num } = CORE;
     const hasStat = d.stat && d.stat.value != null;
     root.__eb = h("div", "abs eyebrow", esc(eyebrow), "left:120px;top:120px" + (isProblem ? ";color:var(--bad)" : ""));
-    root.__hl = words(h("div", "abs", null, `left:120px;top:176px;width:${hasStat ? 1020 : 1560}px;font:650 76px/1.08 Geist;letter-spacing:-.03em`), d.headline || "");
+    root.__hl = words(h("div", "abs", null, `left:120px;top:176px;width:${hasStat ? 1020 : 1560}px;font:650 76px/1.08 var(--font-display);letter-spacing:-.03em`), d.headline || "");
     root.append(root.__eb, root.__hl);
     const items = d.points || d.pains || [];
     root.__items = items.slice(0, 3).map((txt, i) => {
@@ -17,14 +17,14 @@ window.CORE_LIST = {
       const mark = isProblem
         ? `<div style="width:18px;height:18px;border-radius:50%;background:var(--bad);flex:none"></div>`
         : `<div class="mono" style="font:600 30px 'Geist Mono';color:var(--accent);flex:none">0${i + 1}</div>`;
-      row.innerHTML = `${mark}<div style="font:500 40px/1.2 Geist">${esc(txt)}</div>`;
+      row.innerHTML = `${mark}<div style="font:500 40px/1.2 var(--font-display)">${esc(txt)}</div>`;
       root.append(row);
       return row;
     });
     if (hasStat) {
       const s = h("div", "abs", null, "left:1240px;top:430px;width:560px");
-      s.innerHTML = `<div class="v" style="font:700 150px/1 Geist;letter-spacing:-.04em;color:${isProblem ? "var(--bad)" : "var(--accent)"}"></div>
-        <div style="margin-top:20px;font:500 36px/1.2 Geist">${esc(d.stat.label || "")}</div>
+      s.innerHTML = `<div class="v" style="font:700 150px/1 var(--font-display);letter-spacing:-.04em;color:${isProblem ? "var(--bad)" : "var(--accent)"}"></div>
+        <div style="margin-top:20px;font:500 36px/1.2 var(--font-display)">${esc(d.stat.label || "")}</div>
         <div class="mono" style="margin-top:18px;font:400 22px 'Geist Mono';color:var(--muted)">${esc(d.stat.source || "")}</div>`;
       root.append(s);
       root.__stat = s;

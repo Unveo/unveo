@@ -17,7 +17,7 @@ UNVEO.scene("explainer-raw-vs-processed", {
     root.__raw = table(d.raw || {}, 120, false);
     root.__cln = table(d.processed || {}, 1100, true);
     root.__steps = (d.steps || []).slice(0, 4).map((s, i) => {
-      const c = h("div", "abs", esc(s), `left:840px;top:${370 + i * 92}px;width:240px;padding:14px 18px;border-radius:14px;background:var(--ink);color:var(--bg);font:500 22px/1.2 Geist;text-align:center`);
+      const c = h("div", "abs", esc(s), `left:840px;top:${370 + i * 92}px;width:240px;padding:14px 18px;border-radius:14px;background:var(--ink);color:var(--bg);font:500 22px/1.2 var(--font-display);text-align:center`);
       root.append(c);
       return c;
     });

@@ -157,6 +157,80 @@ def palettes_cmd(out):
 
 # ---------- film
 
+FONT_HOME = Path(os.environ.get("UNVEO_HOME", Path.home() / ".unveo")) / "fonts"
+UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
+
+
+def fetch_font(name):
+    """The app's own Google Font as local woff2 files (cached in ~/.unveo/fonts). [] when offline or not a Google Font."""
+    import urllib.parse, urllib.request
+    slug = re.sub(r"\W+", "-", name.lower()).strip("-")
+    cached = sorted(FONT_HOME.glob(f"{slug}-*.woff2"))
+    if cached:
+        return [(f, f.stem.rsplit("-", 1)[1]) for f in cached]
+    fam = urllib.parse.quote_plus(name)
+    for query in (f"{fam}:wght@300..800", f"{fam}:wght@400;500;600;700"):
+        try:
+            req = urllib.request.Request(f"https://fonts.googleapis.com/css2?family={query}&display=swap", headers={"User-Agent": UA})
+            css = urllib.request.urlopen(req, timeout=10).read().decode()
+        except Exception:
+            continue
+        blocks = re.findall(r"/\* latin \*/\s*@font-face\s*{([^}]*)}", css) or re.findall(r"@font-face\s*{([^}]*)}", css)
+        out = []
+        FONT_HOME.mkdir(parents=True, exist_ok=True)
+        for b in blocks:
+            url = re.search(r"url\((https://[^)]+\.woff2)\)", b)
+            weight = (re.search(r"font-weight:\s*([\d ]+);", b) or re.search(r"(\d+)", "400")).group(1).strip().replace(" ", "_")
+            if url:
+                f = FONT_HOME / f"{slug}-{weight}.woff2"
+                try:
+                    f.write_bytes(urllib.request.urlopen(urllib.request.Request(url.group(1), headers={"User-Agent": UA}), timeout=15).read())
+                    out.append((f, weight))
+                except Exception:
+                    pass
+        if out:
+            return out
+    return []
+
+
+def design_css(film, design):
+    """design.json -> design.css: the app's fonts, motion speed and background treatment (DESIGN.md)."""
+    lines, families = [], {}
+    for role in ("display_font", "body_font"):
+        name = (design.get(role) or "Geist").strip()
+        if name.lower() in ("geist", ""):
+            families[role] = "Geist"
+            continue
+        files = fetch_font(name)
+        if not files:
+            log(f"{name} isn't available offline or on Google Fonts; using Geist")
+            families[role] = "Geist"
+            continue
+        for f, weight in files:
+            dst = film / "fonts" / f.name
+            shutil.copyfile(f, dst)
+            lines.append(f'@font-face {{ font-family: "{name}"; src: url("fonts/{f.name}") format("woff2"); font-weight: {weight.replace("_", " ")}; }}')
+        families[role] = name
+    speed = {"calm": 1.0, "lively": 1.25}.get(design.get("motion", "calm"), 1.0)
+    lines.append(":root {\n"
+                 f'  --font-display: "{families["display_font"]}", "Geist";\n'
+                 f'  --font-body: "{families["body_font"]}", "Geist";\n'
+                 f"  --motion-speed: {speed};\n"
+                 f"  /* background: {design.get('background', 'plain')} · layout: {design.get('layout_family', 'editorial')} · accent: {design.get('accent_use', 'sparing')} */\n}}")
+    (film / "design.css").write_text("\n".join(lines) + "\n")
+
+
+def resolve_word_times(data, words, lead):
+    """compose blocks may say "at": "word:priority": start when that word is spoken."""
+    for b in data.get("blocks", []):
+        at = b.get("at")
+        if isinstance(at, str) and at.startswith("word:"):
+            key = at[5:].strip().lower()
+            hit = next((w for w in words if re.sub(r"\W", "", w["w"].lower()).startswith(key)), None)
+            b["at"] = round(lead + hit["t0"] - 0.15, 2) if hit else None
+    return data
+
+
 def prepare(out):
     """Copy the film template next to the agent's scene data, write palette.css and timeline.js."""
     o = Path(out)
@@ -172,24 +246,63 @@ def prepare(out):
     if (o / "capture" / "probe.png").exists():
         (film / "assets").mkdir(exist_ok=True)
         shutil.copyfile(o / "capture" / "probe.png", film / "assets" / "probe.png")
+    design = json.loads((film / "design.json").read_text(encoding="utf-8")) if (film / "design.json").exists() else {}
+    design_css(film, design)
+    vpath = o / "voice" / "voice.json"
+    words_by = {c["scene"]: c.get("words", []) for c in read_json(vpath)["clips"]} if vpath.exists() else {}
     tl = read_json(o / "timeline.json")
     scenes = []
     for s in tl["scenes"]:
         f = film / "data" / f"{s['id']}.json"
         data = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+        if s.get("template") == "compose":
+            data = resolve_word_times(data, words_by.get(s["id"], []), s.get("lead_s", 0))
         tpl = s.get("template") if s["visual"] == "anim" else "placeholder"
         if s["visual"] != "anim":
             data = data or {"shot_id": s["id"], "what_to_record": "The recorded app plays here."}
         scenes.append({"id": s["id"], "template": tpl or "placeholder", "dur_s": s["dur_s"], "start_s": s.get("start_s", 0),
                        "visual": s["visual"], "data": data})
-    (film / "timeline.js").write_text("window.TIMELINE = " + json.dumps({"fps": FPS, "scenes": scenes}, ensure_ascii=False) + ";\n")
+    (film / "timeline.js").write_text("window.TIMELINE = " + json.dumps({"fps": FPS, "design": design, "scenes": scenes}, ensure_ascii=False) + ";\n")
     return film, scenes
 
 
 def scene_hash(film, sc, mode):
-    code = "".join((film / n).read_text(encoding="utf-8") for n in ("core.js", "film.js", "film.css", "palette.css"))
+    code = "".join((film / n).read_text(encoding="utf-8") for n in ("core.js", "film.js", "film.css", "palette.css", "design.css", "blocks.js"))
     tpl = film / "scenes" / f"{sc['template']}.js"
     return sha1_of(code, tpl.read_text(encoding="utf-8") if tpl.exists() else "", json.dumps(sc, sort_keys=True), mode)
+
+
+DESIGN_CHECK_JS = r"""() => {
+  const sc = [...document.querySelectorAll('#stage .scene')].find(s => s.style.visibility !== 'hidden');
+  const issues = [], warnings = [];
+  if (!sc) return {issues, warnings};
+  const W = 1920, H = 1080, tol = 0.02;
+  const lum = c => { const m = c.match(/[\d.]+/g); if (!m) return null; const f = v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; };
+                     return {L: .2126 * f(+m[0]) + .7152 * f(+m[1]) + .0722 * f(+m[2]), a: m.length > 3 ? +m[3] : 1}; };
+  const shown = el => { for (let e = el; e && e !== sc; e = e.parentElement) { const cs = getComputedStyle(e); if (cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity < 0.05) return false; } return true; };
+  const label = el => (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : el.tagName.toLowerCase()) + ' "' + el.textContent.trim().slice(0, 40) + '"';
+  for (const el of sc.querySelectorAll('*')) {
+    if (el.classList.contains('w') || el.classList.contains('mask') || el.closest('svg')) continue;
+    const ownText = [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()) || el.querySelector(':scope > .mask');  // word-animated text
+    if (!ownText || !shown(el)) continue;
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height) continue;
+    if (r.right > W * (1 + tol) || r.bottom > H * (1 + tol) || r.left < -W * tol || r.top < -H * tol)
+      issues.push({what: label(el), issue: 'runs outside the frame'});
+    else if (el.clientWidth && el.scrollWidth > el.clientWidth + 2)
+      issues.push({what: label(el), issue: 'text is wider than its box'});
+    let bg = null;
+    for (let e = el; e; e = e.parentElement) { const b = lum(getComputedStyle(e).backgroundColor); if (b && b.a > 0.5) { bg = b; break; } }
+    const fg = lum(getComputedStyle(el).color);
+    if (bg && fg) {
+      const ratio = (Math.max(fg.L, bg.L) + .05) / (Math.min(fg.L, bg.L) + .05), big = parseFloat(getComputedStyle(el).fontSize) >= 24;
+      if (ratio < (big ? 3 : 4.5)) warnings.push({what: label(el), issue: `low contrast ${ratio.toFixed(1)}:1`});
+    }
+  }
+  const blocks = [...sc.querySelectorAll('.block, .card, .chip')].filter(shown).length;
+  if (blocks > 9) warnings.push({what: 'scene', issue: `${blocks} boxes on screen at once: crowded, cut some`});
+  return {issues, warnings};
+}"""
 
 
 class Page:
@@ -317,7 +430,7 @@ def stills_cmd(out, at=None, every=False):
         chosen = anims if every else [anims[round(i * (len(anims) - 1) / 3)] for i in range(min(4, len(anims)))] if anims else []
         picks = [(s, s["dur_s"] * 0.8) for s in dict.fromkeys(s["id"] for s in chosen) for s in [next(x for x in anims if x["id"] == s)]]
         picks += [(s, s["dur_s"] / 2) for s in scenes if s["visual"] in ("capture", "clip")]
-    files, errors = [], []
+    files, errors, issues, warnings = [], [], [], []
     with sync_playwright() as pw:
         for i, (s, t) in enumerate(picks):
             f = d / f"still-{i:02d}-{s['id']}.png"
@@ -325,6 +438,9 @@ def stills_cmd(out, at=None, every=False):
                 page = Page(pw, film, s["id"], 1920)  # animated scene, or the placeholder card for a missing clip
                 page.shot(t, f)
                 errors += page.errors
+                chk = page.pg.evaluate(DESIGN_CHECK_JS)
+                issues += [{"scene": s["id"], **x} for x in chk["issues"]]
+                warnings += [{"scene": s["id"], **x} for x in chk["warnings"]]
                 page.close()
             else:
                 src = o / ("capture" if s["visual"] == "capture" else "clips") / f"{s['id']}.mp4"
@@ -343,9 +459,13 @@ def stills_cmd(out, at=None, every=False):
         sheet.paste(Image.open(f).convert("RGB").resize((w - 8, h - 8)), (x + 4, y + 4))
         draw.text((x + 8, y + h + 8), label, fill="#111", font=ImageFont.load_default(size=22))
     sheet.save(d / "sheet.png")
-    res = dict(stills=[str(f) for f, _ in files], page_errors=errors, outputs=[str(d / "sheet.png")])
+    res = dict(stills=[str(f) for f, _ in files], page_errors=errors, design_issues=issues, design_warnings=warnings,
+               outputs=[str(d / "sheet.png")])
     if errors:
         emit("stills", ok=False, user_action=True, message="The film page threw errors; fix the scene data named in page_errors.", **res)
+    if issues:
+        emit("stills", ok=False, user_action=True,
+             message=f"{len(issues)} layout problem(s): shorten the text or use compose (auto-fits). See design_issues.", **res)
     emit("stills", message=f"{len(files)} still(s) on stills/sheet.png", **res)
 
 

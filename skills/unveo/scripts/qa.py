@@ -110,6 +110,14 @@ def main():
         last = max((int(h) * 3600 + int(m) * 60 + int(s_) + int(ms) / 1000 for h, m, s_, ms in ends), default=0)
         gate("captions", srt.exists() and ends and last <= dur + 0.05,
              f"{len(ends)} captions ({mode}), last ends at {last:.1f} s" if ends else "captions.srt is missing: run stitch.py final")
+    # feel (non-blocking): does it look made by a person? real app on screen, no hype on screen (DESIGN.md)
+    prod = [sc for sc in tl["scenes"] if sc["segment"] == "product"]
+    real = sum(sc["dur_s"] for sc in prod if sc["visual"] in ("capture", "clip")) / max(1e-9, sum(sc["dur_s"] for sc in prod))
+    hype = re.compile(r"AI[- ]powered|revolutionary|seamless|cutting[- ]edge|next[- ]gen|game[- ]?chang|supercharg|\u2728|\U0001F680|\U0001F916", re.I)
+    on_screen = " ".join(f.read_text(encoding="utf-8") for f in (o / "film" / "data").glob("*.json")) if (o / "film" / "data").exists() else ""
+    hits = sorted(set(m.group(0) for m in hype.finditer(on_screen)))
+    gate("feel", real >= 0.5 and not hits,
+         f"real app on screen {real:.0%} of the product time" + (f"; hype on screen: {hits}" if hits else ""), blocking=False)
     import stitch
     shots = stitch.shots_map(o)
     holes = [sc["id"] for sc in tl["scenes"] if sc["visual"] == "clip" and not stitch.find_clip(o, shots.get(sc["id"], f"shot-{sc['id'][1:]}"))]

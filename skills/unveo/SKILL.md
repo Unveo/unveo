@@ -250,14 +250,21 @@ Then ask:
 - **A scene that ran long** (> 1.5 s over): cut a `pause` or a `wait`, or let the narration run a little longer, then record that scene again.
 - When it's done, `state.py set capture done`.
 
-**19. Scene data.** Read `<SKILL_DIR>/ENGINE.md` and `<SKILL_DIR>/EXPLAINERS.md`. Write `OUT/film/data/<id>.json` for every `anim:` scene in timeline.json. Set explainer `beats` from the word timings in voice.json.
+**19. Design and scene data.**
+1. Read `<SKILL_DIR>/DESIGN.md`. Write `OUT/film/design.json`: a concept chosen for this project, with the app's own font, calm motion and a plain background unless the product calls for more.
+2. Read `<SKILL_DIR>/ENGINE.md` and `<SKILL_DIR>/EXPLAINERS.md`. Write `OUT/film/data/<id>.json` for every `anim:` scene in timeline.json. Use a template where it fits; compose your own scene (`anim:compose`) where the story needs something the templates don't do.
+3. Set explainer `beats` and compose `at` values from the word timings in voice.json.
 
-**20. Stills.** Run `"<PY>" "<SKILL_DIR>/scripts/render.py" stills`. Fix any `page_errors` and run it again. Look at `OUT/stills/sheet.png` if you can view images, and check that the text fits, nothing overlaps, and the colours are right.
+**20. Stills.** Run `"<PY>" "<SKILL_DIR>/scripts/render.py" stills`.
+- Fix every `page_errors` and `design_issues` item (text out of frame or box), and run it again.
+- Act on `design_warnings` (low contrast, crowded).
+- Look at `OUT/stills/sheet.png` if you can view images, and go through the restraint checklist in DESIGN.md §3.
 
-**21. Checkpoint C (✅ required).** Show the sheet path and one line per still. Ask:
+**21. Checkpoint C (✅ required).** Show the sheet path, one line per still, and the design concept in one line. Ask:
 > **Here's how it looks. Render the full video?**
 > Render (Recommended) · Change colors · Change some text · Re-record a scene
 
+Then ask: **"Does anything look automated or generic?"** *Looks natural (Recommended)* · *Something feels generic (I'll say what)*.
 Apply any change and redo the stills. On *Render*, run `state.py set stills approved`.
 
 **22. Fit recordings and clips.** Run `"<PY>" "<SKILL_DIR>/scripts/stitch.py" ingest`. If it exits 2 with `missing` clips, ask:

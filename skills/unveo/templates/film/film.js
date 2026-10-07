@@ -11,6 +11,9 @@
     start() {
       const T = window.TIMELINE;
       const stage = document.getElementById("stage");
+      const D = T.design || {};
+      if (D.background && D.background !== "plain") stage.classList.add("bg-" + D.background);
+      window.CORE_SPEED = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--motion-speed")) || 1;
       stage.style.transform = `scale(${W / 1920})`;
       document.body.style.width = W + "px";
       const list = T.scenes.filter(s => (only ? s.id === only : true));
@@ -43,7 +46,11 @@
       // build every scene up front so fonts and images load before the first capture
       list.forEach(root);
       const imgs = [...document.images].map(i => (i.complete ? null : new Promise(r => { i.onload = i.onerror = r; })));
-      Promise.all([document.fonts.ready, ...imgs]).then(() => { window.seek(0); window.ready = true; });
+      Promise.all([document.fonts.ready, ...imgs]).then(() => {
+        Object.values(built).forEach(r => r.def.fit && r.def.fit(r.el));  // re-fit text now the real fonts are in
+        window.seek(0);
+        window.ready = true;
+      });
       // preview controls (the render never uses them): Space play/pause, arrows step a frame, R restart
       if (!navigator.webdriver) {
         const total = only ? list[0].dur_s : list.reduce((a, s) => a + s.dur_s, 0);

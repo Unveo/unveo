@@ -408,6 +408,24 @@ def inline_blocks(html, tag):
     return "\n".join(l if k else "" for l, k in zip(lines, keep))
 
 
+GENERIC_FONTS = {"system-ui", "sans-serif", "serif", "monospace", "inherit", "initial", "-apple-system", "blinkmacsystemfont",
+                 "segoe ui", "roboto", "helvetica", "helvetica neue", "arial", "ui-sans-serif", "ui-monospace", "var"}
+
+
+def fonts(texts):
+    """The app's own typefaces, most likely first: Google Fonts links, then CSS font-family declarations."""
+    found = Counter()
+    for f, t in texts.items():
+        for m in re.finditer(r"fonts\.googleapis\.com/css2?\?([^\"'\s)>]+)", t):
+            for fam in re.findall(r"family=([^&:;]+)", m.group(1)):
+                found[fam.replace("+", " ").strip()] += 10
+        for m in re.finditer(r"font-family\s*:\s*([^;}{]+)", t):
+            first = m.group(1).split(",")[0].strip().strip("'\"")
+            if first and first.lower() not in GENERIC_FONTS and not first.startswith("var("):
+                found[first] += 1
+    return [name for name, _ in found.most_common(4)]
+
+
 def norm_hex(h):
     h = h.lower()
     return "#" + "".join(c * 2 for c in h[1:]) if len(h) == 4 else h
@@ -459,7 +477,7 @@ def main():
         "routes": routes(rel, texts), "ui_labels": ui_labels(texts), "forms": forms(texts),
         "url_candidates": url_candidates(root, texts, readme_name),
         "hidden_logic_candidates": hidden_logic(texts, readme),
-        "palette_candidates": palette(texts), "readme": readme_info(readme), "env_keys": env_keys(root),
+        "palette_candidates": palette(texts), "fonts": fonts(texts), "readme": readme_info(readme), "env_keys": env_keys(root),
     }
     out = out_dir(a.out) / "repo_scan.json"
     write_json(out, scan)

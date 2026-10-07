@@ -13,13 +13,13 @@ UNVEO.scene("explainer-pipeline-flow", {
     root.__boxes = st.map((s, i) => {
       const b = h("div", "abs card", null, `left:${left0 + i * (w + gap)}px;top:${y}px;width:${w}px;height:200px;padding:26px;display:flex;flex-direction:column;gap:8px;z-index:2`);
       b.innerHTML = `<div class="mono" style="font:600 22px 'Geist Mono';color:var(--accent)">0${i + 1}</div>
-        <div style="font:600 34px/1.15 Geist">${esc(s.label || s.name)}</div>
+        <div style="font:600 34px/1.15 var(--font-display)">${esc(s.label || s.name)}</div>
         <div class="mono" style="margin-top:auto;font:400 21px 'Geist Mono';color:var(--muted)">${esc(s.tool || s.name || "")}</div>`;
       root.append(b);
       return { b, cx: left0 + i * (w + gap) + w / 2 };
     });
     if (d.trigger) {
-      root.__trig = h("div", "abs", `⏱ ${esc(d.trigger.label)}`, `left:${left0}px;top:${y - 90}px;padding:12px 24px;border-radius:999px;background:var(--ink);color:var(--bg);font:500 26px Geist`);
+      root.__trig = h("div", "abs", `⏱ ${esc(d.trigger.label)}`, `left:${left0}px;top:${y - 90}px;padding:12px 24px;border-radius:999px;background:var(--ink);color:var(--bg);font:500 26px var(--font-display)`);
       root.append(root.__trig);
     }
     root.__tok = h("div", "abs mono", "", `top:${y + 250}px;padding:14px 24px;border-radius:16px;background:var(--accent2);color:#fff;font:600 26px 'Geist Mono';white-space:nowrap;transform:translateX(-50%);z-index:3`);

@@ -15,7 +15,8 @@
   // closed-form spring 0 -> 1 (underdamped), t in seconds since start
   const spring = (t, f = 2.0, z = 0.6) => (t <= 0 ? 0 : 1 - Math.exp(-z * 2 * Math.PI * f * t) * Math.cos(2 * Math.PI * f * Math.sqrt(1 - z * z) * t));
   // eased progress of an entrance that starts at t0 and lasts d
-  const p = (t, t0, d = 0.6, e = E.outC) => e(inv(t0, t0 + d, t));
+  const speed = () => window.CORE_SPEED || 1;  // design.json "motion": calm 1, lively 1.25
+  const p = (t, t0, d = 0.6, e = E.outC) => e(inv(t0, t0 + d / speed(), t));
   const h = (tag, cls, html, style) => {
     const el = document.createElement(tag);
     if (cls) el.className = cls;
@@ -55,7 +56,7 @@
     if (data.example_data) root.append(h("div", "tag", "Example data"));
   }
   function question(root, text) {
-    const q = h("div", "abs", null, "left:120px;top:96px;width:1500px;font:600 64px/1.12 Geist;letter-spacing:-.02em");
+    const q = h("div", "abs", null, "left:120px;top:96px;width:1500px;font:600 64px/1.12 var(--font-display);letter-spacing:-.02em");
     words(q, text || "");
     root.append(q);
     return q;

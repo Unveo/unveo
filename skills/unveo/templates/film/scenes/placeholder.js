@@ -4,7 +4,7 @@ UNVEO.scene("placeholder", {
     const { h, esc } = CORE;
     const c = h("div", "abs", null, "left:360px;top:50%;width:1200px;transform:translateY(-50%);border:4px dashed var(--muted);border-radius:36px;display:flex;flex-direction:column;gap:24px;padding:64px 80px");
     c.innerHTML = `<div class="eyebrow">Recording needed · ${esc(d.shot_id || "")}</div>
-      <div style="font:600 46px/1.25 Geist">${esc(d.what_to_record || "This part of the demo is recorded by the team.")}</div>`;
+      <div style="font:600 46px/1.25 var(--font-display)">${esc(d.what_to_record || "This part of the demo is recorded by the team.")}</div>`;
     root.append(c);
     root.__c = c;
   },

@@ -7,7 +7,7 @@ UNVEO.scene("explainer-model-io", {
     const i = d.input || {}, m = d.model || {}, o = d.output || {};
     root.__in = h("div", "abs card", null, "left:120px;top:330px;width:560px;height:330px;padding:34px;display:flex;flex-direction:column;gap:16px");
     root.__in.innerHTML = `<div class="eyebrow" style="font-size:22px">Input · ${esc(i.kind || "")}</div>
-      <div style="font:550 32px Geist">${esc(i.label || "")}</div>
+      <div style="font:550 32px var(--font-display)">${esc(i.label || "")}</div>
       <div class="mono" style="font:400 26px/1.4 'Geist Mono';color:var(--muted);overflow:hidden">${esc(i.example == null ? "" : typeof i.example === "object" ? JSON.stringify(i.example) : i.example)}</div>`;
     const pre = h("div", "abs", null, "left:120px;top:690px;width:560px;display:flex;flex-wrap:wrap;gap:10px");
     root.append(pre);
@@ -17,19 +17,19 @@ UNVEO.scene("explainer-model-io", {
       return c;
     });
     root.__m = h("div", "abs", null, "left:780px;top:360px;width:360px;height:280px;border-radius:36px;background:var(--ink);color:var(--bg);display:flex;flex-direction:column;justify-content:center;align-items:center;gap:14px;text-align:center;padding:24px");
-    root.__m.innerHTML = `<div style="font:650 40px/1.1 Geist">${esc(m.label || "Model")}</div>
+    root.__m.innerHTML = `<div style="font:650 40px/1.1 var(--font-display)">${esc(m.label || "Model")}</div>
       <div class="mono" style="font:400 19px/1.35 'Geist Mono';opacity:.75;max-width:100%;overflow-wrap:anywhere">${esc(m.name || "")}</div>
       <div class="mono" style="font:500 19px 'Geist Mono';opacity:.6">${esc(m.where === "api" ? "via API" : m.where || "")}</div>`;
     root.__ring = h("div", "abs", null, "left:760px;top:340px;width:400px;height:320px;border-radius:44px;border:4px solid var(--accent)");
     root.__out = h("div", "abs card", null, "left:1240px;top:330px;width:560px;height:330px;padding:34px;display:flex;flex-direction:column;gap:14px");
     const alts = (o.alternatives || []).slice(0, 2).map(a => `<div class="mono" style="font:400 22px 'Geist Mono';color:var(--muted)">${esc(a.label)}${a.p != null ? ` · ${esc(a.p)}` : ""}</div>`).join("");
     root.__out.innerHTML = `<div class="eyebrow" style="font-size:22px">Output</div>
-      <div style="font:550 30px Geist">${esc(o.label || "")}</div>
-      <div style="font:700 60px/1.05 Geist;color:var(--accent)">${esc(o.example == null ? "" : o.example)}</div>
+      <div style="font:550 30px var(--font-display)">${esc(o.label || "")}</div>
+      <div style="font:700 60px/1.05 var(--font-display);color:var(--accent)">${esc(o.example == null ? "" : o.example)}</div>
       ${o.confidence != null ? `<div style="height:14px;border-radius:14px;background:color-mix(in srgb, var(--accent2) 22%, transparent)"><div class="bar" style="height:14px;border-radius:14px;background:var(--accent2);width:0"></div></div>
       <div class="mono conf" style="font:600 24px 'Geist Mono';color:var(--accent2)"></div>` : ""}${alts}`;
-    root.__a1 = h("div", "abs", "→", "left:700px;top:445px;font:600 64px Geist;color:var(--muted)");
-    root.__a2 = h("div", "abs", "→", "left:1165px;top:445px;font:600 64px Geist;color:var(--muted)");
+    root.__a1 = h("div", "abs", "→", "left:700px;top:445px;font:600 64px var(--font-display);color:var(--muted)");
+    root.__a2 = h("div", "abs", "→", "left:1165px;top:445px;font:600 64px var(--font-display);color:var(--muted)");
     root.append(root.__in, root.__ring, root.__m, root.__out, root.__a1, root.__a2);
   },
   draw(t, d, dur, root) {

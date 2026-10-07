@@ -17,7 +17,7 @@ UNVEO.scene("explainer-formula-breakdown", {
     root.__chips = ins.map((it, i) => {
       const x = left0 + i * (w + gap);
       const c = h("div", "abs chip", null, `left:${x}px;top:300px;width:${w}px;height:210px`);
-      c.innerHTML = `<div style="font:550 32px/1.15 Geist">${esc(it.label || it.name)}</div>
+      c.innerHTML = `<div style="font:550 32px/1.15 var(--font-display)">${esc(it.label || it.name)}</div>
         <div class="mono" style="font:400 21px 'Geist Mono';color:var(--muted)">${esc(it.name)}</div>
         <div class="v mono" style="margin-top:auto;font:600 46px 'Geist Mono';color:var(--accent)"></div>`;
       const wt = h("div", "abs", null, `left:${x}px;top:530px;width:${w}px`);
@@ -35,14 +35,14 @@ UNVEO.scene("explainer-formula-breakdown", {
       line.style.strokeDasharray = L; line.style.strokeDashoffset = L;
       return { c, wt, line, L, it, ratio: has ? (Number(it.weight) || 0) / maxW : 0 };
     });
-    const sig = h("div", "abs", "Σ", `left:${node.x - 70}px;top:${node.y - 70}px;width:140px;height:140px;border-radius:50%;background:var(--ink);color:var(--bg);display:flex;align-items:center;justify-content:center;font:600 72px Geist`);
+    const sig = h("div", "abs", "Σ", `left:${node.x - 70}px;top:${node.y - 70}px;width:140px;height:140px;border-radius:50%;background:var(--ink);color:var(--bg);display:flex;align-items:center;justify-content:center;font:600 72px var(--font-display)`);
     const ex = h("div", "abs mono", "", `left:120px;top:${node.y + 110}px;width:1280px;text-align:center;font:500 30px 'Geist Mono';color:var(--muted)`);
     const r = d.result || {};
     const res = h("div", "abs card", null, "left:1080px;top:650px;width:620px;height:230px;padding:30px 40px;display:flex;flex-direction:column;gap:10px");
-    res.innerHTML = `<div style="font:550 30px Geist">${esc(r.label || r.name || "Result")}</div>
-      <div style="display:flex;align-items:baseline;gap:22px"><div class="v" style="font:700 100px/1 Geist;letter-spacing:-.03em"></div>
+    res.innerHTML = `<div style="font:550 30px var(--font-display)">${esc(r.label || r.name || "Result")}</div>
+      <div style="display:flex;align-items:baseline;gap:22px"><div class="v" style="font:700 100px/1 var(--font-display);letter-spacing:-.03em"></div>
       <div class="mono" style="font:500 26px 'Geist Mono';color:var(--muted)">${esc(r.scale || "")}</div>
-      <div class="band" style="margin-left:auto;padding:10px 22px;border-radius:999px;font:600 28px Geist;color:#fff"></div></div>`;
+      <div class="band" style="margin-left:auto;padding:10px 22px;border-radius:999px;font:600 28px var(--font-display);color:#fff"></div></div>`;
     root.append(sig, ex, res);
     Object.assign(root, { __sig: sig, __ex: ex, __res: res, __expr: String(d.expression || "") });
   },

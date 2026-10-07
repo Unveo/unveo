@@ -115,6 +115,16 @@ class StitchQaTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(res["missing"], ["clips/shot-01.mp4"])
 
+    def test_feel_report_flags_hype_on_screen(self):
+        o, _ = project()
+        (o / "film/data/s01.json").write_text(json.dumps({"title": "Our AI-powered, revolutionary app 🚀"}))
+        run("stitch.py", o, "ingest"); run("score.py", o); run("mix.py", o); run("stitch.py", o, "final")
+        _, res = run("qa.py", o)
+        g = next(x for x in res["gates"] if x["gate"] == "feel")
+        self.assertFalse(g["ok"])
+        self.assertFalse(g["blocking"])
+        self.assertIn("AI-powered", g["detail"])
+
     def test_missing_clip_with_placeholders_gets_a_card_segment(self):
         o, _ = project()
         (o / "clips/shot-01.mp4").unlink()
