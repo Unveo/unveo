@@ -1,4 +1,4 @@
-# Colour schemes (Phase 1, Q4)
+# Colour schemes (Phase 1, round A)
 
 `render.py palettes` prints all 6 palettes with their final `tokens` (already contrast-checked: ink at least 7:1 on bg, accents at least 3:1). Always copy tokens from that JSON. Never type colours by hand.
 

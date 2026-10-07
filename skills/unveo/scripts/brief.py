@@ -1,12 +1,15 @@
 """Check unveo-out/brief.json before anything is written from it (docs/03 §7).
 
   brief.py validate [--out unveo-out]   exit 0 if valid, 2 with a list of errors otherwise
+  brief.py defaults --mode quick|guided --narration ai|own [--lang en|hi] [--limit S] [--repo-url URL]
+      fills every answer that has a recommended default (focus, voice, speed, captions, palette, name),
+      keeps whatever brief.json already holds, and lists what the agent still has to write.
 """
 import argparse, json, re, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import emit  # noqa: E402
+from common import emit, out_dir  # noqa: E402
 
 TOKENS = ("bg", "surface", "ink", "muted", "accent", "accent2", "good", "bad")
 PATTERNS = {"pipeline-flow", "formula-breakdown", "model-io", "raw-vs-processed", "system-map"}
@@ -33,6 +36,8 @@ def errors(b):
         e.append("limit_s must be a whole number of seconds from 30 to 600")
     if b.get("captions", "burned") not in ("burned", "srt", "off"):
         e.append("captions must be 'burned', 'srt' or 'off'")
+    if b.get("mode", "guided") not in ("quick", "guided"):
+        e.append("mode must be 'quick' or 'guided'")
     if b.get("focus", "balanced") not in ("product", "balanced", "explain"):
         e.append("focus must be 'product', 'balanced' or 'explain'")
     if b.get("language") not in ("en", "hi"):
@@ -72,6 +77,47 @@ def errors(b):
     return e
 
 
+def merge(base, top):
+    """base filled in under top: values already in top win."""
+    out = dict(base)
+    for k, v in top.items():
+        out[k] = merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
+
+
+def defaults(o, mode, narration, lang, limit, repo_url):
+    import render, voice  # noqa: E401  (venv-only modules, loaded on demand)
+    scan = json.loads((o / "repo_scan.json").read_text(encoding="utf-8")) if (o / "repo_scan.json").exists() else {}
+    root = scan.get("root", ".")
+    readme = scan.get("readme") or {}
+    name = readme.get("title") or Path(root).name
+    d = {"version": 1, "mode": mode,
+         "project": {"name": name, "source": {"kind": "github", "url": repo_url, "clone_path": root} if repo_url
+                     else {"kind": "local", "path": root}, "repo_url": repo_url or "", "app_url": "",
+                     "login": {"needed": False, "user_env": "UNVEO_LOGIN_USER", "password_env": "UNVEO_LOGIN_PASSWORD"}},
+         "limit_s": limit or readme.get("video_limit_s") or 120, "language": lang, "focus": "balanced", "captions": "burned",
+         "voice": {"provider": "own", "voice_id": "own", "rate": "+0%"} if narration == "own"
+         else {"provider": "edge", "voice_id": voice.default_voice(lang), "rate": "+10%"},
+         "palette": {"name": "project", "tokens": render.project_palette(scan.get("palette_candidates", []), o / "capture" / "probe.png")},
+         "header": {"title": name, "event": "", "team": ""},
+         "close": {"impact_line": "", "links": [{"label": "Source code", "url": repo_url}] if repo_url else [], "extra_line": ""},
+         "capture_enabled": True}
+    path = o / "brief.json"
+    old = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    b = merge(d, old)
+    for k, v in (("mode", mode), ("language", lang), ("limit_s", limit)):  # answers given just now beat old ones
+        if v:
+            b[k] = v
+    if narration == "own" and b["voice"].get("provider") != "own":
+        b["voice"] = d["voice"]
+    elif narration == "ai" and b["voice"].get("provider") == "own":
+        b["voice"] = d["voice"]
+    path.write_text(json.dumps(b, indent=2, ensure_ascii=False), encoding="utf-8")
+    need = ["understanding"] + (["project.app_url"] if not b["project"]["app_url"] else []) + \
+           (["close.impact_line"] if not b["close"]["impact_line"] else [])
+    return b, need
+
+
 def _get(d, keys):
     for k in keys:
         if not isinstance(d, dict):
@@ -82,9 +128,19 @@ def _get(d, keys):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["validate"])
+    ap.add_argument("cmd", choices=["validate", "defaults"])
     ap.add_argument("--out", default="unveo-out")
+    ap.add_argument("--mode", choices=["quick", "guided"], default="guided")
+    ap.add_argument("--narration", choices=["ai", "own"], default="ai")
+    ap.add_argument("--lang", choices=["en", "hi"], default="en")
+    ap.add_argument("--limit", type=int)
+    ap.add_argument("--repo-url", default="")
     a = ap.parse_args()
+    if a.cmd == "defaults":
+        o = out_dir(a.out)
+        b, need = defaults(o, a.mode, a.narration, a.lang, a.limit, a.repo_url)
+        emit("brief", outputs=[str(o / "brief.json")], still_needed=need, voice=b["voice"], limit_s=b["limit_s"],
+             message=f"defaults written ({b['mode']}); still needed: {', '.join(need)}")
     path = Path(a.out) / "brief.json"
     try:
         b = json.loads(path.read_text(encoding="utf-8"))

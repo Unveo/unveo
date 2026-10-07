@@ -92,6 +92,44 @@ class ValidateTest(unittest.TestCase):
             bad = subprocess.run([sys.executable, str(SCRIPTS / "brief.py"), "validate", "--out", out], capture_output=True)
         self.assertEqual((ok.returncode, bad.returncode), (0, 2))
 
+    def test_mode_must_be_quick_or_guided(self):
+        b = good_brief(); b["mode"] = "turbo"
+        self.assertTrue(any("mode" in e for e in brief.errors(b)))
+        b["mode"] = "quick"
+        self.assertEqual(brief.errors(b), [])
+
+
+class DefaultsTest(unittest.TestCase):
+    def defaults(self, out, *args):
+        p = subprocess.run([sys.executable, str(SCRIPTS / "brief.py"), "defaults", "--out", out, *args], capture_output=True, text=True)
+        return p.returncode, json.loads(p.stdout.strip().splitlines()[-1])
+
+    def test_quick_mode_fills_every_answer_the_user_would_give(self):
+        with tempfile.TemporaryDirectory() as out:
+            (Path(out) / "repo_scan.json").write_text(json.dumps({
+                "root": "/x", "readme": {"title": "Civic Watch", "video_limit_s": 120},
+                "palette_candidates": [{"name": "primary", "hex": "#4f46e5"}, {"name": "background", "hex": "#ffffff"}]}))
+            code, res = self.defaults(out, "--mode", "quick", "--narration", "ai", "--lang", "en")
+            b = json.loads((Path(out) / "brief.json").read_text())
+        self.assertEqual(code, 0, res)
+        self.assertEqual((b["mode"], b["focus"], b["captions"], b["limit_s"]), ("quick", "balanced", "burned", 120))
+        self.assertEqual((b["voice"]["provider"], b["voice"]["rate"]), ("edge", "+10%"))
+        self.assertTrue(b["voice"]["voice_id"].endswith("Neural"))
+        self.assertEqual(b["palette"]["name"], "project")
+        self.assertEqual(b["palette"]["tokens"]["accent"], "#4f46e5")
+        self.assertEqual(b["project"]["name"], "Civic Watch")
+        self.assertIn("understanding", res["still_needed"])  # the agent's part
+
+    def test_own_voice_and_given_answers_win_and_existing_values_are_kept(self):
+        with tempfile.TemporaryDirectory() as out:
+            (Path(out) / "repo_scan.json").write_text(json.dumps({"root": "/x", "readme": {}}))
+            (Path(out) / "brief.json").write_text(json.dumps({"header": {"title": "Mine", "event": "HackX", "team": ""}}))
+            code, res = self.defaults(out, "--mode", "guided", "--narration", "own", "--lang", "hi", "--limit", "90")
+            b = json.loads((Path(out) / "brief.json").read_text())
+        self.assertEqual(code, 0, res)
+        self.assertEqual((b["voice"]["provider"], b["language"], b["limit_s"]), ("own", "hi", 90))
+        self.assertEqual(b["header"]["event"], "HackX")
+
 
 class StateTest(unittest.TestCase):
     def run_state(self, out, *args):

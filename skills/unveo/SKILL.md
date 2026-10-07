@@ -34,8 +34,10 @@ Four phases: **0 Setup → 1 Understand (Checkpoint A) → 2 Write (Checkpoint B
 |---|---|
 | `check` | Run Phase 0 only, then stop |
 | `<github-url>` or `<path>` | The project to use. Default: the current repo |
-| `--limit <seconds>` | Answers Q1 (30–600) |
-| `--lang en\|hi` | Answers Q2 |
+| `--limit <seconds>` | Answers the length question (30–600) |
+| `--lang en\|hi` | Answers the language question |
+| `--quick` / `--guided` | Answers the mode question |
+| `--own-voice` | Answers the narrator question: the user reads the lines |
 | `--url <app-url>` | Sets the app URL; skips URL detection |
 | `--fresh` | Ignore a saved brief.json and ask everything again |
 | `resume` | Continue from the first unfinished step in `OUT/state.json` |
@@ -44,7 +46,9 @@ Four phases: **0 Setup → 1 Understand (Checkpoint A) → 2 Write (Checkpoint B
 
 ## Asking the user
 
-When you ask with choices: in Claude Code, use AskUserQuestion (at most 4 options; *Other* is added automatically). Elsewhere, print a numbered list ending with "Other (type it)" and wait for the reply. Put the recommended option first, marked "(Recommended)". Ask one question at a time, in the order below.
+Ask in **rounds**: put every question of a round in one call. In Claude Code, that's one AskUserQuestion call with up to 4 questions (each has at most 4 options; *Other* is added automatically). Elsewhere, print the round as one numbered block, each question with lettered options and "Other (type it)", and take one reply. Put the recommended option first, marked "(Recommended)". Never ask a question whose answer you already have from an argument, the saved brief or the repo.
+
+**Quick mode** (`brief.mode = "quick"`) takes the recommended answer for everything except Checkpoint B, Checkpoint C and the own-voice studio. Guided mode asks the rounds below.
 
 ## Phase 0: Setup (every run)
 
@@ -62,117 +66,61 @@ When you ask with choices: in Claude Code, use AskUserQuestion (at most 4 option
 
 ## Phase 1: Understand
 
-**1. Saved brief.** If `OUT/brief.json` exists and `--fresh` wasn't given, run `"<PY>" "<SKILL_DIR>/scripts/brief.py" validate`.
-- If it's valid, ask: **"Reuse your saved answers? (<limit> · <language> · <palette name> · <project name>)"**, with options *Reuse (Recommended)* · *Change something* · *Start fresh*.
-  - *Reuse:* skip to Phase 2. If `state.json` shows `script` approved, skip to Phase 3.
-  - *Change something:* ask what, change only that, then re-validate.
-- If it's invalid, or the user picks *Start fresh*, continue from step 2.
+**1. Saved brief.** Only if `OUT/brief.json` exists and `--fresh` wasn't given: run `"<PY>" "<SKILL_DIR>/scripts/brief.py" validate`. If it's valid, ask **"Reuse your saved answers? (<limit> · <language> · <voice> · <project name>)"** *Reuse (Recommended)* · *Change something* · *Start fresh*. *Reuse* skips to Phase 2 (Phase 3 if `script` is approved in state.json). Otherwise continue.
 
-**2. Output folder.** If the project is a git repo and `unveo-out/` isn't in its `.gitignore`, ask once: **"Add unveo-out/ to .gitignore?"** with options *Yes (Recommended)* · *No*.
+**2. Map the repo.** Run `"<PY>" "<SKILL_DIR>/scripts/analyze_repo.py" --repo <path-or-github-url>` (leave out `--repo` for the current folder). Where your agent can run commands in the background, start it now and ask the start round while it runs. A GitHub URL is cloned into `~/.unveo/repos/`; from then on read files from the `root` in the JSON. **Exit 2** (clone failed): show `message` and stop. Then `state.py set analyze done`. The output folder ignores itself (`unveo-out/.gitignore`), so never edit the project's `.gitignore`.
 
-**3. Map the repo.** Run:
-`"<PY>" "<SKILL_DIR>/scripts/analyze_repo.py" --repo <path-or-github-url>`
-- Leave out `--repo` to use the current folder.
-- A GitHub URL gets cloned into `~/.unveo/repos/`. From then on, read files from the `root` in the JSON.
-- **Exit 2** (clone failed): show `message` and stop.
-- Show the user the `message` line, then `state.py set analyze done`.
+**3. Start round (always one call; skip questions answered by arguments).**
+> 1. **How should I run this?** Quick: use the recommended answers, stop only to approve the script and the look (Recommended) · Guided: ask me about voice, focus, explainers and colours
+> 2. **How long can the video be?** `<README limit, "(from your README)">` · 60 seconds · 90 seconds · 2 minutes (*Other*: seconds or m:ss, 30–600)
+> 3. **Narration language?** English (Recommended) · Hindi
+> 4. **Who narrates?** An AI voice (Recommended) · My own voice: I read the lines in a teleprompter page before the screen is recorded
 
-**4. Q1, time limit** (skip if `--limit` was given). Ask:
-> **How long can the video be? Use your hackathon's limit.**
-> 60 seconds · 90 seconds · 2 minutes · 3 minutes
+Then run `"<PY>" "<SKILL_DIR>/scripts/brief.py" defaults --mode <quick|guided> --narration <ai|own> --lang <en|hi> --limit <s> [--repo-url <github url>]`. It writes every recommended answer into brief.json (focus balanced, captions burned, the region's best voice at +10%, the app's colours, the name) and keeps anything already there. Its `still_needed` list is what you write yourself.
 
-- If `repo_scan.json` has `readme.video_limit_s`, put that option first, marked "(from your README)".
-- *Other* accepts a number of seconds or `m:ss`, from 30 to 600.
+**4. Voice round (Guided only, one call).** For an AI voice, first make samples: `"<PY>" "<SKILL_DIR>/scripts/voice.py" samples --lang <en|hi> --name "<project name>" --rate +10%` and give the paths (`OUT/voice/samples/*.mp3`).
+> 1. **Which voice?** (AI only) `<region voice 1>` (Recommended) · `<region voice 2>` · `<another accent>`
+> 2. **How fast?** Brisk, +10% (Recommended) · Normal, +0% · Fast, +20% (own voice: this is the pace the teleprompter guides you at)
+> 3. **What should the video focus on?** Balanced: the product plus 1–2 explanations (Recommended) · The product in detail: every main screen, at most 1 explanation · How it works: a shorter tour, 2–3 explanations
 
-**5. Q2, language** (skip if `--lang` was given). Ask:
-> **Which language should the voiceover be in?**
-> English (Recommended) · Hindi
+At 60 s add "60 s fits about 3 screens, or 2 screens and 1 explanation." Save `voice.voice_id`, `voice.rate` and `focus` in brief.json.
 
-**5a. Focus.** Ask:
-> **What should the video focus on?**
-> Balanced (Recommended): the product, plus 1–2 explanations of how it works · Show the product in detail: every main screen, no more than 1 explanation · Explain how it works: a shorter tour, 2–3 explanations
+**5. Understand the project.** Read `<SKILL_DIR>/ANALYSIS.md` now and follow it. Write `OUT/understanding.md` with `Confirmed: no`.
 
-At a 60 s limit, add to the descriptions: "60 s fits about 3 screens, or 2 screens and 1 explanation." Save the answer as `focus` (`balanced`, `product` or `explain`). It sets the time split, how many journey steps to write (PITCH.md) and how many explainers are allowed.
-
-**5b. Voice and pace (ask every run, never assume).** Make samples first, so the user can listen:
-`"<PY>" "<SKILL_DIR>/scripts/voice.py" samples --lang <en|hi> --name "<project name>" --rate +10%`
-The first samples match the user's region (from their system settings), then one from each other accent. No accent is forced. Give the paths (`OUT/voice/samples/*.mp3`), then ask:
-> **Which voice should narrate? (play the samples first)**
-> `<region voice 1>` (Recommended) · `<region voice 2>` · `<another accent>` · Use my own voice
-
-*Other* accepts any sample's name or accent. Then ask:
-> **How fast should it speak?**
-> Brisk, +10% (Recommended) · Normal, +0% · Fast, +20%
-
-Save them as `voice.voice_id` and `voice.rate` in brief.json (step 11). A faster pace fits more words in the time limit; `script.py` accounts for it.
-
-**Use my own voice** is optional and never the default. It sets `voice.provider` to `own`. At step 16, instead of a generated voice, run the studio (below).
-
-**6. Understand the project.** Read `<SKILL_DIR>/ANALYSIS.md` now and follow it. It covers what to read, how to find the journey and the hidden logic, and the `understanding.md` template. Write `OUT/understanding.md` with `Confirmed: no`. Keep editing that file in place until Q3 is confirmed.
-
-**7. App URL.** Probe each URL you have, in this order: `--url`, then up to 3 `url_candidates`. Use:
-`"<PY>" "<SKILL_DIR>/scripts/capture.py" probe --url <url>`
-- If there are no URLs, or every probe exits 2, ask:
+**6. App URL.** Probe each URL you have, in this order: `--url`, then up to 3 `url_candidates`: `"<PY>" "<SKILL_DIR>/scripts/capture.py" probe --url <url>`.
+- **No URL works:** ask (this one can't wait for a round):
   > **I couldn't find a live link to your app. Where is it running?**
-  > Set it up and run it for me (Recommended when the code is here) · Paste a URL · It runs locally (I'll start it and paste the localhost URL) · It's not a web app, I'll record clips myself
+  > Set it up and run it for me (Recommended when the code is here) · Paste a URL · It runs locally (I'll paste the localhost URL) · It's not a web app, I'll record clips myself
 - **Set it up and run it for me:**
-  1. Run `"<PY>" "<SKILL_DIR>/scripts/setup_app.py" plan --repo <root>`. It reports `where` (here: started inside the project; clone; elsewhere), the Node and Python parts, what's already installed, the run commands, missing env **names**, and `blockers`.
-  2. **Blockers** (a database, Docker services, an unsupported stack): explain them in one line and fall back to "Paste a URL" or clips.
+  1. Run `"<PY>" "<SKILL_DIR>/scripts/setup_app.py" plan --repo <root>`. It reports `where`, the Node and Python parts, what's installed, run commands, missing env **names**, and `blockers`.
+  2. **Blockers** (a database, Docker services, an unsupported stack): explain in one line and fall back to "Paste a URL" or clips.
   3. **Missing env names:** ask the user to add them to the project's `.env` themselves. Never ask for the values in chat.
-  4. Show what will be installed and run, then ask once: **"Install these inside the project folder and start it?"** *Yes (Recommended)* · *No*.
-  5. On *Yes*, run `setup_app.py install --yes` (skip it if nothing needs installing), then `setup_app.py start --yes`. Use the first URL it reports as the app URL and probe it.
-  6. Remember to stop it at step 27.
-- If `login_wall` is true, or the code shows a sign-in unveo can't type into (Google or GitHub sign-in, OTP, CAPTCHA), ask:
-  > **The app needs a login. How should unveo get past it?**
-  > I'll log in myself in a window unveo opens (Recommended) · A demo account (I'll set it as environment variables) · Skip the logged-in parts · I'll record those parts myself
+  4. Show what will be installed and run, then ask once: **"Install these inside the project folder and start it?"** *Yes (Recommended)* · *No*. On *Yes*: `setup_app.py install --yes` (skip if nothing to install), then `setup_app.py start --yes`; probe the first URL it reports. Stop it at step 27.
+- **A pasted URL that fails:** say what failed and ask once more. After a second failure, or clips, set `capture_enabled` to false.
+- **Login:** if `login_wall` is true, or the code shows a sign-in unveo can't type into (Google or GitHub sign-in, OTP, CAPTCHA), the login question joins round A (Quick mode: manual login, no question).
+- Put the result on the `App URL:` line of understanding.md, e.g. `https://x.vercel.app (loads ✓, no login)`.
 
-  - **Log in myself:** steps.json gets a manual login (CAPTURE.md). During the dry run and the recording, a real browser window opens; the user logs in there by any method; unveo carries on by itself once it sees they're in. The site remembers the login between runs. It needs a computer with a screen, so it won't work in cloud agents.
-  - **Demo account:** tell them to set `UNVEO_LOGIN_USER` and `UNVEO_LOGIN_PASSWORD` in their shell before the recording phase. If the repo itself publishes a demo account (README or login page), they may use it, but you still never copy it into any file.
-- **A pasted URL that fails:** say what failed (from `message`) and ask the same question again, once. After a second failure, or when the user says they'll record clips themselves, set `capture_enabled` to false and stop probing.
-- **App unreachable:** skip the login question. Work out from the code whether there's a sign-in, and note it under "Not sure about".
-- Put the result on the `App URL:` line of understanding.md. Examples:
-  - `https://x.vercel.app (loads ✓, no login)`
-  - `none reachable (http://localhost:5173 refused; clips recorded by you; login needed)`
+**7. Round A, ✅ Checkpoint A (Guided; one call).** Print `understanding.md`, then the end card you'd use (header, links, the drafted impact line: who benefits and how, no numbers you can't source). Run `"<PY>" "<SKILL_DIR>/scripts/render.py" palettes` and give `OUT/stills/palettes.png`; read `<SKILL_DIR>/PALETTES.md` to pick 3 presets that fit the field. Ask:
+> 1. **Did I get your project and the end card right?** Yes (Recommended) · Mostly, I'll correct a few things · No, let me explain
+> 2. **Which hidden logic should I animate?** (multi-select) the top 4 H-items, the recommended ones marked; the count follows the focus (product 0–1, balanced 1–3, explain 2–3; one fewer at 60 s). With 1 H-item: *Animate <title>?* With none, leave this out.
+> 3. **The app needs a login. How should unveo get past it?** (only when needed) I'll log in myself in a window unveo opens (Recommended) · A demo account (environment variables) · Skip the logged-in parts · I'll record those parts myself
+> 4. **Which colours?** Your app's own colours (Recommended) · `<preset 1>` · `<preset 2>` · `<preset 3>`
 
-**8. Q3, understanding check (✅ Checkpoint A, required).** Print `understanding.md`. Then ask:
-> **Did I get your project right?**
-> Yes, that's right · Mostly, I'll correct a few things · No, let me explain
-
-Then ask, as multiple choice:
-> **Which hidden logic should I animate?** (the number follows the focus: product 0–1, balanced 1–3, explain 2–3; one fewer at 60 s)
-
-- The options are the top 4 H-items (the most a choice list holds), with the top 2 marked (Recommended). At a 60 s limit, recommend 1. The user can name H5 with *Other*.
-- With only 1 H-item, ask instead: **"Animate <title>?"** *Yes (Recommended)* · *No explainer*. With none, skip the question and say so in one line.
-- Apply any corrections, show the changed parts again, and repeat until the answer is *Yes*.
+- **Quick mode:** no round A. Take the top explainers, manual login when needed, the app's colours, and show the understanding at the top of Checkpoint B instead.
+- Apply corrections and repeat only the corrected question until it's *Yes*. Store links exactly as typed; leave out local links (brief.py rejects them). Use `""` for blank event and team.
+- **Log in myself:** steps.json gets a manual login (CAPTURE.md). A real browser window opens during the dry run and the recording, shows the user what to click, and unveo carries on once they're in. It needs a screen, so it won't work in cloud agents.
+- **Demo account:** they set `UNVEO_LOGIN_USER` and `UNVEO_LOGIN_PASSWORD` in their shell. Never copy a published demo account into any file.
 - Then set `Confirmed: yes, <date>` in understanding.md and run `state.py set understanding approved`.
 
-**9. Q4, colours.** Run `"<PY>" "<SKILL_DIR>/scripts/render.py" palettes`. Look at `OUT/stills/palettes.png` if you can view images, and give the user its path. Read `<SKILL_DIR>/PALETTES.md` to pick the 3 presets that best fit the field. Ask:
-> **Which color scheme?**
-> Your app's own colors (Recommended) · `<preset 1>` · `<preset 2>` · `<preset 3>`
-
-*Other* accepts any of the 6 names. Take the chosen palette's `tokens` exactly from the JSON.
-
-**10. Q5, personal touches.** Show what you already have, then ask:
-> **Anything personal to add? Here's what I have:**
-> Header: *<project name>* · Event: — · Team: —
-> Links: App *<app url>* · Repo *<repo url>*
-> Use these (Recommended) · Add event and team name · Change the links · Add an extra closing line
-
-Store links exactly as the user types them, character for character. Leave out the App link when there's no public app URL (a `localhost` or `127.0.0.1` link can't go on the end card; brief.py rejects it). Use `""` for blank event and team. Draft one impact line (who benefits and how; no numbers you can't source) and show it for approval.
-
-**11. Write and validate the brief.** Write `OUT/brief.json` in the shape below, then run `"<PY>" "<SKILL_DIR>/scripts/brief.py" validate`. Fix every error it lists and validate again. When it's valid, run `state.py set brief done` and go on to Phase 2.
+**8. Finish the brief.** Fill the `still_needed` parts of `OUT/brief.json` (shape below), then run `"<PY>" "<SKILL_DIR>/scripts/brief.py" validate`, fix every error, and validate again. Then `state.py set brief done`.
 
 ```json
 {
-  "version": 1,
-  "project": {"name": "", "source": {"kind": "local", "path": "<root>"},
-              "repo_url": "", "app_url": "",
+  "version": 1, "mode": "quick",
+  "project": {"name": "", "source": {"kind": "local", "path": "<root>"}, "repo_url": "", "app_url": "",
               "login": {"needed": false, "user_env": "UNVEO_LOGIN_USER", "password_env": "UNVEO_LOGIN_PASSWORD"}},
-  "limit_s": 120,
-  "language": "en",
-  "focus": "balanced",
-  "captions": "burned",
-  "voice": {"provider": "edge", "voice_id": "<from step 5b>", "rate": "+10%"},
+  "limit_s": 120, "language": "en", "focus": "balanced", "captions": "burned",
+  "voice": {"provider": "edge", "voice_id": "<voice>", "rate": "+10%"},
   "understanding": {"field": "", "problem": "", "product": "", "journey": ["…"],
     "hidden_logic": [{"id": "H1", "title": "", "pattern": "formula-breakdown", "source": ["path:12-40"],
                       "shown_at_step": 3, "selected": true}],
@@ -184,12 +132,10 @@ Store links exactly as the user types them, character for character. Leave out t
 }
 ```
 
-- `source` is `{"kind": "github", "url": "<url>", "clone_path": "<root>"}` for a cloned repo.
-- `voice.voice_id`, `voice.rate` and `voice.provider` (`edge`, or `own`) come from step 5b.
 - `capture_enabled` is false when there's no reachable web app.
 - `journey` holds each step as written in understanding.md (`<action> → <what appears>`), without the `[route…, element…]` tag.
-- `confirmed_at` is the real current time: run `date -Iseconds` (on Windows PowerShell, `Get-Date -Format o`).
-- The `hidden_logic` ids are the ones in understanding.md (you may renumber the scan's candidates).
+- `confirmed_at` is the real current time: run `date -Iseconds` (on Windows PowerShell, `Get-Date -Format o`). In Quick mode, set it when Checkpoint B is approved.
+- A chosen preset palette: take its `tokens` exactly from `render.py palettes`.
 
 ## Phase 2: Write
 
@@ -211,7 +157,7 @@ Run `"<PY>" "<SKILL_DIR>/scripts/script.py" check` and fix every listed error un
 
 **14. Shot list.** If any scene is `clip`, write `OUT/shots.md` as PITCH.md shows, and run `script.py check` again.
 
-**15. Checkpoint B (✅ required).** Show:
+**15. Checkpoint B (✅ required).** In Quick mode, first print `understanding.md` and the end card (this is the user's only look at them); its *Edit* options cover corrections there too. Show:
 - a table of scenes: id · segment · seconds · visual · narration (spoken text, without tags)
 - the word count against the budget (from `script.py check`)
 - for each capture scene, the `plan` lines from `capture.py check`; ⚠️ lines are destructive steps that stay skipped unless the user ticks them, and ⛔ lines are never run
@@ -295,7 +241,7 @@ Captions show the real words even where `say_as` changes the pronunciation. `bri
 
 **26. QA.** Read `<SKILL_DIR>/QA.md`. Run `"<PY>" "<SKILL_DIR>/scripts/qa.py"`. Fix every failing blocking gate as QA.md says, re-run only the affected steps, then stitch and QA again. When it passes, `state.py set qa done`.
 
-**27. Done.** If step 7 started the app, run `"<PY>" "<SKILL_DIR>/scripts/setup_app.py" stop`. Then open the folder (`open OUT` on macOS, `explorer OUT` on Windows, `xdg-open OUT` on Linux). Then say, filling in the values:
+**27. Done.** If step 6 started the app, run `"<PY>" "<SKILL_DIR>/scripts/setup_app.py" stop`. Then open the folder (`open OUT` on macOS, `explorer OUT` on Windows, `xdg-open OUT` on Linux). Then say, filling in the values:
 `final.mp4 · <m:ss> · 1920×1080 · <LUFS> LUFS · captions burned in. Script: unveo-out/script.md. Captions file: unveo-out/captions.srt. QA: unveo-out/qa.md.`
 Mention any `clip` scenes still showing placeholder cards.
 

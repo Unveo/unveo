@@ -13,6 +13,13 @@ def run_emit(code):
     return p.returncode, json.loads(p.stdout.strip().splitlines()[-1])
 
 
+class OutDirTest(unittest.TestCase):
+    def test_output_folder_ignores_itself_so_the_users_gitignore_is_never_touched(self):
+        with tempfile.TemporaryDirectory() as d:
+            o = common.out_dir(Path(d) / "unveo-out")
+            self.assertEqual((o / ".gitignore").read_text().strip(), "*")
+
+
 class EmitTest(unittest.TestCase):
     def test_ok_prints_json_last_line_and_exits_0(self):
         code, out = run_emit("common.emit('voice', outputs=['a.mp3'])")

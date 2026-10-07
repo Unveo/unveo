@@ -21,6 +21,8 @@ def emit(step, ok=True, user_action=False, **fields):
 def out_dir(path="unveo-out"):
     p = Path(path)
     p.mkdir(parents=True, exist_ok=True)
+    if not (p / ".gitignore").exists():
+        (p / ".gitignore").write_text("*\n")  # the folder ignores itself; the user's .gitignore stays untouched
     return p
 
 
