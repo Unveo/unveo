@@ -28,10 +28,38 @@ CURSOR_JS = Path(__file__).resolve().parents[1] / "templates" / "cursor.js"
 EARLY_S, MIN_GAP_S, GLIDE_MS = 0.3, 0.4, 550
 
 
-def ctx_args(steps):
-    """1920x1080 output at the app's zoom (125% by default): a smaller CSS viewport, scaled up."""
-    z = float((steps.get("viewport") or {}).get("zoom", 1.25))
+ZOOM_EASE_S, ZOOM_HOLD_S, ZOOM_SCALE = 0.6, 2.0, 1.6
+
+
+def has_zoom(steps):
+    return any(st.get("zoom") for sc in (steps.get("scenes") or {}).values() for st in sc.get("steps", []))
+
+
+def ctx_args(steps, hi_res=False):
+    """1920x1080 at 100% by default: the CDP screencast captures CSS pixels, so this is the only size that's
+    native-sharp (measured 7 Oct 2026). viewport.zoom > 1 enlarges the UI with the real layout, but frames are
+    then upscaled and a little softer. CSS zoom is not used: it breaks full-height layouts and iframes.
+    Readability for small details comes from step zooms (zoom_crop)."""
+    z = float((steps.get("viewport") or {}).get("zoom", 1.0))
     return {"viewport": {"width": round(1920 / z), "height": round(1080 / z)}, "device_scale_factor": z}
+
+
+def zoom_crop(t, zooms, W, H):
+    """The part of a W x H frame to show at time t: eases in on the zoom's box, holds, eases back out (docs/15 A9)."""
+    for z in zooms:
+        t0 = z["t_s"]
+        ease, hold = z.get("ease_s", ZOOM_EASE_S), z.get("hold_s", ZOOM_HOLD_S)
+        if t < t0 or t > t0 + 2 * ease + hold:
+            continue
+        k = min(1.0, (t - t0) / ease) if t < t0 + ease + hold else max(0.0, 1 - (t - t0 - ease - hold) / ease)
+        k = 4 * k ** 3 if k < 0.5 else 1 - (-2 * k + 2) ** 3 / 2  # ease in-out
+        s = 1 + (z["scale"] - 1) * k
+        w, h = round(W / s), round(H / s)
+        bx, by, bw, bh = z["box"]
+        x = min(max(0, round(bx + bw / 2 - w / 2)), W - w)
+        y = min(max(0, round(by + bh / 2 - h / 2)), H - h)
+        return x, y, w, h
+    return 0, 0, W, H
 
 
 # ---------- rules (no browser)
@@ -58,6 +86,14 @@ def validate(steps):
             e.append(f"login.until for {u['for']} needs a value")
     blocks = [("login", login.get("steps", []))]
     for sid, sc in scenes.items():
+        zs = [st for st in sc.get("steps", []) if st.get("zoom")]
+        if len(zs) > 1:
+            e.append(f"{sid}: only one zoom per scene, so it stays subtle ({len(zs)} found)")
+        for st in zs:
+            if not st.get("target"):
+                e.append(f"{sid}: a zoom needs a target to zoom in on")
+            if isinstance(st["zoom"], dict) and not 1.2 <= float(st["zoom"].get("scale", ZOOM_SCALE)) <= 2.0:
+                e.append(f"{sid}: zoom scale must be between 1.2 and 2.0 (more gets blurry)")
         if not re.fullmatch(r"s\d{2}", sid):
             e.append(f"scene id {sid} must look like s05")
         blocks.append((sid, ([sc["start"]] if sc.get("start") else []) + sc.get("steps", [])))
@@ -481,21 +517,42 @@ async def aperform(page, st, base, env):
         await page.wait_for_timeout(st["ms"])
 
 
-def encode(frames, t_start, t_end, path):
-    """Timestamped JPEG frames -> constant 30 fps h264. Each frame shows until the next one arrives."""
-    with tempfile.TemporaryDirectory() as tmp:
-        lines = []
-        for i, (ts, data) in enumerate(frames):
-            f = Path(tmp) / f"{i:05d}.jpg"
-            f.write_bytes(base64.b64decode(data))
-            start = max(ts, t_start) if i else t_start
-            end = frames[i + 1][0] if i + 1 < len(frames) else t_end
-            lines += [f"file '{f}'", f"duration {max(end - start, 0.001):.4f}"]
-        lines.append(f"file '{Path(tmp) / f'{len(frames) - 1:05d}.jpg'}'")
-        (Path(tmp) / "list.txt").write_text("\n".join(lines))
-        subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(Path(tmp) / "list.txt"),
-                        "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=30,format=yuv420p",
-                        "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-t", f"{t_end - t_start:.3f}", "-an", str(path)], check=True)
+def encode(frames, t_start, t_end, path, zooms=()):
+    """Timestamped JPEG frames -> constant 30 fps 1920x1080 h264. Each frame shows until the next one arrives;
+    zooms crop in smoothly (zoom_crop)."""
+    import io
+    from bisect import bisect_right
+    from PIL import Image
+    times = [max(0.0, ts - t_start) for ts, _ in frames]
+    n = max(1, round((t_end - t_start) * 30))
+    enc = subprocess.Popen([ffmpeg_exe(), "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", "1920x1080", "-r", "30",
+                            "-i", "-", "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-pix_fmt", "yuv420p", "-an", str(path)],
+                           stdin=subprocess.PIPE)
+    cache_src, cache_key, cache_out = None, None, None
+    try:
+        for i in range(n):
+            t = i / 30
+            idx = max(0, bisect_right(times, t) - 1)
+            if cache_src is None or cache_src[0] != idx:
+                cache_src = (idx, Image.open(io.BytesIO(base64.b64decode(frames[idx][1]))).convert("RGB"))
+            img = cache_src[1]
+            crop = zoom_crop(t, zooms, *img.size)
+            if (idx, crop) != cache_key:
+                part = img.crop((crop[0], crop[1], crop[0] + crop[2], crop[1] + crop[3]))
+                scale = min(1920 / part.width, 1080 / part.height)
+                fitted = part.resize((round(part.width * scale), round(part.height * scale)), Image.LANCZOS)
+                if scale > 1.05:  # zoomed in: a light sharpen keeps text crisp
+                    from PIL import ImageFilter
+                    fitted = fitted.filter(ImageFilter.UnsharpMask(radius=1.2, percent=60, threshold=2))
+                canvas = Image.new("RGB", (1920, 1080))
+                canvas.paste(fitted, ((1920 - fitted.width) // 2, (1080 - fitted.height) // 2))
+                cache_key, cache_out = (idx, crop), canvas.tobytes()
+            enc.stdin.write(cache_out)
+    finally:
+        enc.stdin.close()
+        enc.wait()
+    if enc.returncode:
+        raise RuntimeError(f"ffmpeg failed encoding {path}")
 
 
 async def dismiss_banners(page):
@@ -568,9 +625,10 @@ async def record_scenes(out, only):
                 frames.append((f["metadata"]["timestamp"], f["data"]))
                 asyncio.ensure_future(cdp.send("Page.screencastFrameAck", {"sessionId": f["sessionId"]}))
             cdp.on("Page.screencastFrame", on_frame)
-            await cdp.send("Page.startScreencast", {"format": "jpeg", "quality": 90, "maxWidth": 1920, "maxHeight": 1080, "everyNthFrame": 1})
+            await cdp.send("Page.startScreencast", {"format": "jpeg", "quality": 92, "maxWidth": 1920, "maxHeight": 1080, "everyNthFrame": 1})
             t0, wall0 = time.monotonic(), time.time()
             at, actions, err, last_end = schedule(sc.get("steps", []), words, scene.get("lead_s", 0.3)), [], None, 0.0
+            zooms = []
             for i, st in enumerate(sc.get("steps", [])):
                 f = flag(st)
                 if f == "payment" or (f == "destructive" and not st.get("approved")):
@@ -582,6 +640,13 @@ async def record_scenes(out, only):
                     await aperform(page, st, base, os.environ)
                     if not same_origin(page.url, base):
                         raise RuntimeError(f"left the app: went outside {base} to {page.url}")
+                    if st.get("zoom"):
+                        box = await locate(page, st["target"]).first.bounding_box()
+                        if box:
+                            z = st["zoom"] if isinstance(st["zoom"], dict) else {}
+                            zooms.append({"t_s": round(time.monotonic() - t0, 2), "scale": float(z.get("scale", ZOOM_SCALE)),
+                                          "hold_s": float(z.get("hold_s", ZOOM_HOLD_S)),
+                                          "box": [round(box[k]) for k in ("x", "y", "width", "height")]})  # frames are CSS-pixel sized
                 except (PWError, RuntimeError, KeyError) as e:
                     err = {"scene": sid, "step": i, "error": (str(e).splitlines() or [repr(e)])[0][:300]}
                     break
@@ -596,12 +661,12 @@ async def record_scenes(out, only):
             if not frames:
                 frames = [(wall0, base64.b64encode(await page.screenshot(type="jpeg", quality=90)).decode())]
             path = o / "capture" / f"{sid}.mp4"
-            encode(sorted(frames), wall0, wall_end, path)
+            encode(sorted(frames), wall0, wall_end, path, zooms)
             if err:
                 failures.append(err)
             results.append({"scene": sid, "file": str(path), "target_s": scene["dur_s"],
                             "recorded_s": round(wall_end - wall0, 2), "over_s": round(max(0.0, elapsed - scene["dur_s"]), 2),
-                            "actions": actions, "ok": err is None})
+                            "actions": actions, "zooms": zooms, "ok": err is None})
         await browser.close()
     res = {"scenes": results, "failures": failures, "outputs": [r["file"] for r in results]}
     if failures:

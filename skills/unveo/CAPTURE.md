@@ -62,6 +62,11 @@ One scene in steps.json for each `capture` scene in script.md, with the same id.
 Optional on any step:
 - `say`: the narration word this action should land on (used when recording).
 - `once`: true for actions that can't be undone for the user (a one-response-per-person form, an order); flagged like destructive steps.
+- `zoom`: `true` or `{"scale": 1.6, "hold_s": 2}` on a step with a `target`. The camera eases in on that element (0.6 s), holds, then eases back out. Use it on the exact number, badge or button the voice names at that moment. **One per scene at most**, scale 1.2–2.0, so it stays subtle and never feels flashy.
+
+## Screen size
+
+Recordings are 1920×1080 at 100% page zoom. That's the only setting the screencast captures at native sharpness, and every layout looks exactly as users see it. Make small details readable with `zoom` on the step, not by enlarging the whole page. `"viewport": {"zoom": 1.25}` still works when a UI is genuinely too small, but the frames come out a little softer.
 - `timeout_ms`: default 10000.
 - `approved`: see Safety.
 
