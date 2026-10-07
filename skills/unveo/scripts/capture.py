@@ -28,6 +28,7 @@ CURSOR_JS = Path(__file__).resolve().parents[1] / "templates" / "cursor.js"
 GUIDE_JS = Path(__file__).resolve().parents[1] / "templates" / "guide.js"
 LOGIN_BAR = "Please log in here, any way you like. unveo carries on by itself once you're in."
 EARLY_S, MIN_GAP_S, GLIDE_MS = 0.3, 0.4, 550
+SETTLE_S = 0.8  # after the last action the page holds this long, so a cut never lands on a click
 
 
 ZOOM_EASE_S, ZOOM_HOLD_S, ZOOM_SCALE = 0.6, 2.0, 1.6
@@ -727,7 +728,8 @@ async def record_scenes(out, only):
                     break
                 last_end = time.monotonic() - t0
             elapsed = time.monotonic() - t0
-            await asyncio.sleep(max(0.0, scene["dur_s"] - elapsed))
+            need = round(last_end + SETTLE_S, 2) if actions else 0.0
+            await asyncio.sleep(max(0.0, max(scene["dur_s"], need) - elapsed))
             await page.mouse.move(1, 1)  # nudge a repaint so the hold has a fresh frame
             await asyncio.sleep(0.05)
             await cdp.send("Page.stopScreencast")
@@ -746,12 +748,20 @@ async def record_scenes(out, only):
                 failures.append(err)
             results.append({"scene": sid, "file": str(path), "target_s": scene["dur_s"],
                             "recorded_s": round(wall_end - wall0, 2), "over_s": round(max(0.0, elapsed - scene["dur_s"]), 2),
-                            "actions": actions, "zooms": zooms, "ok": err is None})
+                            "need_s": need, "actions": actions, "zooms": zooms, "ok": err is None})
         if is_manual(steps):
             await guide_async(page, "screen", "done", "Done. Recording finished.", "unveo closes this window by itself.")
             await asyncio.sleep(1.5)
         await browser.close()
     res = {"scenes": results, "failures": failures, "outputs": [r["file"] for r in results]}
+    rec = o / "capture" / "record.json"  # how long each recording needs; plan_timeline makes room for it
+    known = json.loads(rec.read_text()) if rec.exists() else {}
+    known.update({r["scene"]: {"need_s": r["need_s"], "recorded_s": r["recorded_s"]} for r in results})
+    rec.write_text(json.dumps(known, indent=1))
+    longer = [r["scene"] for r in results if r["need_s"] > r["target_s"] + 0.05]
+    if longer:
+        res["settle"] = longer
+        res["next"] = "run plan_timeline.py again: it lengthens " + ", ".join(longer) + " so the cut doesn't land on a click"
     if failures:
         emit("capture", ok=False, user_action=True, message=f"{len(failures)} scene(s) failed while recording", **res)
     over = [r["scene"] for r in results if r["over_s"] > 1.5]

@@ -93,14 +93,20 @@ def main():
     hits = render.pops(final, [sc["start_s"] for sc in tl["scenes"]])
     gate("pops", not hits, f"{len(hits)} found" + (f" at {[x['t'] for x in hits[:5]]} s" if hits else ""))
 
+    import looks
+    _, handle = looks.plan_for(o)
+    rec = o / "capture" / "record.json"
+    need = {k: v.get("need_s", 0) for k, v in json.loads(rec.read_text()).items()} if rec.exists() else {}
     bad = []
     for sc in tl["scenes"]:
         seg = o / "render" / "segments" / f"{sc['id']}.mp4"
+        want = sc["dur_s"] + handle.get(sc["id"], 0.0)  # a segment runs on by its handle while the next one blends in
         if seg.exists():
             d = float(re.search(r"Duration: \d+:\d+:([\d.]+)", ff_info(seg)).group(1))
-            if abs(d - sc["dur_s"]) > 1.5 / 30:
-                bad.append(f"{sc['id']} is {d:.2f} s, timeline says {sc['dur_s']:.2f} s")
-        if sc.get("voice") and sc.get("template") != "close" and sc["dur_s"] > sc.get("voice_s", 0) + 1.0 + sc.get("lead_s", 0):
+            if abs(d - want) > 1.5 / 30:
+                bad.append(f"{sc['id']} is {d:.2f} s, timeline says {want:.2f} s (with its transition)")
+        settling = sc["dur_s"] <= need.get(sc["id"], 0) + 0.1  # a recording held for its last click to settle
+        if sc.get("voice") and sc.get("template") != "close" and not settling and sc["dur_s"] > sc.get("voice_s", 0) + 1.0 + sc.get("lead_s", 0):
             bad.append(f"{sc['id']} runs {sc['dur_s'] - sc['voice_s']:.1f} s past its voice")
     gate("sync", not bad, "; ".join(bad) or "every segment matches its voice")
 

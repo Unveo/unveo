@@ -5,6 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "skills/unveo/scripts"
 sys.path.insert(0, str(SCRIPTS))
 from common import ffmpeg_exe  # noqa: E402
+import looks  # noqa: E402
 
 FF = ffmpeg_exe()
 
@@ -13,6 +14,7 @@ def info(path):
     err = subprocess.run([FF, "-i", str(path)], capture_output=True, text=True).stderr
     h, m, s = re.search(r"Duration: (\d+):(\d+):([\d.]+)", err).groups()
     return int(h) * 3600 + int(m) * 60 + float(s), err
+
 
 
 def lufs(path):
@@ -41,7 +43,7 @@ def project(limit=60):
                                                  "total_s": start, "scenes": tl}))
     src = lambda c, d, f: subprocess.run([FF, "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c={c}:s=1920x1080:r=30:d={d}",
                                           "-pix_fmt", "yuv420p", "-c:v", "libx264", str(f)], check=True)
-    src("navy", 2.5, o / "render/segments/s01.mp4")
+    src("navy", 2.5 + looks.T_DEFAULT, o / "render/segments/s01.mp4")  # rendered segments run on into the next scene
     src("white", 4.0, o / "render/segments/s04.mp4")
     src("gray", 5.0, o / "capture/s02.mp4")           # longer than its 3.0 s: trimmed
     src("teal", 1.0, o / "your-clips/shot-01.mp4")         # shorter than its 2.0 s: last frame held
@@ -91,7 +93,8 @@ class StitchQaTest(unittest.TestCase):
         o, total = project()
         code, res = run("stitch.py", o, "ingest")
         self.assertEqual(code, 0, res)
-        for sid, want in (("s02", 3.0), ("s03", 2.0)):
+        T = looks.T_DEFAULT  # each runs on by its transition into the next scene
+        for sid, want in (("s02", 3.0 + T), ("s03", 2.0 + T)):
             d, _ = info(o / f"render/segments/{sid}.mp4")
             self.assertAlmostEqual(d, want, delta=0.07, msg=sid)
         run("score.py", o)
@@ -149,7 +152,7 @@ class StitchQaTest(unittest.TestCase):
         code, res = run("stitch.py", o, "ingest", "--placeholders")
         self.assertEqual(code, 0, res)
         d, _ = info(o / "render/segments/s03.mp4")
-        self.assertAlmostEqual(d, 2.0, delta=0.07)
+        self.assertAlmostEqual(d, 2.0 + looks.T_DEFAULT, delta=0.07)
 
     def test_qa_warns_when_a_placeholder_card_is_in_the_video(self):
         o, _ = project()

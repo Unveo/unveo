@@ -30,6 +30,51 @@ LOOKS = {
 }
 
 
+T_DEFAULT = 0.45  # seconds a transition overlaps the next scene
+# per look: the cut into or out of a recording, and the cut between two animations (None = a hard cut)
+TRANSITIONS = {
+    "editorial": {"rec": "fade", "anim": "dissolve"},
+    "swiss": {"rec": "wipeleft", "anim": None},
+    "terminal": {"rec": "fadeblack", "anim": "fade"},
+    "notebook": {"rec": "fade", "anim": "dissolve"},
+    "poster": {"rec": "slideleft", "anim": "slideleft"},
+    "product": {"rec": "smoothleft", "anim": "fade"},
+}
+
+
+def cuts(scenes, look, design=None):
+    """One transition per boundary between scene i and i+1: {"type": xfade name, "dur": seconds (0 = hard cut)}.
+    Into or out of the title and the close is always a soft fade. design["transition"] = {"type", "dur"} overrides."""
+    rule = TRANSITIONS.get(look) or {"rec": "fade", "anim": "fade"}
+    over = (design or {}).get("transition") or {}
+    out = []
+    for a, b in zip(scenes, scenes[1:]):
+        if "title" in (a.get("template"), b.get("template")) or b.get("template") == "close":
+            kind = "fade"
+        elif "anim" == a.get("visual") == b.get("visual"):
+            kind = rule["anim"]
+        else:
+            kind = rule["rec"]
+        kind = over.get("type", kind)
+        dur = float(over.get("dur", T_DEFAULT)) if kind else 0.0
+        out.append({"type": kind or "fade", "dur": round(dur, 3), "at": b.get("start_s")})
+    return out
+
+
+def handles(scenes, look, design=None):
+    """Extra seconds each scene's segment runs past its end, so the next scene can blend in over it."""
+    c = cuts(scenes, look, design)
+    return {s["id"]: (c[i]["dur"] if i < len(c) else 0.0) for i, s in enumerate(scenes)}
+
+
+def plan_for(o):
+    """cuts and handles for a project folder (timeline.json + film/design.json)."""
+    tl = json.loads((Path(o) / "timeline.json").read_text(encoding="utf-8"))
+    f = Path(o) / "film" / "design.json"
+    design = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+    return cuts(tl["scenes"], design.get("look"), design), handles(tl["scenes"], design.get("look"), design)
+
+
 def home(h=None):
     return Path(h or os.environ.get("UNVEO_HOME", Path.home() / ".unveo"))
 

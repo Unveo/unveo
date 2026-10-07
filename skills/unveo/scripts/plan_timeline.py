@@ -18,7 +18,8 @@ def frames(t):
     return math.ceil(round(t * FPS, 6)) / FPS
 
 
-def build(scenes, clips, limit_s):
+def build(scenes, clips, limit_s, needs=None):
+    """needs: scene id -> seconds a recording needs (its last action plus a moment to settle), from capture."""
     out, start = [], 0.0
     for s in scenes:
         c = clips.get(s["id"])
@@ -29,7 +30,7 @@ def build(scenes, clips, limit_s):
             voice_s = c["dur_s"]
             lead = LEAD_S
             tail = (TAIL_REC_S if s["visual"] in ("capture", "clip") else TAIL_ANIM_S) + (END_HOLD_S if s["template"] == "close" else 0)
-            dur = lead + voice_s + tail
+            dur = max(lead + voice_s + tail, (needs or {}).get(s["id"], 0.0))
         dur = round(frames(dur), 4)
         out.append({"id": s["id"], "segment": s["segment"], "visual": s["visual"], "template": s["template"],
                     "voice": c["file"] if c and s["template"] != "title" else None, "voice_s": voice_s,
@@ -50,7 +51,9 @@ def main():
     missing = [s["id"] for s in scenes if s["narration"] and s["id"] not in clips]
     if missing:
         emit("timeline", ok=False, user_action=True, message=f"no voice clip for {missing}; run voice.py first")
-    tl = build(scenes, clips, brief["limit_s"])
+    rec = o / "capture" / "record.json"
+    needs = {k: v["need_s"] for k, v in json.loads(rec.read_text()).items()} if rec.exists() else {}
+    tl = build(scenes, clips, brief["limit_s"], needs)
     write_json(o / "timeline.json", tl)
     cap = brief["limit_s"] * 0.98
     if tl["total_s"] > cap:

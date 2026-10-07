@@ -116,6 +116,7 @@ def ingest(o, placeholders):
         tokens = looks.palette(tokens, look)
     bg = tokens.get("bg", "black")
     frame = looks.frame(look, tokens) if look and "accent" in tokens else None
+    _, handle = looks.plan_for(o)
     shots = shots_map(o)
     missing, missing_ids, made = [], [], []
     for s in tl["scenes"]:
@@ -137,8 +138,9 @@ def ingest(o, placeholders):
                 continue
         else:
             continue
-        fit(src, o / "render" / "segments" / f"{sid}.mp4", s["dur_s"], bg=bg, frame=frame)
-        fit(src, o / "render" / "draft" / f"{sid}.mp4", s["dur_s"], 960, 540, bg=bg, frame=frame)
+        end = s["dur_s"] + handle.get(sid, 0.0)  # runs on past its end while the next scene blends in
+        fit(src, o / "render" / "segments" / f"{sid}.mp4", end, bg=bg, frame=frame)
+        fit(src, o / "render" / "draft" / f"{sid}.mp4", end, 960, 540, bg=bg, frame=frame)
         made.append(sid)
     if missing and (o / "shots.md").exists():  # the person's copy of what to record, next to where the clips go
         clips_dir(o).mkdir(parents=True, exist_ok=True)
@@ -179,14 +181,30 @@ def concat(o, folder, audio, dst, w, h):
             emit("stitch", ok=False, user_action=True, message=f"render/{folder}/{s['id']}.mp4 is missing: render or ingest it first")
         segs.append(p)
     total = sum(s["dur_s"] for s in tl["scenes"])
-    with tempfile.TemporaryDirectory() as tmp:
-        lst = Path(tmp) / "list.txt"
-        lst.write_text("".join(f"file '{p.resolve()}'\n" for p in segs))
-        cmd = [ffmpeg_exe(), "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(lst)]
-        if audio.exists():
-            cmd += ["-i", str(audio), "-map", "0:v", "-map", "1:a", "-c:a", "aac", "-b:a", "192k", "-ar", "48000"]
-        cmd += ["-vf", f"scale={w}:{h},setsar=1" + burn_filter(o, w), *ENC, "-t", f"{total:.3f}", "-movflags", "+faststart", str(dst)]
-        subprocess.run(cmd, check=True)
+    import looks
+    cuts, handle = looks.plan_for(o)
+    scenes = tl["scenes"]
+    # each segment is cut (or held) to exactly its scene plus its handle, then the chain blends at the scene starts:
+    # the next scene starts on time and fades in over the previous one's handle, so the voice stays in sync
+    parts = [f"[{i}:v]fps=30,scale={w}:{h},setsar=1,format=yuv420p,"
+             f"tpad=stop_mode=clone:stop_duration={handle.get(s['id'], 0) + 1:.3f},"
+             f"trim=duration={s['dur_s'] + handle.get(s['id'], 0):.4f},setpts=PTS-STARTPTS,settb=1/30,fps=30[v{i}]" for i, s in enumerate(scenes)]
+    acc, start = "v0", scenes[0]["dur_s"]
+    for i, c in enumerate(cuts, 1):
+        nxt = f"x{i}"
+        if c["dur"] > 0:
+            parts.append(f"[{acc}][v{i}]xfade=transition={c['type']}:duration={c['dur']:.3f}:offset={start:.4f}[{nxt}]")
+        else:
+            parts.append(f"[{acc}][v{i}]concat=n=2:v=1:a=0,settb=1/30,fps=30[{nxt}]")
+        acc, start = nxt, start + scenes[i]["dur_s"]
+    parts.append(f"[{acc}]null" + burn_filter(o, w) + "[out]")
+    cmd = [ffmpeg_exe(), "-v", "error", "-y"]
+    for p in segs:
+        cmd += ["-i", str(p)]
+    if audio.exists():
+        cmd += ["-i", str(audio), "-map", f"{len(segs)}:a", "-c:a", "aac", "-b:a", "192k", "-ar", "48000"]
+    cmd += ["-filter_complex", ";".join(parts), "-map", "[out]", *ENC, "-t", f"{total:.3f}", "-movflags", "+faststart", str(dst)]
+    subprocess.run(cmd, check=True)
     return total
 
 

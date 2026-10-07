@@ -91,6 +91,24 @@ class RecordZoomTest(unittest.TestCase):
         t = res["scenes"][0]["zooms"][0]["t_s"] + 1.0  # inside the hold
         self.assertGreater(np.abs(self.frame(zoomed, t) - self.frame(plain, t)).mean(), 8)
 
+    def test_a_late_click_gets_time_to_settle_before_the_cut(self):
+        out = Path(tempfile.mkdtemp())
+        for d in ("capture", "voice"):
+            (out / d).mkdir()
+        (out / "capture/steps.json").write_text(json.dumps({"version": 1, "base_url": self.base, "scenes": {"s05": {
+            "start": {"do": "goto", "url": "/"}, "steps": [{"do": "click", "target": {"role": "button", "name": "Search"}, "say": "end"}]}}}))
+        (out / "voice/voice.json").write_text(json.dumps({"version": 1, "clips": [
+            {"scene": "s05", "dur_s": 3.0, "words": [{"w": "end", "t0": 2.9, "t1": 3.0}]}]}))
+        (out / "timeline.json").write_text(json.dumps({"version": 1, "scenes": [
+            {"id": "s05", "visual": "capture", "lead_s": 0.3, "dur_s": 3.3, "start_s": 0}]}))
+        p = subprocess.run([sys.executable, str(SCRIPTS / "capture.py"), "record", "--out", str(out)], capture_output=True, text=True, timeout=300)
+        res = json.loads(p.stdout.strip().splitlines()[-1])
+        self.assertEqual(p.returncode, 0, res)
+        rec = json.loads((out / "capture/record.json").read_text())
+        last = res["scenes"][0]["actions"][-1]["at_s"]
+        self.assertGreaterEqual(rec["s05"]["need_s"], last + capture.SETTLE_S)
+        self.assertGreaterEqual(res["scenes"][0]["recorded_s"], rec["s05"]["need_s"] - 0.05)
+
     def test_zoom_can_frame_a_different_element_than_the_one_acted_on(self):
         _, res = self.record({"scale": 1.3, "hold_s": 1.0, "target": {"css": "body"}})
         self.assertGreater(res["scenes"][0]["zooms"][0]["box"][2], 1000)  # the page, not the small Search button

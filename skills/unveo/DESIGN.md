@@ -20,6 +20,21 @@ A **look** is a whole visual language. Six exist (`scripts/looks.py`, `templates
 - **Repeats:** `render.py stills` warns when this video's look repeats the last one.
 - **Matching the audience:** a civic dashboard suits editorial or swiss, a developer tool terminal, a student or community app notebook or poster, and a polished SaaS product.
 
+### Transitions
+
+Every cut blends: the next scene starts on time and fades or wipes in over the previous scene's last 0.45 s, so nothing jumps and the voice stays in sync. The look picks the kind:
+
+| Look | Into or out of a recording | Between two animations |
+|---|---|---|
+| editorial | fade | dissolve |
+| swiss | wipe | hard cut |
+| terminal | fade through black | fade |
+| notebook | fade | dissolve |
+| poster | slide | slide |
+| product | smooth slide | fade |
+
+The title and close always fade. Override with `"transition": {"type": "<xfade name>", "dur": 0.6}` in design.json; `"dur": 0` gives hard cuts.
+
 ## 1. Write a design brief: `OUT/film/design.json`
 
 ```json

@@ -203,6 +203,7 @@ Then ask:
 **18. Record the app** (skip if there are no capture scenes). Run `"<PY>" "<SKILL_DIR>/scripts/capture.py" record`. Tell the user it records each scene in real time, so it takes about as long as those scenes.
 - **A failure:** re-run that scene once (`record --scene sNN`). If it fails again, turn it into a clip (CAPTURE.md, step 4), run `voice.py` (nothing changes), then plan_timeline.
 - **A scene that ran long** (> 1.5 s over): cut a `pause` or a `wait`, or let the narration run a little longer, then record that scene again.
+- **`settle` in the result:** those scenes hold 0.8 s after their last click, so the cut never lands on it. Run `plan_timeline.py` again; it makes room for them. If that puts the video over the limit, shorten that scene's narration.
 - When it's done, `state.py set capture done`.
 
 **19. Design and scene data.**

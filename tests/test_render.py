@@ -101,13 +101,14 @@ class VideoTest(unittest.TestCase):
         out = make_out(dur=1.0, only={"s02", "s05"})
         code, res = run(out, "draft")
         self.assertEqual(code, 0, res)
+        import looks
         d, v = probe(out / "render/draft/s05.mp4")
-        self.assertAlmostEqual(d, 1.0, delta=0.07)
+        self.assertAlmostEqual(d, 1.0 + looks.T_DEFAULT, delta=0.07)  # runs on into the next scene's transition
         self.assertIn("960x540", v)
         code, res = run(out, "final", "--chunks", "2")
         self.assertEqual(code, 0, res)
         d, v = probe(out / "render/segments/s02.mp4")
-        self.assertAlmostEqual(d, 1.0, delta=0.07)
+        self.assertAlmostEqual(d, 1.0 + looks.T_DEFAULT, delta=0.07)
         self.assertIn("1920x1080", v)
         self.assertIn("30 fps", v)
         code, res = run(out, "final")

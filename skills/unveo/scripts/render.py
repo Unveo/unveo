@@ -277,6 +277,7 @@ def prepare(out):
     vpath = o / "voice" / "voice.json"
     words_by = {c["scene"]: c.get("words", []) for c in read_json(vpath)["clips"]} if vpath.exists() else {}
     tl = read_json(o / "timeline.json")
+    handle = looks.handles(tl["scenes"], look, design)  # extra seconds past the end, for the transition into the next scene
     scenes = []
     for s in tl["scenes"]:
         f = film / "data" / f"{s['id']}.json"
@@ -287,7 +288,7 @@ def prepare(out):
         if s["visual"] != "anim":
             data = data or {"shot_id": s["id"], "what_to_record": "The recorded app plays here."}
         scenes.append({"id": s["id"], "template": tpl or "placeholder", "dur_s": s["dur_s"], "start_s": s.get("start_s", 0),
-                       "visual": s["visual"], "voice": s.get("voice"), "data": data})
+                       "visual": s["visual"], "voice": s.get("voice"), "handle_s": handle.get(s["id"], 0.0), "data": data})
     (film / "timeline.js").write_text("window.TIMELINE = " + json.dumps({"fps": FPS, "design": design, "scenes": scenes}, ensure_ascii=False) + ";\n")
     return film, scenes
 
@@ -356,7 +357,8 @@ class Page:
 
 def render_scene(pw, film, sc, path, width, sub):
     """Frames 0..n-1 of one scene; with sub > 1, each frame blends `sub` captures over half a frame (180° shutter)."""
-    n = max(1, round(sc["dur_s"] * FPS))
+    end = sc["dur_s"] + sc.get("handle_s", 0.0)  # the handle: the scene keeps playing while the next one blends in
+    n = max(1, round(end * FPS))
     offs = [(j - (sub - 1) / 2) * SHUTTER / (FPS * sub) for j in range(sub)] if sub > 1 else [0.0]
     vf = (f"tmix=frames={sub},select='eq(mod(n\\,{sub})\\,{sub - 1})',setpts=N/{FPS}/TB," if sub > 1 else "") + BT709
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -366,7 +368,7 @@ def render_scene(pw, film, sc, path, width, sub):
     try:
         for i in range(n):
             for o in offs:
-                enc.stdin.write(page.shot(min(sc["dur_s"] - 1e-3, max(0.0, i / FPS + o))))
+                enc.stdin.write(page.shot(min(end - 1e-3, max(0.0, i / FPS + o))))
     finally:
         page.close()
         enc.stdin.close()
