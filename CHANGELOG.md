@@ -12,6 +12,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: semv
   - Captions burned in plus captions.srt.
   - Per-video design brief (the app's font, motion, background), building blocks and compose scenes, overflow, contrast and crowding checks, QA feel report.
   - setup_app.py: plan, install --yes, start --yes, stop for local Node and Python apps.
+- Round 4 (from your review of the round-3 video):
+  - Transitions on every cut, picked by the look, with exact sync; recordings hold 0.8 s after the last click.
+  - Recording in a hidden browser after login; your window keeps a calm yellow tint with progress.
+  - Studio: the bold yellow stage, one indicator and one pace bar.
+  - Nine ways to show a recording (laptop, phone, tilt, split, spotlight, window, float, full).
+  - Project-specific icons and motifs (open licences only), 8 new blocks, 4 story scenes, 10 looks ranked by the project's field.
 - Round 3 (from your review of the own-voice run):
   - Batched question rounds and Quick mode; `brief.py defaults`.
   - Studio redesign with the unveo logo: the highlighter follows your voice, a pace underline, a clock, auto-stop; spoken word timings keep the video in sync.

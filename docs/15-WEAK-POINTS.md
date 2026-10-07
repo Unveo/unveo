@@ -1,5 +1,17 @@
 # 15 · Weak points (after the first two real videos)
 
+## Where things stand (round 4, 7 Oct 2026)
+
+- **Done:** 33 items across rounds 1 to 4. Every table below marks them ✅.
+- **Left before v0.1.0 (🟡):**
+  - A4: a warm-up probe for sleeping backends
+  - B4: one Hindi video end to end
+  - E1: a Windows run
+  - E2: the public install check
+  - R9: re-recording a scene that depends on the one before
+- **New, found in round 4 (🔵 unless marked):** N1 to N7 at the end.
+- **Later (🔵):** A6 smarter menus, A7 mobile/CLI capture, B2 expressive delivery, C1 to C4 deeper honesty checks, D5 simple explainers for 60 s, E5 fast draft renders, and the template and voice gallery.
+
 Written 7 Oct 2026 after making two videos end to end:
 - **MPLADS Ecosystem:** 2 min, local app, demo login.
 - **AI Developer Survey:** 60 s, live site, Google sign-in.
@@ -17,7 +29,7 @@ Ranked by how often each one would hurt a real team at a deadline.
 | # | Weak point | Seen where | Status / fix |
 |---|---|---|---|
 | A1 | **Login walls stop the recording.** unveo could only type a demo password, so Google or GitHub sign-in, OTP and CAPTCHA forced the team to record clips by hand | Survey (Google sign-in) | ✅ **Manual login.** A real browser window opens, the person logs in any way they like, and unveo records the rest in that same window. The profile is remembered between the dry run and the recording |
-| A2 | **Google may refuse sign-in in an automated browser** ("this browser may not be secure") | Expected on Google sites | 🟡 Mitigated: the manual login uses the installed Chrome and hides the automation flag. Still untested against Google on the real survey; needs one run with the user |
+| A2 | **Google may refuse sign-in in an automated browser** ("this browser may not be secure") | Expected on Google sites | ✅ Verified on the real AI Developer Survey (round 2 run): the installed Chrome without the automation flag let Google sign-in through. Keep an eye on it; Google can change this |
 | A3 | **Apps that only run locally need setup unveo doesn't do** (env files, databases, `npm install`, missing packages) | MPLADS took about 25 min to get running; a package was missing from its venv | ✅ Done (round 2): `setup_app.py` plan, install --yes, start --yes, stop. Was 🟣: **Know where we are, then set the project up.** If unveo is started inside the project folder (the usual case), use that folder and its existing setup (venv, `node_modules`, `.env`). If it's started outside, or from a GitHub URL, detect the project's packages and install them where the project sits on this machine, then start it with its own run commands (`run_hints`). Ask the user once before installing or starting anything. Never write secrets: missing `.env` values are asked for, not invented |
 | A4 | **Free-tier backends sleep.** Render and Railway free apps take 30–60 s to wake, and a recording that starts on a cold backend fails or shows spinners | The survey's backend is on Render's free tier | 🟡 Add a warm-up probe of the API before the dry run and before recording |
 | A5 | **One-time actions** (one response per person, orders, votes) aren't caught by the delete/pay/send regex, so a recording could use up the user's real entry | The survey accepts one response per Google account | ✅ `"once": true` flags a step like a destructive one: skipped unless approved, with a warning to use a second account |
@@ -30,7 +42,7 @@ Ranked by how often each one would hurt a real team at a deadline.
 
 | # | Weak point | Status / fix |
 |---|---|---|
-| B1 | **The voice felt slow** (edge-tts at +0% is about 2.2 words/s) | ✅ An intake question for voice style and pace, with samples to listen to first; the default is now brisk (+10%), and the word budget scales with pace. 🟣 Keep **asking the user for the speed every time** (never assume), and let them change it after hearing the first voiced scene |
+| B1 | **The voice felt slow** (edge-tts at +0% is about 2.2 words/s) | ✅ Speed asked every run (Guided voice round; Quick uses +10%), budget scales with pace, and the first clip can be sped up or slowed after listening |
 | B2 | **One flat delivery.** No emphasis, pauses or excitement; SSML isn't available through edge-tts | 🔵 Per-sentence rate changes; the "Expressive" Neerja voice is now offered |
 | B3 | **edge-tts terms are a grey area,** and the endpoint could change | Known (ADR-006). Kokoro is the open fallback, but it has no Indian-English voice |
 | B4 | **Hindi has never been run end to end** | 🟡 Make one Hindi video before release |
@@ -51,7 +63,7 @@ Ranked by how often each one would hurt a real team at a deadline.
 | # | Weak point | Status / fix |
 |---|---|---|
 | D1 | **Text overflow** in templates (long model names, long placeholder text) wasn't caught automatically; I found it by eye | ✅ Three cases fixed. ✅ Automatic check in `render.py stills` (design_issues block, design_warnings advise). Was 🟡: An automatic check in `render.py stills` for any element that overflows its box or the frame |
-| D2 | **Every video looks alike:** 11 templates with fixed layouts, hard cuts only, the same score | 🔵 The **template and voice gallery on the landing page** (below), more layouts, and transitions. 🟣 See D6 |
+| D2 | **Every video looks alike:** 11 templates with fixed layouts, hard cuts only, the same score | ✅ Round 3 and 4: 10 looks, per-look transitions, 9 ways to show a recording, motifs and icons, story scenes. 🔵 Still one synthesised score style; the landing-page gallery is planned |
 | D6 | **Fixed templates make every video the same concept** |✅ Done (round 2). Was 🟣: **A new visual concept for every video, chosen for that project.** The agent designs each animated scene for the story (a survey gets a different idea than a risk dashboard), using the engine's rules (seek(t), the app's palette and fonts) instead of filling one of 11 fixed layouts. The templates stay as a starting library, not the limit. **Guardrails, because it must not be overdone:** the app's own colours and type, few elements per scene, calm motion, no glow, neon gradients or "AI" visual clichés, real footage as the hero, and nothing on screen or in the voice that says "made by AI". A design check at Checkpoint C (stills) looks for anything flashy, crowded or generic before rendering |
 | D7 | **The video can feel machine-made overall** (robotic voice, template look, perfect evenness) |✅ Done (round 2). Was 🟣: The combined goal of A9, B6 and D6: a viewer should not be able to tell an AI made it. This becomes a review question at Checkpoint C and in QA: "Does any part feel automated or generic?" |
 | D3 | **No captions.** Judges often watch muted | ✅ Done (round 2): burned in by default, plus captions.srt; they show the real words even where say_as changes the pronunciation. Was 🟡 Burned-in captions from the word timings unveo already has. Highest-value next feature |
@@ -65,7 +77,7 @@ Ranked by how often each one would hurt a real team at a deadline.
 | E1 | **Only tested on macOS.** Windows (paths, fonts, Chrome channel) is untested | 🟡 Windows run before v0.1.0 |
 | E2 | **The public install path is unverified:** how `/unveo` shows in Claude Code, and the `codex plugin` commands | 🟡 Check once the repo is public and installable |
 | E3 | **Manual login needs a screen,** so it can't work in cloud agents | Documented in SKILL.md; falls back to clips |
-| E4 | **Recording runs in real time,** and a visible window can be disturbed by the user | Documented ("don't click around"). 🔵 A recording overlay that says "unveo is recording" |
+| E4 | **Recording runs in real time,** and a visible window can be disturbed by the user | ✅ Round 4: after login, recording happens in a hidden browser; the person's window keeps a steady yellow tint with progress, so nothing they do can disturb a take |
 | E5 | **Long renders on slow laptops** (about 1 min per minute of animation on an M-series Mac) | Parallel chunks and re-rendering only changed scenes. 🔵 A lower-quality fast mode |
 
 ## Round 3 (from the own-voice test run, 7 Oct 2026)
@@ -75,13 +87,39 @@ Ranked by how often each one would hurt a real team at a deadline.
 | R1 | **Too many questions:** 16 separate round trips, about 9 minutes of answering | ✅ Batched rounds of up to 4 questions per call, and **Quick mode** (2 stops plus the studio). `brief.py defaults` fills every recommended answer. The `.gitignore` question is gone (the output folder ignores itself) |
 | R2 | **Every video looked alike:** 5 fixed templates, no memory of past videos. The same chat added some bias, but the skill itself was the cause | ✅ Six **looks** (type, ground, kickers, how recordings are framed), offered 3 at a time as a preview sheet. `~/.unveo/history.json` stops a repeat of the last look. Compose is the default for the story scenes, and the script check warns when only fixed templates are used |
 | R3 | **No guidance in the browser window** while logging in or recording | ✅ `templates/guide.js`: a yellow pill and a dotted box with an arrow on the sign-in button, a yellow "Recording sNN · hands off" screen, `● REC` in the tab title, and a green done screen. All removed before the camera starts (tested: no yellow in the video) |
-| R4 | **Teleprompter:** no logo, no pace, no highlight | ✅ Redesigned with the logo. A yellow highlighter follows the voice (Chrome speech recognition; the pace in other browsers), an underline shows the chosen pace, plus a clock, an "on pace / behind" note, and auto-stop |
+| R4 | **Teleprompter:** no logo, no pace, no highlight | ✅ Round 3 redesign, then round 4: one indicator only (a black box on the word you're on, said words fade), one pace bar with your position, the bold yellow stage, built with the frontend-design skill |
 | R5 | **s06 explainer drifted from the voice:** no beats, and own takes had only estimated word timings | ✅ Heard word times are saved with each take and carried through the silence cuts (`timing: spoken`). Explainer beats take `word:` keys, and a voiced explainer without beats blocks the stills |
 | R6 | **Own takes were too long** (mic hiss above a fixed −45 dB gate; 1 to 2 s pauses) | ✅ Silence is judged against the take's own noise floor; edges are cut and long pauses shortened to 0.45 s (83 s of takes became 65 s) |
 | R7 | **Cluttered output folder** (JSON, internal files next to the video) | ✅ `unveo-out/` holds only demo-video.mp4, subtitles.srt, a clean script.md, quality-check.md, preview.png, your-voice/ and your-clips/. Everything else is in the hidden `.work/` |
 | R8 | **Zoom framed the clicked element, not the area** (off-centre on a small checkbox) | ✅ `zoom.target` frames a different element, such as the whole form card |
 | R9 | **A scene that continues from the previous page can't be re-recorded alone** (s08 started where s07 left off) | 🟡 Re-record those scenes together. 🔵 Let `record --scene` replay the earlier scenes' steps without recording them |
-| R10 | **Transitions are still hard cuts** in every look | 🔵 Per-look transitions (fade, wipe, slide) in stitch |
+| R10 | **Transitions are still hard cuts** in every look | ✅ Round 4: every cut blends (fade, dissolve, wipe, slide, fade-through-black by look) with exact sync |
+
+## Round 4 (from your review of the round-3 output, 7 Oct 2026)
+
+| # | Weak point | Status / fix |
+|---|---|---|
+| T1 | **Cuts were abrupt:** a click changed the question and the animation appeared in the same frame | ✅ Every scene runs on by a 0.45 s handle; the next scene blends in at its exact start (xfade), so length and sync are unchanged. The look picks the transition |
+| T2 | **A recording could end right after a click** | ✅ The page holds 0.8 s after the last action; `capture/record.json` tells plan_timeline to make room |
+| T3 | **The window flashed yellow before every scene** | ✅ Hidden-browser recording with a steady tint (see E4). The fallback (recording in the window) lifts the tint 0.3 s before each take, with no full-screen flash |
+| T4 | **Studio: the underline and the yellow patch competed** | ✅ One indicator, one pace bar, the yellow stage (see R4) |
+| T5 | **Every recording was "a window"** | ✅ `display` per scene: full, window, window-dark, float, laptop, phone (recorded at 430×932), tilt, split (with the step and label), spotlight (dims around the zoom target). Stills show them; a warning when all recordings look the same |
+| T6 | **Scenes were text blocks, not the project's world** | ✅ Open-licence icons (Iconify, no-credit sets only, ~50 Lucide bundled offline) and `motifs` in design.json on the title, chapters and end card. 8 new blocks, 4 layouts, 4 story scenes (chapter, stat-hero, before-after, annotated-shot) |
+| T7 | **Too few themes, and history was a hard rule** | ✅ 10 looks, ranked by fit to the project's field; the last video's look only drops back, never banned |
+
+## New things to build on (found in round 4)
+
+| # | Item | Status |
+|---|---|---|
+| N1 | Captions can change in the middle of a transition blend. Snap caption cue edges to cut times, and add a QA check | 🟡 |
+| N2 | The studio's live highlight sends audio to Google in Chrome. Add a visible "pace only, offline" switch on the page | 🟡 |
+| N3 | The look and motifs only show up at Checkpoint C. Put a one-line look summary (look, motifs, displays) in Checkpoint B so a wrong concept is caught earlier | 🔵 |
+| N4 | `~/.unveo/history.json` is per machine, not per team, so two teammates can get the same look | 🔵 Note only |
+| N5 | Icon licences are recorded in `.work/icons.json`. Show them in quality-check.md for transparency | 🔵 |
+| N6 | Stills show displays but not transitions. A 3-frame "cut preview" per boundary in the sheet would catch an odd transition before rendering | 🔵 |
+| N7 | The flow has grown: a `next.py` that reads state.json and prints the exact next command would help weaker agents (builds on C4) | 🟡 |
+| N8 | Phone display needs the app to be responsive. Detect a non-responsive layout at 430 px in the dry run and suggest another display | 🔵 |
+| N9 | Hidden recording copies the login but not service workers or WebAuthn sessions. Note the fallback in the dry-run result so it's clear which path ran | 🔵 |
 
 ## Planned: the template and voice gallery (from your review, 7 Oct 2026)
 
@@ -96,19 +134,3 @@ A page on unveo's landing site that shows every scene template and every voice s
 - Built for teams everywhere, so don't force an Indian-English voice (B5).
 - The voice must sound natural and real, not like AI (B6).
 - Don't depend only on fixed templates: every video should get its own concept, but the design must stay natural, not overdone, and never look AI-made (D6, D7).
-
-## Suggested order for the next round
-
-After your approval of the 🟣 items, a proposed order:
-
-1. **A2:** test the manual login on the survey with you at the screen.
-2. **B5, B6, B1:** the natural, global voice. It's what judges notice first.
-3. **D6, D7:** a per-video visual concept with the restraint guardrails.
-4. **A8:** the product or explanation focus question (small; it changes the split and the explainer cap).
-5. **A9:** zoom on the explained section.
-6. **A3:** detect the folder and set the project up.
-7. **D3:** captions.
-8. **D1:** the automatic overflow check.
-9. **A4:** warm-up probe for sleeping backends.
-10. **B4 and E1:** a Hindi video, and a Windows run.
-11. **E2:** check the public install.
