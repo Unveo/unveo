@@ -25,6 +25,8 @@ DESTRUCTIVE = re.compile(r"delete|remove|\bsend\b|e-?mail|\bsms\b|publish|\bpost
 ENV = re.compile(r"\$([A-Z_][A-Z0-9_]*)")
 DEFAULT_TIMEOUT_MS = 10000
 CURSOR_JS = Path(__file__).resolve().parents[1] / "templates" / "cursor.js"
+GUIDE_JS = Path(__file__).resolve().parents[1] / "templates" / "guide.js"
+LOGIN_BAR = "Please log in here, any way you like. unveo carries on by itself once you're in."
 EARLY_S, MIN_GAP_S, GLIDE_MS = 0.3, 0.4, 550
 
 
@@ -420,7 +422,49 @@ async def launch_profile_async(p, steps):
         return await p.chromium.launch_persistent_context(**kw)
 
 
-def manual_login_sync(page, steps, base):
+def guide_sync(page, fn, *args):
+    """Show or clear the in-browser guide (templates/guide.js). A page that's mid-navigation just skips a beat."""
+    try:
+        page.evaluate(GUIDE_JS.read_text(encoding="utf-8"))
+        return page.evaluate("([f, a]) => window.__unveo[f](...a)", [fn, list(args)])
+    except Exception:
+        return None
+
+
+async def guide_async(page, fn, *args):
+    try:
+        await page.evaluate(GUIDE_JS.read_text(encoding="utf-8"))
+        return await page.evaluate("([f, a]) => window.__unveo[f](...a)", [fn, list(args)])
+    except Exception:
+        return None
+
+
+def login_point(page, steps, base):
+    """Where the dotted pointer goes: login.point_at, else the page's own sign-in button (None); nothing off the app."""
+    if not same_origin(page.url, base):
+        return False
+    at = steps["login"].get("point_at")
+    if not at:
+        return None
+    try:
+        return locate(page, at).first.bounding_box(timeout=300) or None
+    except Exception:
+        return None
+
+
+async def alogin_point(page, steps, base):
+    if not same_origin(page.url, base):
+        return False
+    at = steps["login"].get("point_at")
+    if not at:
+        return None
+    try:
+        return await locate(page, at).first.bounding_box(timeout=300) or None
+    except Exception:
+        return None
+
+
+def manual_login_sync(page, steps, base, on_wait=None):
     page.goto(urljoin(base, steps["login"]["start"]), wait_until="load")
     try:  # already logged in (the profile remembers)?
         perform(page, {**login_wait_step(steps), "timeout_ms": 2500}, base, os.environ, False)
@@ -428,7 +472,19 @@ def manual_login_sync(page, steps, base):
     except Exception:
         pass
     log(LOGIN_HELP)
-    perform(page, login_wait_step(steps), base, os.environ, False)
+    deadline = time.time() + steps["login"].get("timeout_s", 600)
+    while True:  # re-draw the guide every second: the person may navigate, or the button may move
+        guide_sync(page, "login", LOGIN_BAR, login_point(page, steps, base))
+        if on_wait:
+            on_wait()
+        try:
+            perform(page, {**login_wait_step(steps), "timeout_ms": 1000}, base, os.environ, False)
+            break
+        except Exception:
+            if time.time() > deadline:
+                guide_sync(page, "clear")
+                raise
+    guide_sync(page, "clear")
 
 
 async def manual_login_async(page, steps, base):
@@ -439,7 +495,17 @@ async def manual_login_async(page, steps, base):
     except Exception:
         pass
     log(LOGIN_HELP)
-    await aperform(page, login_wait_step(steps), base, os.environ)
+    deadline = time.time() + steps["login"].get("timeout_s", 600)
+    while True:
+        await guide_async(page, "login", LOGIN_BAR, await alogin_point(page, steps, base))
+        try:
+            await aperform(page, {**login_wait_step(steps), "timeout_ms": 1000}, base, os.environ)
+            break
+        except Exception:
+            if time.time() > deadline:
+                await guide_async(page, "clear")
+                raise
+    await guide_async(page, "clear")
 
 
 def norm(w):
@@ -618,6 +684,14 @@ async def record_scenes(out, only):
             except PWError as e:
                 failures.append({"scene": sid, "step": "start", "error": str(e).splitlines()[0]})
                 continue
+            title = None
+            if is_manual(steps):  # the person is watching this window: tell them, then clear it before the camera rolls
+                await guide_async(page, "screen", "rec", f"Recording {sid}", "Hands off the mouse and keyboard for a moment.")
+                await asyncio.sleep(1.2)
+                await guide_async(page, "clear")
+                title = await page.title()
+                await page.evaluate("t => { document.title = t; }", f"● REC {sid} · unveo")
+                await page.evaluate("() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))")
             frames = []
             cdp = await ctx.new_cdp_session(page)
 
@@ -657,6 +731,11 @@ async def record_scenes(out, only):
             await page.mouse.move(1, 1)  # nudge a repaint so the hold has a fresh frame
             await asyncio.sleep(0.05)
             await cdp.send("Page.stopScreencast")
+            if title is not None:
+                try:
+                    await page.evaluate("t => { document.title = t; }", title)
+                except PWError:
+                    pass
             wall_end = wall0 + max(scene["dur_s"], time.monotonic() - t0)
             await cdp.detach()
             if not frames:
@@ -668,6 +747,9 @@ async def record_scenes(out, only):
             results.append({"scene": sid, "file": str(path), "target_s": scene["dur_s"],
                             "recorded_s": round(wall_end - wall0, 2), "over_s": round(max(0.0, elapsed - scene["dur_s"]), 2),
                             "actions": actions, "zooms": zooms, "ok": err is None})
+        if is_manual(steps):
+            await guide_async(page, "screen", "done", "Done. Recording finished.", "unveo closes this window by itself.")
+            await asyncio.sleep(1.5)
         await browser.close()
     res = {"scenes": results, "failures": failures, "outputs": [r["file"] for r in results]}
     if failures:

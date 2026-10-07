@@ -39,6 +39,11 @@ One scene in steps.json for each `capture` scene in script.md, with the same id.
   - unveo waits until `until` is true (text, url or selector that only shows when logged in), then runs the scenes **in that same window** and records them.
   - The profile is kept in `~/.unveo/profiles/<site>`, so the recording usually doesn't need a second login.
   - Pick `until` carefully: something that appears only after login ("Continuing as", "Log out", the dashboard URL).
+  - **The window guides the person:**
+    - **While waiting:** a yellow pill at the bottom says to log in, and a dotted box with an arrow marks what to click. That's the page's own sign-in button (or a Google/GitHub sign-in frame), or `"point_at": <target>` when the guess would be wrong.
+    - **Before each scene:** a yellow "Recording sNN · hands off" screen, then the tab title shows `● REC sNN`.
+    - **At the end:** a green "Done" screen.
+    - None of it is ever in the video: it's removed before the camera starts.
 
 ## Actions
 

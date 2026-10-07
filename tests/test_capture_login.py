@@ -67,6 +67,59 @@ class ManualLoginTest(unittest.TestCase):
         code, res, out = self.run_cmd("record", record=True)
         self.assertEqual(code, 0, res)
         self.assertTrue((out / "capture/s05.mp4").exists())
+        self.assertLess(yellow_share(out / "capture/s05.mp4", 0.1), 0.01)  # the "Recording…" screen never reaches the video
+
+
+def yellow_share(video, t):
+    import numpy as np
+    from common import ffmpeg_exe
+    raw = subprocess.run([ffmpeg_exe(), "-v", "quiet", "-ss", str(t), "-i", str(video), "-frames:v", "1", "-vf", "scale=320:180",
+                          "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True, check=True).stdout
+    a = np.frombuffer(raw, np.uint8).reshape(-1, 3).astype(int)
+    return float(((a[:, 0] > 225) & (a[:, 1] > 225) & (a[:, 2] < 175)).mean())
+
+
+class GuideTest(unittest.TestCase):
+    """What the person sees in the browser window: never part of the recording."""
+    @classmethod
+    def setUpClass(cls):
+        ManualLoginTest.setUpClass.__func__(cls)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+
+    def test_login_guide_points_at_the_sign_in_button(self):
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as pw:
+            b = pw.chromium.launch()
+            page = b.new_page(viewport={"width": 1280, "height": 720})
+            page.goto(self.base + "/auth.html?never=1")
+            capture.guide_sync(page, "login", "Please log in here.", None)
+            ring = page.evaluate("(() => { const r = document.getElementById('__unveo_guide').shadowRoot.querySelector('.ring').getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; })()")
+            btn = page.locator("#g").bounding_box()
+            bar = page.evaluate("document.getElementById('__unveo_guide').shadowRoot.querySelector('.bar').textContent")
+            b.close()
+        self.assertLessEqual(ring[0], btn["x"])
+        self.assertLessEqual(ring[1], btn["y"])
+        self.assertGreaterEqual(ring[0] + ring[2], btn["x"] + btn["width"])
+        self.assertGreaterEqual(ring[1] + ring[3], btn["y"] + btn["height"])
+        self.assertIn("log in", bar)
+
+    def test_guide_is_gone_once_the_person_is_logged_in(self):
+        from playwright.sync_api import sync_playwright
+        steps = {"base_url": self.base, "login": {"mode": "manual", "start": "/auth.html?after=4",
+                                                  "until": {"for": "text", "value": "Continuing as"}, "timeout_s": 20}}
+        with sync_playwright() as pw:
+            b = pw.chromium.launch()
+            page = b.new_page()
+            seen = []
+            capture.manual_login_sync(page, steps, self.base, on_wait=lambda: seen.append(
+                page.evaluate("!!document.getElementById('__unveo_guide')")))
+            gone = page.evaluate("!document.getElementById('__unveo_guide')")
+            b.close()
+        self.assertTrue(any(seen), "the guide never showed while waiting")
+        self.assertTrue(gone)
 
 
 if __name__ == "__main__":
