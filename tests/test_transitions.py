@@ -100,6 +100,7 @@ class BeatTest(unittest.TestCase):
             end = s["start_s"] + s["dur_s"]
             self.assertAlmostEqual(end / 0.5, round(end / 0.5), delta=0.07)  # every cut on a beat at 120 BPM
         self.assertEqual(plan_timeline.snap_to_beat(tl, 120, tl["total_s"] / 0.98)["total_s"], tl["total_s"])  # no room: unchanged
+        self.assertTrue(all(0 <= s["snap_s"] <= 0.35 + 1 / 30 for s in snapped["scenes"]))  # recorded, so QA can allow for it
 
 
 class SettleTest(unittest.TestCase):

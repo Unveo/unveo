@@ -189,9 +189,10 @@ def main():
             d = float(re.search(r"Duration: \d+:\d+:([\d.]+)", ff_info(seg)).group(1))
             if abs(d - want) > 1.5 / 30:
                 bad.append(f"{sc['id']} is {d:.2f} s, timeline says {want:.2f} s (with its transition)")
-        settling = sc["dur_s"] <= need.get(sc["id"], 0) + 0.1  # a recording held for its last click to settle
-        if sc.get("voice") and sc.get("template") != "close" and not settling and sc["dur_s"] > sc.get("voice_s", 0) + 1.0 + sc.get("lead_s", 0):
-            bad.append(f"{sc['id']} runs {sc['dur_s'] - sc['voice_s']:.1f} s past its voice")
+        own = sc["dur_s"] - sc.get("snap_s", 0)  # less the bit plan_timeline added to land the cut on the beat
+        settling = own <= need.get(sc["id"], 0) + 0.1  # a recording held for its last click to settle
+        if sc.get("voice") and sc.get("template") != "close" and not settling and own > sc.get("voice_s", 0) + 1.0 + sc.get("lead_s", 0):
+            bad.append(f"{sc['id']} runs {own - sc['voice_s']:.1f} s past its voice")
     gate("sync", not bad, "; ".join(bad) or "every segment matches its voice")
 
     take = json.loads(rec.read_text()) if rec.exists() else {}

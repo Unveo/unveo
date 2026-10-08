@@ -47,7 +47,8 @@ def snap_to_beat(tl, bpm, limit_s, most=0.35):
         end = start + s["dur_s"]
         extra = math.ceil(round(end / beat, 6)) * beat - end
         dur = round(frames(s["dur_s"] + extra), 4) if 0 < extra <= most else s["dur_s"]
-        out.append({**s, "dur_s": dur, "tail_s": round(s["tail_s"] + dur - s["dur_s"], 4), "start_s": round(start, 4)})
+        out.append({**s, "dur_s": dur, "tail_s": round(s["tail_s"] + dur - s["dur_s"], 4), "start_s": round(start, 4),
+                    "snap_s": round(dur - s["dur_s"], 4)})  # QA's sync gate allows for it
         start += dur
     if start > limit_s * 0.98:
         return tl
