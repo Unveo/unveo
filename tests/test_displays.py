@@ -68,10 +68,10 @@ class DisplayTest(unittest.TestCase):
         self.assertEqual(looks.display_for({"display": "spotlight"}, "editorial", {"display": "laptop"}), "spotlight")
         self.assertEqual(looks.display_for({}, None, {}), "full")
 
-    def test_a_per_scene_frame_is_reported(self):
+    def test_a_per_scene_frame_is_a_warning_not_an_error(self):  # an older steps.json still records
         steps = {"version": 1, "base_url": "http://x", "scenes": {"s05": {"display": "laptop", "steps": [{"do": "pause", "ms": 5}]}}}
-        errs = " ".join(capture.validate(steps))
-        self.assertIn("design.json", errs)
+        self.assertEqual(capture.validate(steps), [])
+        self.assertIn("design.json", " ".join(capture.frame_warnings(steps)))
 
     def test_framed_displays_leave_the_caption_band_clear(self):
         from PIL import Image

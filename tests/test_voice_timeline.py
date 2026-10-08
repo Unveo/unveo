@@ -61,6 +61,18 @@ class UnitTest(unittest.TestCase):
         self.assertAlmostEqual(tl["total_s"], sum(s["dur_s"] for s in tl["scenes"]), places=3)
 
 
+class MissingKokoroTest(unittest.TestCase):
+    def test_the_offline_voice_missing_asks_for_the_install_not_a_traceback(self):
+        out = Path(tempfile.mkdtemp())
+        (out / "script.md").write_text(SCRIPT)
+        (out / "brief.json").write_text(json.dumps(brief()))
+        p = subprocess.run([sys.executable, str(SCRIPTS / "voice.py"), "--provider", "kokoro", "--out", str(out)], capture_output=True,
+                           text=True, timeout=120, env={**os.environ, "UNVEO_HOME": str(out / "home")})
+        res = json.loads(p.stdout.strip().splitlines()[-1])
+        self.assertEqual(p.returncode, 2, res)
+        self.assertIn("--with-kokoro", res["fix"])
+
+
 @unittest.skipUnless(KOKORO.exists(), "Kokoro model not installed")
 class EndToEndTest(unittest.TestCase):
     def setUp(self):

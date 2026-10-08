@@ -11,10 +11,8 @@
 | 5 | `ocean-slate` | Dark blue, calm, data | Analytics, dashboards, monitoring, finance, climate |
 | 6 | `midnight-violet` | Dark, playful | Consumer apps, creative tools, AI chat |
 
-## Picking the 3 presets to offer
+## When to use a preset
 
-1. Match the field from `understanding.md` to the "Fits" column, and take the best 2.
-2. If neither of those 2 has the opposite brightness to the project palette, add one that does (a dark preset if the app is light, and the reverse). Otherwise add the third-best fit.
-3. Offer: `Your app's own colors (Recommended)` · those 3. *Other* accepts any name from this table.
+The video uses the app's own colours (`palette.name: "project"`) unless the user asks for a preset: by name in the look question's *Other* (round A), or at the Review ("Change the look, colours or animations"). Then match the field from `understanding.md` to the "Fits" column, and take the preset's `tokens` exactly from `render.py palettes`.
 
-If the `project` palette's accent is grey or nearly the same as its background (the repo has no real theme), say so in one line, and recommend the best-fitting preset instead. Otherwise keep `project` recommended.
+If the `project` palette's accent is grey or nearly the same as its background (the repo has no real theme), pick the best-fitting preset yourself and say so in one line.

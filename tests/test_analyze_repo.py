@@ -29,6 +29,9 @@ class NextCrudTest(unittest.TestCase):
         self.assertIn("next", [x.split("@")[0] for x in self.s["stack"]])
         self.assertEqual(self.s["app_kind"], "web")
 
+    def test_stack_logos_languages_first(self):
+        self.assertEqual(self.s["logos"][:4], ["logos:nodejs-icon", "logos:nextjs-icon", "logos:react", "logos:prisma"])
+
     def test_routes_from_app_router(self):
         paths = {r["path"] for r in self.s["routes"]}
         self.assertLessEqual({"/", "/dashboard/[state]"}, paths)
@@ -77,6 +80,26 @@ class OtherKindsTest(unittest.TestCase):
         top = s["hidden_logic_candidates"][0]
         self.assertEqual((top["file"], top["kind"]), ("main.py", "model"))
         self.assertIn("uvicorn main:app --port 8000", [h["cmd"] for h in s["run_hints"]])
+        self.assertEqual(s["logos"][:2], ["logos:python", "logos:fastapi-icon"])
+
+    def test_tools_the_product_names_get_their_logos(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "README.md").write_text("# Survey\nHow do you use ChatGPT or Claude? Sign in with Google.\n")
+            (Path(d) / "index.html").write_text("<p>Cursor, Copilot</p><style>a { cursor: pointer }</style>")
+            _, _, s = scan(d)
+        got = {m["name"]: m["icon"] for m in s["mentioned_tools"]}
+        self.assertEqual(got["ChatGPT"], "logos:openai-icon")
+        self.assertEqual(got["Cursor"], "logos:cursor-icon")
+        self.assertIn("Sign in with Google", got)
+        self.assertEqual(next(m for m in s["mentioned_tools"] if m["name"] == "Cursor")["file"], "index.html")
+
+    def test_every_logo_it_can_name_ships_with_unveo(self):
+        sys.path.insert(0, str(SCRIPT.parent))
+        import analyze_repo
+        bundled = json.loads((ROOT / "skills/unveo/templates/film/icons/brands.json").read_text())
+        wanted = set(analyze_repo.LOGOS.values()) | set(analyze_repo.TOOLS.values()) | {
+            "logos:typescript-icon", "logos:nodejs-icon", "logos:python", "logos:go", "logos:rust", "logos:flutter"}
+        self.assertEqual(wanted - set(bundled), set())
 
     def test_flutter_is_mobile(self):
         _, _, s = scan(FIX / "flutter-app")

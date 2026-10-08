@@ -20,10 +20,10 @@
 | Canada, Ireland, New Zealand, South Africa, Singapore | two each (female and male) |
 | Hindi | Swara, Madhur |
 
-- **Default accent:** the user's system region (`en_GB` gives UK voices first, `en_IN` gives India, and anything else gives US). Nothing is forced.
+- **Default accent:** the user's system region: `en_GB` gives UK voices first, `en_IN` India, and AU, CA, IE, NZ, ZA and SG their own; anything else gives US. Nothing is forced. Changing the language picks a voice that speaks it.
 - `voice.py samples` makes a short clip for each voice of that accent plus the best voice of each other accent.
 - **Change voice:** `voice.py --voice en-GB-SoniaNeural` re-voices every scene. Save the choice in brief.json → `voice.voice_id`.
-- **Pace:** `voice.rate` is chosen at intake (+0%, +10% or +20%; default +10%). Always ask; never assume. After the first clip, offer faster or slower.
+- **Pace:** `voice.rate` is chosen in the Guided voice round (+0%, +10% or +20%; default +10%). Quick mode takes +10% and doesn't ask; the Review offers faster or slower. In Guided mode, after the first clip, offer faster or slower.
 - **Fitting:** if the timeline is a little over (≤ 5%), add up to `+5%` to the chosen rate before cutting words. Never above `+30%`.
 - **Pronunciation:** `voice.say_as` in brief.json, for example `{"MPLADS": "M P lads"}`. It changes only what's spoken; captions show the real word.
 - **Fallback:** if edge-tts fails 3 times, voice.py switches **every** scene to Kokoro (offline), so the voice never changes mid-video, and says so.

@@ -3,12 +3,13 @@
   render.py palettes                    the colour presets as stills/palettes.png (round A, Other)
   render.py looks [--names a,b]         3 looks that fit the project, drawn in its colours -> stills/looks.png (round A)
   render.py icons --search <word>       free-licence icons for motifs (lucide:landmark, mdi:rupee …)
+  render.py icons --brands               the bundled brand logos, in their own colours (logos:react, logos:claude-icon …)
   render.py stills [--at 3,18] [--all]  stills/sheet.png: animated scenes + one frame per recorded scene (Checkpoint C)
   render.py draft                       render/draft/sNN.mp4 at 960x540, 1 sample per frame (timing check)
   render.py final [--chunks N] [--scene sNN]   render/segments/sNN.mp4 at the brief's size (2K: 2560x1440), 30 fps, 3 subframes
   render.py pops --file final.mp4       single-frame glitch scan
   render.py estimate                    predicted minutes for the final render
-All take --out (default unveo-out). Unchanged scenes are not re-rendered.
+All take --out (default unveo-out/.work). Unchanged scenes are not re-rendered; final --scene always re-renders that one.
 """
 import argparse, colorsys, json, os, re, shutil, subprocess, sys, time
 from collections import Counter
@@ -224,7 +225,19 @@ def icon_licences():
 
 
 def bundled_icons():
-    return json.loads((TEMPLATES / "icons" / "lucide.json").read_text())
+    """About 50 Lucide icons (ISC) and about 90 brand logos in their real colours (Iconify 'logos' set, CC0), offline."""
+    global _BUNDLED
+    if _BUNDLED is None:
+        _BUNDLED = {**json.loads((TEMPLATES / "icons" / "lucide.json").read_text()),
+                    **json.loads((TEMPLATES / "icons" / "brands.json").read_text())}
+    return _BUNDLED
+
+
+_BUNDLED = None
+
+
+def brand_icons():
+    return sorted(n for n in bundled_icons() if n.startswith("logos:"))
 
 
 def fetch_icon(name):
@@ -266,13 +279,13 @@ def search_icons(query, limit=20):
 
 
 def icon_names(obj):
-    """Every icon a scene's data asks for: values under "icon" and "motifs"."""
+    """Every icon a scene's data asks for: values under "icon", "motifs" and "built_with"."""
     out = set()
     if isinstance(obj, dict):
         for k, v in obj.items():
             if k == "icon" and isinstance(v, str):
                 out.add(v)
-            elif k == "motifs" and isinstance(v, list):
+            elif k in ("motifs", "built_with") and isinstance(v, list):
                 out |= {x for x in v if isinstance(x, str)}
             else:
                 out |= icon_names(v)
@@ -291,7 +304,8 @@ def write_icons(o, film, design, scenes):
         svg, why = fetch_icon(n)
         if svg:
             svgs[n] = re.sub(r'\s(width|height)="[^"]*"', "", svg, count=2)
-            audit[n] = "ISC (lucide, bundled)" if n in bundled_icons() else lic.get(n.split(":")[0], "unknown")
+            audit[n] = ("CC0-1.0 (logos, bundled; a trademark of its owner)" if n.startswith("logos:") else "ISC (lucide, bundled)") \
+                if n in bundled_icons() else lic.get(n.split(":")[0], "unknown")
         else:
             problems.append({"scene": "*", "kind": "icon", "detail": why})
     (film / "icons.js").write_text("window.ICONS = " + json.dumps(svgs) + ";\n")
@@ -402,8 +416,11 @@ def prepare(out):
 
 def scene_hash(film, sc, mode):
     code = "".join((film / n).read_text(encoding="utf-8") for n in ("core.js", "film.js", "film.css", "palette.css", "design.css", "look.css", "blocks.js"))
-    tpl = film / "scenes" / f"{sc['template']}.js"
-    return sha1_of(code, tpl.read_text(encoding="utf-8") if tpl.exists() else "", json.dumps(sc, sort_keys=True), mode)
+    # the scene's own template, plus the shared ones other scenes are built from (story scenes are compose layouts;
+    # problem uses context's list), so an edit to any of them re-renders what it draws
+    own = [f"{sc['template']}.js", "compose.js", "story.js", "context.js"]
+    tpl = "".join((film / "scenes" / n).read_text(encoding="utf-8") for n in dict.fromkeys(own) if (film / "scenes" / n).exists())
+    return sha1_of(code, tpl, json.dumps(sc, sort_keys=True), mode)
 
 
 DESIGN_CHECK_JS = r"""() => {
@@ -425,6 +442,15 @@ DESIGN_CHECK_JS = r"""() => {
       issues.push({what: label(el), issue: 'runs outside the frame'});
     else if (el.clientWidth && el.scrollWidth > el.clientWidth + 2)
       issues.push({what: label(el), issue: 'text is wider than its box'});
+    else {  // a nowrap line can grow its own box past the card around it, so measure the text against that card
+      const card = el.parentElement && el.parentElement.closest('.card, .chip, .block');
+      if (card && sc.contains(card)) {
+        const rg = document.createRange(); rg.selectNodeContents(el);
+        const t = rg.getBoundingClientRect(), c = card.getBoundingClientRect();
+        if (t.width && (t.right > c.right + 2 || t.left < c.left - 2 || t.bottom > c.bottom + 2))
+          issues.push({what: label(el), issue: 'text runs out of its card'});
+      }
+    }
     let bg = null;
     for (let e = el; e; e = e.parentElement) { const b = lum(getComputedStyle(e).backgroundColor); if (b && b.a > 0.5) { bg = b; break; } }
     const fg = lum(getComputedStyle(el).color);
@@ -502,8 +528,8 @@ def video_cmd(out, mode, chunks=None, only=None, extra=()):
     folder.mkdir(parents=True, exist_ok=True)
     hashes_f = folder / ".hashes.json"
     hashes = json.loads(hashes_f.read_text()) if hashes_f.exists() else {}
-    todo = [s for s in anim_scenes(scenes, only, extra)
-            if hashes.get(s["id"]) != scene_hash(film, s, mode) or not (folder / f"{s['id']}.mp4").exists()]
+    todo = [s for s in anim_scenes(scenes, only, extra)  # --scene always re-renders it (a pop, a glitch), changed or not
+            if s["id"] == only or hashes.get(s["id"]) != scene_hash(film, s, mode) or not (folder / f"{s['id']}.mp4").exists()]
     t0 = time.time()
     chunks = max(1, min(chunks or min(4, max(1, (os.cpu_count() or 2) // 2)), len(todo) or 1))
     errors = []
@@ -559,7 +585,11 @@ def looks_cmd(out, names=None):
     o = out_dir(out)
     brief = json.loads((o / "brief.json").read_text(encoding="utf-8"))
     u0 = brief.get("understanding") or {}
-    names = names or looks.candidates(looks.history(), field=f"{u0.get('field', '')} {u0.get('problem', '')} {u0.get('product', '')}")
+    field = f"{u0.get('field', '')} {u0.get('problem', '')} {u0.get('product', '')}"
+    um = Path(out) / "understanding.md"  # round A runs before the brief holds the understanding: read the draft
+    if not field.strip() and um.exists():
+        field = " ".join(re.findall(r"^(?:Field|Problem|Product):\s*(.+)$", um.read_text(encoding="utf-8"), re.M))
+    names = names or looks.candidates(looks.history(), field=field)
     u = brief.get("understanding") or {}
     title = (brief.get("header") or {}).get("title") or (brief.get("project") or {}).get("name") or "Your project"
     blocks = {"layout": "split", "blocks": [
@@ -649,13 +679,13 @@ def stills_cmd(out, at=None, every=False):
     design = json.loads((film / "design.json").read_text(encoding="utf-8")) if (film / "design.json").exists() else {}
     burned = json.loads((o / "brief.json").read_text(encoding="utf-8")).get("captions", "burned") == "burned"
     odd = sorted(i for i in cap_ids if (cap_steps.get(i) or {}).get("display") not in (None, *looks.SCENE_DISPLAYS))
-    if odd:  # one frame per video: a per-scene frame would make recordings jump between devices
-        issues.append({"scene": ",".join(odd), "kind": "frame", "detail": "set the frame once in film/design.json (\"display\"); "
-                       "a scene may only use phone or spotlight"})
+    if odd:  # one frame per video: an older steps.json's per-scene frame is ignored (looks.display_for), not an error
+        warnings.append({"scene": ",".join(odd), "kind": "frame", "detail": "their display in steps.json is ignored: the frame is set "
+                         "once in film/design.json (\"display\"); a scene may only use phone or spotlight"})
     with sync_playwright() as pw:
         for i, (s, t) in enumerate(picks):
             f = d / f"still-{i:02d}-{s['id']}.png"
-            if s["visual"] == "anim" or (s["visual"] == "clip" and not videos(clips_dir(o))):
+            if s["visual"] == "anim" or (s["visual"] == "clip" and not stitch.find_clip(o, stitch.shots_map(o).get(s["id"], f"shot-{s['id'][1:]}"))):
                 page = Page(pw, film, s["id"], 1920)  # animated scene, or the placeholder card for a missing clip
                 page.shot(t, f)
                 errors += page.errors
@@ -664,10 +694,10 @@ def stills_cmd(out, at=None, every=False):
                 warnings += [{"scene": s["id"], **x} for x in chk["warnings"]]
                 page.close()
             else:
-                src = (o / "capture" if s["visual"] == "capture" else clips_dir(o)) / f"{s['id']}.mp4"
-                if s["visual"] == "clip":
-                    src = next(iter(videos(clips_dir(o))), src)
-                if not src.exists():
+                src = o / "capture" / f"{s['id']}.mp4"
+                if s["visual"] == "clip":  # the clip recorded for this scene, by its shot name in shots.md
+                    src = stitch.find_clip(o, stitch.shots_map(o).get(s["id"], f"shot-{s['id'][1:]}"))
+                if not src or not src.exists():
                     continue
                 subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-ss", f"{t:.2f}", "-i", str(src), "-frames:v", "1", str(f)], check=True)
                 if s["visual"] == "capture" and "accent" in tokens:
@@ -727,7 +757,8 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("palettes")
     ic = sub.add_parser("icons")
-    ic.add_argument("--search", required=True, help="a word from the project's world: parliament, rupee, clinic, vote")
+    ic.add_argument("--search", help="a word from the project's world: parliament, rupee, clinic, vote")
+    ic.add_argument("--brands", action="store_true", help="list the bundled brand logos (logos:react, logos:claude-icon…)")
     lk = sub.add_parser("looks")
     lk.add_argument("--names", help="comma-separated looks to preview instead of the 3 suggested")
     st = sub.add_parser("stills")
@@ -751,6 +782,9 @@ def main():
     a = ap.parse_args()
     if a.cmd == "palettes":
         palettes_cmd(a.out)
+    elif a.cmd == "icons" and (a.brands or not a.search):
+        found = brand_icons()
+        emit("icons", icons=found, message=f"{len(found)} bundled brand logos, in their own colours (works offline)")
     elif a.cmd == "icons":
         found = search_icons(a.search)
         emit("icons", icons=found, message=f"{len(found)} free icon(s) for '{a.search}'" + ("" if found else ": try a synonym (government, landmark, capitol)"))

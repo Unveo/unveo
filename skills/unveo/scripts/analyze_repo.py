@@ -27,6 +27,36 @@ STACK_NAMES = {"next", "react", "vue", "nuxt", "svelte", "@sveltejs/kit", "@angu
 WEB_STACK = {"next", "react", "vue", "nuxt", "svelte", "@sveltejs/kit", "@angular/core", "astro", "@remix-run/react",
              "express", "vite", "fastapi", "flask", "django", "streamlit", "gradio"}
 
+LOGOS = {  # dependency -> its bundled brand logo (templates/film/icons/brands.json), for "built with" rows and system maps
+    "react": "logos:react", "next": "logos:nextjs-icon", "vue": "logos:vue", "nuxt": "logos:nuxt-icon", "svelte": "logos:svelte-icon",
+    "@angular/core": "logos:angular-icon", "express": "logos:express", "vite": "logos:vite", "tailwindcss": "logos:tailwindcss-icon",
+    "typescript": "logos:typescript-icon", "bootstrap": "logos:bootstrap", "redux": "logos:redux", "@reduxjs/toolkit": "logos:redux",
+    "three": "logos:threejs", "d3": "logos:d3", "expo": "logos:expo-icon", "electron": "logos:electron", "graphql": "logos:graphql",
+    "socket.io": "logos:socket-io", "jsonwebtoken": "logos:jwt-icon", "@prisma/client": "logos:prisma", "drizzle-orm": "logos:drizzle-icon",
+    "pg": "logos:postgresql", "postgres": "logos:postgresql", "psycopg2": "logos:postgresql", "psycopg2-binary": "logos:postgresql",
+    "mysql2": "logos:mysql-icon", "mongoose": "logos:mongodb-icon", "mongodb": "logos:mongodb-icon", "pymongo": "logos:mongodb-icon",
+    "sqlite3": "logos:sqlite", "better-sqlite3": "logos:sqlite", "redis": "logos:redis", "ioredis": "logos:redis",
+    "@supabase/supabase-js": "logos:supabase-icon", "supabase": "logos:supabase-icon", "firebase": "logos:firebase",
+    "firebase-admin": "logos:firebase", "@neondatabase/serverless": "logos:neon-icon", "@clerk/nextjs": "logos:clerk-icon",
+    "stripe": "logos:stripe", "twilio": "logos:twilio-icon", "mapbox-gl": "logos:mapbox-icon", "leaflet": "logos:leaflet",
+    "openai": "logos:openai-icon", "anthropic": "logos:claude-icon", "@anthropic-ai/sdk": "logos:claude-icon",
+    "@google/generative-ai": "logos:google-gemini-icon", "@google/genai": "logos:google-gemini-icon",
+    "google-generativeai": "logos:google-gemini-icon", "google-genai": "logos:google-gemini-icon",
+    "google-auth-library": "logos:google-icon", "langchain": "logos:langchain-icon", "transformers": "logos:hugging-face-icon",
+    "fastapi": "logos:fastapi-icon", "flask": "logos:flask", "django": "logos:django-icon", "streamlit": "logos:streamlit",
+    "torch": "logos:pytorch-icon", "tensorflow": "logos:tensorflow", "numpy": "logos:numpy", "pandas": "logos:pandas-icon",
+    "opencv-python": "logos:opencv", "jupyter": "logos:jupyter", "playwright": "logos:playwright",
+}
+TOOLS = {  # names a product talks about (README, UI text) -> logo; case-sensitive so CSS "cursor:" never matches
+    "Claude": "logos:claude-icon", "Anthropic": "logos:claude-icon", "ChatGPT": "logos:openai-icon", "OpenAI": "logos:openai-icon",
+    "GPT-4": "logos:openai-icon", "Copilot": "logos:github-copilot", "Cursor": "logos:cursor-icon", "Gemini": "logos:google-gemini-icon",
+    "DeepSeek": "logos:deepseek-icon", "Mistral": "logos:mistral-ai-icon", "Perplexity": "logos:perplexity-icon",
+    "Llama": "logos:meta-icon", "Hugging Face": "logos:hugging-face-icon", "Google Sign-In": "logos:google-icon",
+    "Sign in with Google": "logos:google-icon", "Google Identity": "logos:google-icon", "GitHub": "logos:github-icon",
+    "WhatsApp": "logos:whatsapp-icon", "Telegram": "logos:telegram", "Slack": "logos:slack-icon", "Discord": "logos:discord-icon",
+    "Notion": "logos:notion-icon", "Figma": "logos:figma", "Stripe": "logos:stripe",
+}
+
 KINDS = {  # kind -> keyword regex (lowercased text)
     "formula": r"\b\w*(?:score|risk|weight|rank|rating|threshold)\w*\b",
     "model": r"\b(?:predict\w*|infer\w*|model\.\w+|torch|sklearn|transformers|onnx\w*|embedding\w*|openai|anthropic|generativeai|groq)\b",
@@ -147,6 +177,34 @@ def stack_and_kind(root, rel):
     else:
         kind = "unknown"
     return stack, kind
+
+
+def logos(root, rel):
+    """The project's stack as bundled brand logos, languages first: [logo ids], no repeats."""
+    deps = {}
+    for f in manifests(rel, "package.json"):
+        deps.update(js_deps(root, f)[0])
+    py = manifests(rel, "requirements.txt") + manifests(rel, "pyproject.toml") + manifests(rel, "Pipfile")
+    for f in py:
+        for m in re.finditer(r"^\s*\"?([A-Za-z0-9_.\-]+)", read(root / f), re.M):
+            deps.setdefault(m.group(1).lower(), "")
+    out = (["logos:typescript-icon"] if "typescript" in deps or any(f.endswith("tsconfig.json") for f in rel) else []) + \
+          (["logos:nodejs-icon"] if manifests(rel, "package.json") else []) + (["logos:python"] if py else []) + \
+          (["logos:go"] if "go.mod" in rel else []) + (["logos:rust"] if "Cargo.toml" in rel else []) + \
+          (["logos:flutter"] if "pubspec.yaml" in rel else []) + [LOGOS[d] for d in deps if d in LOGOS]
+    return list(dict.fromkeys(out))
+
+
+def mentioned_tools(texts, readme_name):
+    """Tools the product names (Claude, ChatGPT, Copilot…) in its README or UI text: [{name, icon, file}]."""
+    found = {}
+    for f, text in texts.items():
+        if f != readme_name and not f.endswith(tuple(UI_EXT)):
+            continue
+        for name, icon in TOOLS.items():
+            if icon not in found and re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", text):
+                found[icon] = {"name": name, "icon": icon, "file": f}
+    return list(found.values())
 
 
 RUN_CMD = re.compile(r"^(?:uvicorn|streamlit run|flask run|gradio|python3? -m http\.server|python3? [\w/.-]+\.py|npm run \w+|npm start|yarn (?:dev|start)|pnpm (?:dev|start)|docker compose up|docker-compose up)\b")
@@ -478,6 +536,7 @@ def main():
         "url_candidates": url_candidates(root, texts, readme_name),
         "hidden_logic_candidates": hidden_logic(texts, readme),
         "palette_candidates": palette(texts), "fonts": fonts(texts), "readme": readme_info(readme), "env_keys": env_keys(root),
+        "logos": logos(root, rel), "mentioned_tools": mentioned_tools(texts, readme_name),
     }
     out = out_dir(a.out) / "repo_scan.json"
     write_json(out, scan)

@@ -1,4 +1,4 @@
-/* model-io (docs/07 §3.3): { title, input:{kind,label,example}, preprocess:[…], model:{name,where,label}, output:{label,example,confidence,alternatives:[{label,p}]}, example_data } */
+/* model-io (docs/07 §3.3): { title, input:{kind,label,example}, preprocess:[…], model:{name,where,label,icon?}, output:{label,example,confidence,alternatives:[{label,p}]}, example_data } */
 UNVEO.scene("explainer-model-io", {
   build(root, d) {
     const { h, esc, question, exampleTag } = CORE;
@@ -17,7 +17,7 @@ UNVEO.scene("explainer-model-io", {
       return c;
     });
     root.__m = h("div", "abs", null, "left:780px;top:360px;width:360px;height:280px;border-radius:36px;background:var(--ink);color:var(--bg);display:flex;flex-direction:column;justify-content:center;align-items:center;gap:14px;text-align:center;padding:24px");
-    root.__m.innerHTML = `<div style="font:650 40px/1.1 var(--font-display)">${esc(m.label || "Model")}</div>
+    root.__m.innerHTML = `${m.icon ? ICON(m.icon, 64) : ""}<div style="font:650 40px/1.1 var(--font-display)">${esc(m.label || "Model")}</div>
       <div class="mono" style="font:400 19px/1.35 'Geist Mono';opacity:.75;max-width:100%;overflow-wrap:anywhere">${esc(m.name || "")}</div>
       <div class="mono" style="font:500 19px 'Geist Mono';opacity:.6">${esc(m.where === "api" ? "via API" : m.where || "")}</div>`;
     root.__ring = h("div", "abs", null, "left:760px;top:340px;width:400px;height:320px;border-radius:44px;border:4px solid var(--accent)");

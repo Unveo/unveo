@@ -12,6 +12,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: semv
   - Captions burned in plus captions.srt.
   - Per-video design brief (the app's font, motion, background), building blocks and compose scenes, overflow, contrast and crowding checks, QA feel report.
   - setup_app.py: plan, install --yes, start --yes, stop for local Node and Python apps.
+- Round 6:
+  - One take: every scene recorded in order in one session at a natural pace; stitch.py retimes each scene to its voice.
+  - An offscreen window in your own browser when a hidden one is refused; the yellow tint stays up until the window closes.
+  - A failing step leaves a screenshot and the closest matching targets; the take stops there.
+  - Quick mode asks nothing until the Review; `brief.py defaults --fresh`.
+  - Bundled brand logos for the project's stack and the tools it mentions.
+  - A -3 dBFS limiter after loudnorm, so the AAC encode stays under -1 dBTP.
+  - Each scene published on its own to `unveo-out/scenes/`; a run that fails a blocking gate publishes nothing.
 - Round 5 (from your review of the round-4 video):
   - 2K (2560×1440) by default, rendered and recorded natively; near-lossless working files, a careful final encode.
   - Hard cuts between recordings; one frame per video; captions in their own band and in one box.

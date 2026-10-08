@@ -1,4 +1,4 @@
-# Design: a new concept for every video, never overdone (Phase 3, step 19)
+# Design: a new concept for every video, never overdone (Phase 3, step 15)
 
 The goal: a judge should never think "an AI made this". The real app is the hero, and animation only explains what the screen can't.
 
@@ -53,9 +53,23 @@ How to find them:
 - **Offline:** about 50 Lucide icons ship with unveo.
 - **Record:** `.work/icons.json` lists each icon used and its licence.
 
+### Logos: the real tools, in their real colours
+
+A frame with the tools the story is about reads at a glance, and fills the page with something true. About 90 brand logos ship with unveo, in their own colours, offline: `render.py icons --brands` lists them (`logos:react`, `logos:python`, `logos:claude-icon`, `logos:openai-icon`, `logos:github-copilot`, `logos:postgresql`…). `repo_scan.json` already picks the right ones:
+- `logos`: the project's stack (languages first), for a "built with" row.
+- `mentioned_tools`: tools the product names in its README or UI (Claude, ChatGPT, Copilot, Cursor, Google Sign-In), each with its logo and the file it's in.
+
+Where they go:
+- **The tools a story names:** an `icon-row` with `"size": 140` and `{icon, label}` items, landing on the word that names the first one. When the voice says "Cursor, Copilot, Claude, ChatGPT", show those four logos, not text chips.
+- **Chips and points:** `badge-cloud` items and context/problem `points` take `{text, icon}`.
+- **The stack:** `built_with: [logo ids]` (up to 6) on `product-intro` (a row under the one-liner) and `close` (in place of the motifs).
+- **Explainers:** system-map nodes and the model-io `model` take an `icon` (`logos:postgresql`, `logos:openai-icon`), falling back to the glyph for the kind.
+
+Use a logo only for a tool the project really uses or names (cite it like any claim), never to suggest the brand endorses the project. A logo keeps its colours in every look; use motifs, not logos, for the project's own world.
+
 ### More pieces for story scenes
 
-- **Blocks:** `icon`, `icon-row`, `stat` (number, icon and label), `timeline`, `compare` (before and after), `callout` (a screenshot with numbered pins), `device` (a screenshot in a laptop or phone) and `badge-cloud` join the earlier blocks.
+- **Blocks:** `icon`, `icon-row` (`size` for big logos), `stat` (number, icon and label), `timeline`, `compare` (before and after), `callout` (a screenshot with numbered pins), `device` (a screenshot in a laptop or phone) and `badge-cloud` join the earlier blocks.
 - **Layouts:** `hero-icon`, `three-col`, `asymmetric` and `full-bleed-shot`.
 - **Scenes:**
 
@@ -104,7 +118,7 @@ with the scene heading `anim:compose` in script.md.
 - **`enter`:** `rise` (default), `fade`, `draw` (bars, flows and dividers grow) or `count` (numbers).
 - **Text auto-fits:** it shrinks to fit its area, so it can't overflow.
 
-## 3. Restraint rules (check them before Checkpoint C)
+## 3. Restraint rules (check them before Checkpoint C; in Quick mode, check them yourself)
 
 - [ ] No glow, neon, gradient text, lens flares or "tech" particle backgrounds.
 - [ ] At most 2 accent colours on screen at once; most of the frame is calm.
@@ -114,7 +128,7 @@ with the scene heading `anim:compose` in script.md.
 - [ ] The real app is on screen at least half of the product time (QA's `feel` report).
 - [ ] Nothing perfectly symmetrical everywhere: let one element lead.
 
-Then ask the user at Checkpoint C: **"Does anything look automated or generic?"**
+Then, in Guided mode, ask the user at Checkpoint C: **"Does anything look automated or generic?"**
 
 ## 4. What render.py checks for you
 

@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from common import emit, log, sha1_of  # noqa: E402
 
-SKILL_DIR = Path(__file__).resolve().parents[1]
+SKILL_DIR = Path(os.path.abspath(__file__)).parents[1]  # not resolve(): keep the path SKILL.md was loaded from, even through a symlink
 HOME = Path(os.environ.get("UNVEO_HOME", Path.home() / ".unveo"))
 VENV = HOME / "venv"
 WIN = platform.system() == "Windows"
@@ -72,7 +72,7 @@ def fix_cmds():
         "chromium": chromium,
         "ffmpeg": f"{py} -m pip install --force-reinstall imageio-ffmpeg",
         "kokoro": f"{py} -m pip install -r {q(REQ_KOKORO)}",
-        "kokoro_models": f"python {q(Path(__file__))} --fix --with-kokoro",
+        "kokoro_models": f"{q(Path(sys.executable))} {q(Path(__file__))} --fix --with-kokoro",
     }
 
 

@@ -35,7 +35,7 @@ At most 6 stages. `payloads[i]` is what stage i receives.
  "model": {"name": "HistGradientBoostingClassifier", "where": "local", "label": "Delay model"},
  "output": {"label": "Delay risk", "example": "High", "confidence": 0.81, "score_label": "confidence", "alternatives": [{"label": "Medium", "p": 0.15}]}}
 ```
-`score_label` names the number honestly (for example "delay probability" when the model outputs a probability, not a confidence).
+An API model may add `"icon"` to `model` (`logos:openai-icon`, `logos:claude-icon`, `logos:google-gemini-icon`): its real logo sits above the label. `score_label` names the number honestly (for example "delay probability" when the model outputs a probability, not a confidence).
 
 ## raw-vs-processed (cleaning, extraction). Beats: question · raw · clean
 ```json
@@ -49,4 +49,4 @@ At most 4 columns and 3 rows each.
 {"title": "…", "source": ["…"], "nodes": [{"id": "ui", "label": "Dashboard", "kind": "client"}],
  "edges": [{"from": "ui", "to": "api", "label": "query"}], "path": ["ui", "api", "ui"]}
 ```
-At most 7 nodes. The kinds are `client`, `server`, `db`, `external`, `job` and `model`.
+At most 7 nodes. The kinds are `client`, `server`, `db`, `external`, `job` and `model`. A node may add `"icon": "logos:postgresql"` (any logo from `render.py icons --brands`): the real logo replaces the kind's glyph.

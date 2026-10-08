@@ -65,17 +65,12 @@ class RecordZoomTest(unittest.TestCase):
 
     def record(self, zoom):
         out = Path(tempfile.mkdtemp())
-        for d in ("capture", "voice"):
-            (out / d).mkdir()
+        (out / "capture").mkdir()
         step = {"do": "hover", "target": {"role": "button", "name": "Search"}, "say": "search"}
         if zoom:
             step["zoom"] = zoom if isinstance(zoom, dict) else {"scale": 2.0, "hold_s": 1.5}
         (out / "capture/steps.json").write_text(json.dumps({"version": 1, "base_url": self.base,
                                                             "scenes": {"s05": {"start": {"do": "goto", "url": "/"}, "steps": [step]}}}))
-        (out / "voice/voice.json").write_text(json.dumps({"version": 1, "clips": [
-            {"scene": "s05", "dur_s": 3.0, "words": [{"w": "Search", "t0": 0.5, "t1": 0.9}]}]}))
-        (out / "timeline.json").write_text(json.dumps({"version": 1, "scenes": [
-            {"id": "s05", "visual": "capture", "lead_s": 0.3, "dur_s": 4.0, "start_s": 0}]}))
         p = subprocess.run([sys.executable, str(SCRIPTS / "capture.py"), "record", "--out", str(out)],
                            capture_output=True, text=True, timeout=300)
         res = json.loads(p.stdout.strip().splitlines()[-1])
@@ -87,34 +82,21 @@ class RecordZoomTest(unittest.TestCase):
                               "-f", "rawvideo", "-pix_fmt", "gray", "-"], capture_output=True, check=True).stdout
         return np.frombuffer(raw, np.uint8).astype(float)
 
-    def test_zoomed_recording_differs_mid_zoom_and_keeps_its_length(self):
-        plain, _ = self.record(False)
+    def test_zoomed_recording_differs_mid_zoom_and_lasts_until_the_zoom_is_out(self):
         zoomed, res = self.record(True)
         err = subprocess.run([ffmpeg_exe(), "-i", str(zoomed)], capture_output=True, text=True).stderr
         h, m, s = re.search(r"Duration: (\d+):(\d+):([\d.]+)", err).groups()
-        self.assertAlmostEqual(float(s), 4.0, delta=0.2)
+        z = res["scenes"][0]["zooms"][0]
+        self.assertGreaterEqual(float(s), z["t_s"] + 2 * capture.ZOOM_EASE_S + z["hold_s"] - 0.1)  # the zoom eases back out
         self.assertIn("2560x1440", err)  # 2K by default, captured natively (no upscaling)
         self.assertEqual(len(res["scenes"][0]["zooms"]), 1)
-        t = res["scenes"][0]["zooms"][0]["t_s"] + 1.0  # inside the hold
-        self.assertGreater(np.abs(self.frame(zoomed, t) - self.frame(plain, t)).mean(), 8)
+        before, inside = self.frame(zoomed, 0.1), self.frame(zoomed, z["t_s"] + 1.0)
+        self.assertGreater(np.abs(inside - before).mean(), 8)
 
-    def test_a_late_click_gets_time_to_settle_before_the_cut(self):
-        out = Path(tempfile.mkdtemp())
-        for d in ("capture", "voice"):
-            (out / d).mkdir()
-        (out / "capture/steps.json").write_text(json.dumps({"version": 1, "base_url": self.base, "scenes": {"s05": {
-            "start": {"do": "goto", "url": "/"}, "steps": [{"do": "click", "target": {"role": "button", "name": "Search"}, "say": "end"}]}}}))
-        (out / "voice/voice.json").write_text(json.dumps({"version": 1, "clips": [
-            {"scene": "s05", "dur_s": 3.0, "words": [{"w": "end", "t0": 2.9, "t1": 3.0}]}]}))
-        (out / "timeline.json").write_text(json.dumps({"version": 1, "scenes": [
-            {"id": "s05", "visual": "capture", "lead_s": 0.3, "dur_s": 3.3, "start_s": 0}]}))
-        p = subprocess.run([sys.executable, str(SCRIPTS / "capture.py"), "record", "--out", str(out)], capture_output=True, text=True, timeout=300)
-        res = json.loads(p.stdout.strip().splitlines()[-1])
-        self.assertEqual(p.returncode, 0, res)
-        rec = json.loads((out / "capture/record.json").read_text())
-        last = res["scenes"][0]["actions"][-1]["at_s"]
-        self.assertGreaterEqual(rec["s05"]["need_s"], last + capture.SETTLE_S)
-        self.assertGreaterEqual(res["scenes"][0]["recorded_s"], rec["s05"]["need_s"] - 0.05)
+    def test_the_last_click_gets_time_to_settle_before_the_cut(self):
+        _, res = self.record(False)
+        sc = res["scenes"][0]
+        self.assertGreaterEqual(sc["recorded_s"], sc["actions"][-1]["at_s"] + capture.SETTLE_S - 0.05)
 
     def test_zoom_can_frame_a_different_element_than_the_one_acted_on(self):
         _, res = self.record({"scale": 1.3, "hold_s": 1.0, "target": {"css": "body"}})

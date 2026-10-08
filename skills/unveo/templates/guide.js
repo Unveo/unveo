@@ -1,6 +1,8 @@
-/* What the person sees in the browser unveo opens: a yellow bar and a dotted pointer while they log in, a yellow
-   "Recording…" screen before each scene, a green "Done" screen at the end. capture.py removes it before the camera
-   starts, so none of it is ever in the video. Lives in a shadow root so the app's CSS can't touch it. */
+/* What the person sees in the browser unveo opens: while they log in, the page is tinted yellow except a dashed
+   border (and a dotted arrow) around what to click; then a steady translucent yellow "Recording" tint with a card,
+   kept up by capture.py for as long as the window is open, and a green "Done" card at the end. The camera never
+   films this window (it records in a hidden or offscreen one), so none of it is ever in the video. Lives in a
+   shadow root so the app's CSS can't touch it. */
 (() => {
   if (window.__unveo) return;
   const YELLOW = "#fdfa8d", INK = "#111111";
@@ -19,7 +21,8 @@
              background: ${YELLOW}; color: ${INK}; padding: 12px 20px; border-radius: 14px; border: 1.5px solid ${INK};
              font: 600 15px/1.4 system-ui, sans-serif; display: flex; gap: 12px; align-items: center; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
       .logo { font: 800 16px/1 system-ui, sans-serif; letter-spacing: -.04em; }
-      .ring { position: fixed; border: 3px dashed ${INK}; border-radius: 12px; box-shadow: 0 0 0 4px ${YELLOW};
+      .ring { position: fixed; border: 3px dashed ${INK}; border-radius: 12px;
+              box-shadow: 0 0 0 4px ${YELLOW}, 0 0 0 200vmax rgba(253, 250, 141, .28);  /* the tint, with a hole where to act */
               animation: pulse 1.4s ease-in-out infinite; }
       .tip { position: fixed; background: ${INK}; color: #fff; font: 600 14px system-ui, sans-serif; padding: 7px 12px; border-radius: 8px; white-space: nowrap; }
       svg { position: fixed; overflow: visible; }
@@ -27,7 +30,7 @@
       .screen .big { font: 700 44px/1.1 system-ui, sans-serif; letter-spacing: -.02em; }
       .screen .small { font: 500 18px system-ui, sans-serif; opacity: .75; }
       .rec { width: 14px; height: 14px; border-radius: 50%; background: #e5484d; display: inline-block; margin-right: 12px; vertical-align: middle; animation: blink 1s infinite; }
-      .tint { position: fixed; inset: 0; background: rgba(253, 250, 141, .32); backdrop-filter: saturate(.85);
+      .tint { position: fixed; inset: 0; background: rgba(253, 250, 141, .32); backdrop-filter: saturate(.85); pointer-events: auto;
               display: flex; align-items: center; justify-content: center; transition: opacity .4s ease; }
       .tcard { background: ${YELLOW}; color: ${INK}; border: 2px solid ${INK}; border-radius: 22px; padding: 26px 34px;
                box-shadow: 8px 8px 0 ${INK}; display: flex; gap: 18px; align-items: center; max-width: min(620px, calc(100% - 40px)); }

@@ -2,9 +2,9 @@
 
   capture.py probe --url <url> [--out unveo-out/.work]   open the app once: status, title, login wall, screenshot
   capture.py check   [--out unveo-out/.work]             validate capture/steps.json, flag risky steps, list the plan in plain words
-  capture.py dry-run [--out unveo-out/.work] [--scene sNN]   run the steps fast, no recording; screenshots + failure details
-
-  capture.py record  [--out unveo-out/.work] [--scene sNN]   record each capture scene, paced to its voice clip
+  capture.py dry-run [--out unveo-out/.work]   run every scene fast, no recording; screenshots + failure details
+  capture.py record  [--out unveo-out/.work]   one take: every scene in order, one session, natural pace, no voice
+                                                needed -> capture/sNN.mp4 + capture/record.json (stitch.py retimes them)
 """
 import argparse, asyncio, base64, difflib, json, os, re, subprocess, sys, tempfile, time
 from pathlib import Path
@@ -75,8 +75,67 @@ async def hidden_session(p, vctx, vpage, steps, base):
         if b:
             await b.close()
         return None
-EARLY_S, MIN_GAP_S, GLIDE_MS = 0.3, 0.4, 550
-SETTLE_S = 0.8  # after the last action the page holds this long, so a cut never lands on a click
+async def offscreen_page(ctx, vpage, steps, base):
+    """A second window in the person's own browser, moved off the screen: it shares their login completely (only
+    sessionStorage is copied), so it works where a hidden browser was refused. None if it can't film there."""
+    pg = None
+    try:
+        origin = await vpage.evaluate("location.origin")
+        pairs = await vpage.evaluate("() => Object.entries(sessionStorage)")
+        await ctx.add_init_script(script=session_script(origin, pairs))
+        cdp = await ctx.new_cdp_session(vpage)
+        async with ctx.expect_page() as info:
+            await cdp.send("Target.createTarget", {"url": "about:blank", "newWindow": True, "background": True})
+        pg = await info.value
+        s = await ctx.new_cdp_session(pg)
+        try:  # off the screen; a headless browser has no windows to move
+            w = await s.send("Browser.getWindowForTarget")
+            await s.send("Browser.setWindowBounds", {"windowId": w["windowId"], "bounds": {"left": -6000, "top": 0}})
+        except Exception:
+            pass
+        await pg.set_viewport_size(ctx_args(steps)["viewport"])
+        await pg.goto(urljoin(base, steps["login"]["start"]), wait_until="load")
+        await aperform(pg, {**login_wait_step(steps), "timeout_ms": int(HIDDEN_CHECK_S * 1000)}, base, os.environ)
+        got = []
+
+        def on_frame(f):
+            got.append(1)
+            asyncio.ensure_future(s.send("Page.screencastFrameAck", {"sessionId": f["sessionId"]})).add_done_callback(lambda t: t.exception())
+        s.on("Page.screencastFrame", on_frame)
+        await s.send("Page.startScreencast", {"format": "jpeg", "quality": 30, "everyNthFrame": 1})
+        for i in range(30):  # up to 3 s for a first frame: an offscreen window that doesn't paint is no use
+            await pg.mouse.move(10 + i, 10)
+            await asyncio.sleep(0.1)
+            if got:
+                break
+        await s.send("Page.stopScreencast")
+        await s.detach()
+        if not got:
+            raise RuntimeError("the offscreen window sends no picture")
+        return pg
+    except Exception as e:
+        log(f"no offscreen window either ({str(e).splitlines()[0][:120]}); recording in the visible window")
+        if pg:
+            try:
+                await pg.close()
+            except Exception:
+                pass
+        return None
+
+
+async def keep_tint(page, state):
+    """Keep the person's window tinted for as long as it's open: redraw it every second, so a reload, a navigation or
+    the app re-rendering never leaves it bare. state[0] = (title, sub, done)."""
+    while True:
+        if state[0]:
+            await guide_async(page, "tint", *state[0])
+        await asyncio.sleep(1)
+
+
+EARLY_S, MIN_GAP_S, GLIDE_MS = 0.3, 0.5, 550
+LEAD_S = 0.6     # the take's natural pace: a beat before a scene's first action, then MIN_GAP_S between actions
+SETTLE_S = 0.8   # after the last action the page holds this long, so a cut never lands on a click
+MAX_SPEED = 2.5  # stitch.py may play a recording up to this much faster to meet its voice
 
 
 ZOOM_EASE_S, ZOOM_HOLD_S, ZOOM_SCALE = 0.6, 2.0, 1.6
@@ -150,10 +209,7 @@ def spotlight(img, k, box, pad=18):
 # ---------- rules (no browser)
 
 def validate(steps):
-    import looks
-    e = [f"{sid}: a scene's display can only be {' or '.join(looks.SCENE_DISPLAYS)}; the frame ({sc['display']}) is set once "
-         "for the whole video in film/design.json (\"display\")" for sid, sc in (steps.get("scenes") or {}).items()
-         if sc.get("display") and sc["display"] not in looks.SCENE_DISPLAYS]
+    e = []
     if steps.get("version") != 1:
         e.append("version must be 1")
     if not str(steps.get("base_url", "")).startswith(("http://", "https://")):
@@ -287,7 +343,10 @@ def login_plan(login):
             f"unveo carries on once it sees \"{sign}\"")
 
 
-PROFILE_ARGS = {"ignore_default_args": ["--enable-automation"], "args": ["--disable-blink-features=AutomationControlled"]}
+PROFILE_ARGS = {"ignore_default_args": ["--enable-automation"],
+                "args": ["--disable-blink-features=AutomationControlled",  # an offscreen window must keep painting:
+                         "--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding",
+                         "--disable-background-timer-throttling"]}
 
 
 def profile_dir(steps):
@@ -332,6 +391,14 @@ def load_steps(out):
     return steps
 
 
+def frame_warnings(steps):
+    """An older steps.json may give a scene its own frame; it's ignored (looks.display_for), so it's only a warning."""
+    import looks
+    return [f"{sid}: its display '{sc['display']}' is ignored; the frame is set once for the whole video in film/design.json "
+            f"(\"display\"), and a scene may only use {' or '.join(looks.SCENE_DISPLAYS)}"
+            for sid, sc in sorted((steps.get("scenes") or {}).items()) if sc.get("display") and sc["display"] not in looks.SCENE_DISPLAYS]
+
+
 def check_cmd(out):
     steps = load_steps(out)
     plan = {}
@@ -339,7 +406,7 @@ def check_cmd(out):
         plan["login"] = ([login_plan(steps["login"])] if is_manual(steps) else [plan_line(s) for s in steps["login"]["steps"]])
     for sid, sc in sorted(steps["scenes"].items()):
         plan[sid] = [plan_line(s) for s in ([sc["start"]] if sc.get("start") else []) + sc.get("steps", [])]
-    emit("capture", plan=plan, message="steps.json OK")
+    emit("capture", plan=plan, warnings=frame_warnings(steps), message="steps.json OK")
 
 
 # ---------- browser
@@ -416,7 +483,7 @@ def env_names(steps):
     return sorted(set(ENV.findall(json.dumps(steps))))
 
 
-def dry_run(out, only=None):
+def dry_run(out):
     from playwright.sync_api import sync_playwright, Error as PWError
     steps = load_steps(out)
     missing = [n for n in env_names(steps) if not os.environ.get(n)]
@@ -430,7 +497,7 @@ def dry_run(out, only=None):
         old.unlink()
     results, failures, skipped = [], [], []
     blocks = ([("login", steps["login"]["steps"], None)] if steps.get("login") and not is_manual(steps) else []) + [
-        (sid, sc.get("steps", []), sc) for sid, sc in sorted(steps["scenes"].items()) if not only or sid == only]
+        (sid, sc.get("steps", []), sc) for sid, sc in sorted(steps["scenes"].items())]
     visible = None
     with sync_playwright() as p:
         if is_manual(steps):
@@ -734,28 +801,27 @@ async def dismiss_banners(page):
             pass
 
 
-async def record_scenes(out, only):
+async def record_scenes(out):
+    """One take: every capture scene in order, in one browser session, under one continuous screencast, at a natural
+    pace (no voice needed). Each scene is cut out of the take as capture/sNN.mp4 at its own length; stitch.py ingest
+    later retimes it to the voice. A failing scene ends the take (later scenes depend on its page state)."""
     from playwright.async_api import async_playwright, Error as PWError
     o = Path(out)
     steps = load_steps(out)
     W, H = out_size(o)
     steps["_scale"] = W / 1920  # record at the output's pixel density: 2K is captured natively
     even = lambda v: int(round(v / 2) * 2)
-    try:
-        timeline = read_json(o / "timeline.json")
-        voice = {c["scene"]: c for c in read_json(o / "voice" / "voice.json")["clips"]}
-    except (OSError, ValueError) as e:
-        emit("capture", ok=False, user_action=True, message=f"run voice.py and plan_timeline.py first ({e})")
-    scenes = [s for s in timeline["scenes"] if s["visual"] == "capture" and (not only or s["id"] == only)]
-    missing = [s["id"] for s in scenes if s["id"] not in steps["scenes"]]
-    if missing:
-        emit("capture", ok=False, user_action=True, message=f"steps.json has no entry for {missing}")
+    order = sorted(steps["scenes"])
     env_missing = [n for n in env_names(steps) if not os.environ.get(n)]
     if env_missing:
         emit("capture", ok=False, user_action=True, missing_env=env_missing,
              message=f"Set {' and '.join(env_missing)} in your terminal first, then run again.")
-    base, results, failures = steps["base_url"], [], []
-    visible, hidden_browser, recorded_in = None, None, "hidden"
+    base, results, failures, skipped = steps["base_url"], [], [], []
+    shots = o / "capture" / "take"
+    shots.mkdir(parents=True, exist_ok=True)
+    for old in shots.glob("*.png"):
+        old.unlink()
+    visible, hidden_browser, recorded_in, keeper, tint = None, None, "hidden", None, [None]
     async with async_playwright() as p:
         if is_manual(steps):
             ctx = browser = await launch_profile_async(p, steps)
@@ -766,14 +832,18 @@ async def record_scenes(out, only):
             except PWError:
                 await ctx.close()
                 emit("capture", ok=False, user_action=True, message=login_timeout_msg(steps))
-            visible = page  # the person's window: from now on it only shows a calm tint
+            visible = page  # the person's window: from now on it shows the yellow "Recording" tint until it closes
             moved = await hidden_session(p, ctx, page, steps, base)
             if moved:
                 hidden_browser, ctx, page = moved
             else:
-                recorded_in = "window"
-            await guide_async(visible, "tint", "Recording in the background" if moved else "Recording in this window",
-                              "Getting ready…" if moved else "Please don't touch the mouse or keyboard until it's done.")
+                off = await offscreen_page(ctx, visible, steps, base)
+                page, recorded_in = (off, "offscreen") if off else (visible, "window")
+            if recorded_in != "window":
+                tint[0] = ("unveo is recording", "Getting ready… please leave this window open", False)
+                keeper = asyncio.ensure_future(keep_tint(visible, tint))
+            else:
+                await guide_async(visible, "tint", "Recording in this window", "Please don't touch the mouse or keyboard until it's done.")
         else:
             browser = await p.chromium.launch(args=launch_args(steps))
             ctx = await browser.new_context(**ctx_args(steps))
@@ -782,14 +852,32 @@ async def record_scenes(out, only):
             if steps.get("login"):
                 for st in steps["login"]["steps"]:
                     await aperform(page, st, base, os.environ)
+        title = None
+        if recorded_in == "window":  # the camera sees this window: lift the tint once, for the whole take
+            await asyncio.sleep(0.3)
+            await guide_async(page, "clear")
+            title = await page.title()
+            await page.evaluate("t => { document.title = t; }", "● REC · unveo")
+        cdp = await ctx.new_cdp_session(page)
+        bucket, last = [None], [None]  # frames go to the scene that's rolling; between scenes they're dropped
+
+        def on_frame(f):
+            md = f["metadata"]
+            fr = (md["timestamp"], f["data"], md.get("deviceWidth"), md.get("deviceHeight"))
+            last[0] = fr
+            if bucket[0] is not None:
+                bucket[0].append(fr)
+            ack = asyncio.ensure_future(cdp.send("Page.screencastFrameAck", {"sessionId": f["sessionId"]}))
+            ack.add_done_callback(lambda t: t.exception())  # a late ack after the page closed is harmless
+        cdp.on("Page.screencastFrame", on_frame)
+        await cdp.send("Page.startScreencast", {"format": "jpeg", "quality": 100, "maxWidth": 3840, "maxHeight": 2160, "everyNthFrame": 1})
         first = True
-        for k, scene in enumerate(scenes, 1):
-            sid, sc = scene["id"], steps["scenes"][scene["id"]]
-            words = (voice.get(sid) or {}).get("words", [])
+        for k, sid in enumerate(order, 1):
+            sc = steps["scenes"][sid]
             display = sc.get("display")
             phone = display == "phone"
             await page.set_viewport_size({"width": 430, "height": 932} if phone else ctx_args(steps)["viewport"])
-            try:  # get to the starting page before the camera rolls
+            try:  # get to the starting page between scenes; that part of the take is dropped
                 if sc.get("start") and page.url.rstrip("/") != urljoin(base, sc["start"]["url"]).rstrip("/"):
                     await aperform(page, sc["start"], base, os.environ)
                 elif page.url == "about:blank":
@@ -803,37 +891,25 @@ async def record_scenes(out, only):
                     first = False
             except PWError as e:
                 failures.append({"scene": sid, "step": "start", "error": str(e).splitlines()[0]})
-                continue
-            title = None
-            if visible is not None and recorded_in == "hidden":  # their window just says how far along it is
-                await guide_async(visible, "tint", "Recording in the background", f"Scene {k} of {len(scenes)} · you can leave this window")
-            elif visible is not None:  # recording in their window: lift the tint just before the camera rolls
-                await guide_async(page, "tint", "Recording in this window", f"Scene {k} of {len(scenes)} · hands off for a moment")
-                await asyncio.sleep(0.3)
-                await guide_async(page, "clear")
-                title = await page.title()
-                await page.evaluate("t => { document.title = t; }", f"● REC {sid} · unveo")
-                await page.evaluate("() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))")
+                break
+            if keeper:  # their window just says how far along it is
+                tint[0] = ("unveo is recording", f"Scene {k} of {len(order)} · please leave this window open", False)
+                await guide_async(visible, "tint", *tint[0])
+            await page.mouse.move(2, 2)  # nudge a repaint so the scene opens on a fresh frame
+            await page.evaluate("() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))")
             frames = []
-            cdp = await ctx.new_cdp_session(page)
-
-            def on_frame(f, cdp=cdp, frames=frames):
-                md = f["metadata"]
-                frames.append((md["timestamp"], f["data"], md.get("deviceWidth"), md.get("deviceHeight")))
-                ack = asyncio.ensure_future(cdp.send("Page.screencastFrameAck", {"sessionId": f["sessionId"]}))
-                ack.add_done_callback(lambda t: t.exception())  # a late ack after the page closed is harmless
-            cdp.on("Page.screencastFrame", on_frame)
-            await cdp.send("Page.startScreencast", {"format": "jpeg", "quality": 100, "maxWidth": 3840, "maxHeight": 2160, "everyNthFrame": 1})
             t0, wall0 = time.monotonic(), time.time()
-            at, actions, err, last_end = schedule(sc.get("steps", []), words, scene.get("lead_s", 0.3)), [], None, 0.0
-            zooms = []
+            if last[0]:
+                frames.append((wall0, *last[0][1:]))  # a still page sends no frames: open on what's showing
+            bucket[0] = frames
+            actions, zooms, err, last_end = [], [], None, 0.0
             for i, st in enumerate(sc.get("steps", [])):
                 f = flag(st)
                 if f == "payment" or (f == "destructive" and not st.get("approved")):
+                    skipped.append({"scene": sid, "step": i, "flag": f, "what": describe(st)})
                     continue
-                want = at[i] if at[i] is not None else last_end + (MIN_GAP_S if actions else 0)
-                await asyncio.sleep(max(0.0, want - (time.monotonic() - t0)))
-                actions.append({"step": i, "at_s": round(time.monotonic() - t0, 2), "do": st["do"]})
+                await asyncio.sleep(max(0.0, last_end + (MIN_GAP_S if actions else LEAD_S) - (time.monotonic() - t0)))
+                actions.append({"step": i, "at_s": round(time.monotonic() - t0, 2), "do": st["do"], "say": st.get("say", "")})
                 try:
                     await aperform(page, st, base, os.environ)
                     if not same_origin(page.url, base):
@@ -846,58 +922,76 @@ async def record_scenes(out, only):
                                           "hold_s": float(z.get("hold_s", ZOOM_HOLD_S)),
                                           "box": [round(box[k]) for k in ("x", "y", "width", "height")]})  # frames are CSS-pixel sized
                 except (PWError, RuntimeError, KeyError) as e:
-                    err = {"scene": sid, "step": i, "error": (str(e).splitlines() or [repr(e)])[0][:300]}
+                    wanted = target_text(st.get("target"))
+                    shot = shots / f"{sid}-fail.png"
+                    try:
+                        await page.screenshot(path=str(shot))
+                        near = difflib.get_close_matches(wanted, list(dict.fromkeys(await page.evaluate(CANDIDATES_JS))), n=5, cutoff=0)
+                    except PWError:
+                        near = []
+                    err = {"scene": sid, "step": i, "error": (str(e).splitlines() or [repr(e)])[0][:300],
+                           "closest": near, "screenshot": str(shot)}
                     break
                 last_end = time.monotonic() - t0
-            elapsed = time.monotonic() - t0
-            need = round(last_end + SETTLE_S, 2) if actions else 0.0
-            await asyncio.sleep(max(0.0, max(scene["dur_s"], need) - elapsed))
-            await page.mouse.move(1, 1)  # nudge a repaint so the hold has a fresh frame
+            zoom_end = max((z["t_s"] + 2 * ZOOM_EASE_S + z["hold_s"] for z in zooms), default=0.0)
+            raw = max(last_end + SETTLE_S, zoom_end, 1.0)  # the scene's natural length: settle after the last action
+            await asyncio.sleep(max(0.0, raw - (time.monotonic() - t0)))
+            await page.mouse.move(1, 1)  # a fresh frame for the end
             await asyncio.sleep(0.05)
-            await cdp.send("Page.stopScreencast")
-            if title is not None:
-                try:
-                    await page.evaluate("t => { document.title = t; }", title)
-                except PWError:
-                    pass
-            wall_end = wall0 + max(scene["dur_s"], time.monotonic() - t0)
-            await cdp.detach()
-            if not frames:
-                frames = [(wall0, base64.b64encode(await page.screenshot(type="jpeg", quality=90)).decode())]
+            bucket[0] = None
+            wall_end = wall0 + raw
+            if not err:
+                await page.screenshot(path=str(shots / f"{sid}.png"))
             path = o / "capture" / f"{sid}.mp4"
             size = (even(430 * steps["_scale"]), even(932 * steps["_scale"])) if phone else (W, H)
             encode(sorted(frames), wall0, wall_end, path, zooms, size=size, light=display == "spotlight")
+            area = next(([f[2], f[3]] for f in frames if len(f) == 4 and f[2] and f[3]), None)  # CSS size the camera saw
+            results.append({"scene": sid, "file": str(path), "recorded_s": round(raw, 2), "need_s": round(raw / MAX_SPEED, 2),
+                            "actions": actions, "zooms": zooms, "area": area, "ok": err is None})
             if err:
                 failures.append(err)
-            area = next(([f[2], f[3]] for f in frames if len(f) == 4 and f[2] and f[3]), None)  # CSS size the camera saw
-            results.append({"scene": sid, "file": str(path), "target_s": scene["dur_s"],
-                            "recorded_s": round(wall_end - wall0, 2), "over_s": round(max(0.0, elapsed - scene["dur_s"]), 2),
-                            "need_s": need, "actions": actions, "zooms": zooms, "area": area, "ok": err is None})
+                break  # the scenes after it start from this page state, so the take stops here
+        await cdp.send("Page.stopScreencast")
+        await cdp.detach()
+        if title is not None:
+            try:
+                await page.evaluate("t => { document.title = t; }", title)
+            except PWError:
+                pass
         if visible is not None:
-            await guide_async(visible, "tint", "Done. Recording finished.", "unveo closes this window by itself.", True)
+            tint[0] = ("Done. Recording finished.", "unveo closes this window by itself.", True)
+            await guide_async(visible, "tint", *tint[0])
             await asyncio.sleep(1.5)
+        if keeper:
+            keeper.cancel()
         if hidden_browser:
             await hidden_browser.close()
         await browser.close()
-    res = {"scenes": results, "failures": failures, "outputs": [r["file"] for r in results], "recorded_in": recorded_in}
-    rec = o / "capture" / "record.json"  # how long each recording needs; plan_timeline makes room for it
-    known = json.loads(rec.read_text()) if rec.exists() else {}
-    known.update({r["scene"]: {"need_s": r["need_s"], "recorded_s": r["recorded_s"]} for r in results})
-    rec.write_text(json.dumps(known, indent=1))
-    longer = [r["scene"] for r in results if r["need_s"] > r["target_s"] + 0.05]
-    if longer:
-        res["settle"] = longer
-        res["next"] = "run plan_timeline.py again: it lengthens " + ", ".join(longer) + " so the cut doesn't land on a click"
+    sheet = contact_sheet(shots)
+    res = {"scenes": results, "failures": failures, "skipped": skipped, "recorded_in": recorded_in,
+           "outputs": [r["file"] for r in results] + ([str(sheet)] if sheet else [])}
+    # the take, for stitch.py: each scene's natural length and when its actions happened
+    write_take(o, {r["scene"]: {k: r[k] for k in ("recorded_s", "need_s", "actions", "zooms")} for r in results})
     if failures:
-        emit("capture", ok=False, user_action=True, message=f"{len(failures)} scene(s) failed while recording", **res)
+        done = [r["scene"] for r in results if r["ok"]]
+        emit("capture", ok=False, user_action=True, message=f"{failures[0]['scene']} failed, so the take stopped there "
+             f"(recorded fine: {done or 'none'}). Fix it from 'closest' and the screenshot, then record again.", **res)
     want = {r["scene"]: 430 / 932 if (steps["scenes"][r["scene"]].get("display") == "phone") else 16 / 9 for r in results}
     boxed = [r["scene"] for r in results if r["area"] and abs(r["area"][0] / r["area"][1] / want[r["scene"]] - 1) > 0.02]
     if boxed:  # e.g. the person's window was resized or is smaller than the viewport: the video gets black bars
         res["letterboxed"] = boxed
         res["fix"] = ("the browser showed a non-16:9 area for " + ", ".join(boxed) + " (see each scene's area), so those videos "
-                      "have black bars; keep the recording window unresized (or use a bigger screen) and record them again")
-    over = [r["scene"] for r in results if r["over_s"] > 1.5]
-    emit("capture", message=f"recorded {len(results)} scene(s)" + (f"; {over} ran long" if over else ""), **res)
+                      "have black bars; keep the recording window unresized (or use a bigger screen) and record again")
+    emit("capture", message=f"recorded {len(results)} scene(s) in one take ({sum(r['recorded_s'] for r in results):.0f} s)", **res)
+
+
+def write_take(o, scenes):
+    (o / "capture" / "record.json").write_text(json.dumps(scenes, indent=1))
+
+
+def read_take(o):
+    f = Path(o) / "capture" / "record.json"
+    return json.loads(f.read_text()) if f.exists() else {}
 
 
 def contact_sheet(d):
@@ -958,8 +1052,7 @@ def main():
     pr = sub.add_parser("probe")
     pr.add_argument("--url", required=True)
     for name in ("check", "dry-run", "record"):
-        sp = sub.add_parser(name)
-        sp.add_argument("--scene")
+        sub.add_parser(name)
     for sp in sub.choices.values():
         sp.add_argument("--out", default="unveo-out/.work")
     a = ap.parse_args()
@@ -968,9 +1061,9 @@ def main():
     elif a.cmd == "check":
         check_cmd(a.out)
     elif a.cmd == "record":
-        asyncio.run(record_scenes(a.out, a.scene))
+        asyncio.run(record_scenes(a.out))
     else:
-        dry_run(a.out, a.scene)
+        dry_run(a.out)
 
 
 if __name__ == "__main__":

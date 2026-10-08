@@ -140,7 +140,8 @@ class StitchQaTest(unittest.TestCase):
         self.assertEqual(code, 0, res)
         top = {f.name for f in root.iterdir()}
         self.assertEqual(top - {"preview.png"}, {".work", ".gitignore", "your-clips", "demo-video.mp4", "subtitles.srt",
-                                                  "quality-check.md", "script.md"})
+                                                  "quality-check.md", "script.md", "scenes"})
+        self.assertEqual(len(list((root / "scenes").glob("s*.mp4"))), len(json.loads((work / "timeline.json").read_text())["scenes"]))
         self.assertEqual((root / "demo-video.mp4").stat().st_size, (work / "final.mp4").stat().st_size)
         self.assertNotIn("[", (root / "script.md").read_text())  # a clean read: no source tags
 

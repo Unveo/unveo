@@ -19,7 +19,7 @@ def frames(t):
 
 
 def build(scenes, clips, limit_s, needs=None):
-    """needs: scene id -> seconds a recording needs (its last action plus a moment to settle), from capture."""
+    """needs: scene id -> the shortest a recording can be (its take at the fastest retime speed), from capture."""
     out, start = [], 0.0
     for s in scenes:
         c = clips.get(s["id"])

@@ -102,6 +102,10 @@ class ValidateTest(unittest.TestCase):
         b["mode"] = "quick"
         self.assertEqual(brief.errors(b), [])
 
+    def test_quick_mode_needs_no_checkpoint_a(self):
+        b = good_brief(); b["understanding"]["confirmed_at"] = ""; b["mode"] = "quick"
+        self.assertEqual(brief.errors(b), [])
+
 
 class DefaultsTest(unittest.TestCase):
     def defaults(self, out, *args):
@@ -134,6 +138,27 @@ class DefaultsTest(unittest.TestCase):
         self.assertEqual(code, 0, res)
         self.assertEqual((b["voice"]["provider"], b["language"], b["limit_s"]), ("own", "hi", 90))
         self.assertEqual(b["header"]["event"], "HackX")
+        self.assertEqual(b["voice"]["rate"], "+10%")
+
+    def test_left_out_flags_keep_saved_answers_and_fresh_forgets_them(self):
+        with tempfile.TemporaryDirectory() as out:
+            (Path(out) / "repo_scan.json").write_text(json.dumps({"root": "/x", "readme": {}}))
+            (Path(out) / "brief.json").write_text(json.dumps({"mode": "quick", "language": "hi", "header": {"event": "HackX"}}))
+            self.defaults(out, "--limit", "90")
+            b = json.loads((Path(out) / "brief.json").read_text())
+            self.assertEqual((b["mode"], b["language"]), ("quick", "hi"))
+            self.assertTrue(b["voice"]["voice_id"].startswith("hi-"))
+            self.defaults(out, "--fresh", "--mode", "guided")
+            b = json.loads((Path(out) / "brief.json").read_text())
+        self.assertEqual((b["mode"], b["language"], b["header"]["event"]), ("guided", "en", ""))
+
+    def test_a_language_change_brings_a_voice_that_speaks_it(self):
+        with tempfile.TemporaryDirectory() as out:
+            (Path(out) / "repo_scan.json").write_text(json.dumps({"root": "/x", "readme": {}}))
+            (Path(out) / "brief.json").write_text(json.dumps({"language": "en", "voice": {"provider": "edge", "voice_id": "en-GB-SoniaNeural", "rate": "+10%"}}))
+            self.defaults(out, "--lang", "hi")
+            b = json.loads((Path(out) / "brief.json").read_text())
+        self.assertTrue(b["voice"]["voice_id"].startswith("hi-"))
 
 
 class StateTest(unittest.TestCase):
@@ -148,6 +173,15 @@ class StateTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(res["steps"]["understanding"]["status"], "approved")
         self.assertEqual(res["steps"]["understanding"]["hash"], "abc")
+
+    def test_next_follows_the_pipeline_and_reset_forgets(self):
+        with tempfile.TemporaryDirectory() as out:
+            for s in ("setup", "analyze", "understanding"):
+                self.run_state(out, "set", s, "done")
+            _, res = self.run_state(out, "show")
+            self.assertEqual(res["next"], "brief")
+            _, res = self.run_state(out, "reset")
+        self.assertEqual((res["steps"], res["next"]), ({}, "setup"))
 
     def test_unknown_status_is_an_error(self):
         with tempfile.TemporaryDirectory() as out:

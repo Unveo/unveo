@@ -3,7 +3,8 @@
   mix.py [--out unveo-out/.work]   ->  audio/mix.wav
 
 Each voice clip lands at its scene's start + lead; the music ducks 9 dB under the voice;
-two-pass loudnorm (I=-14, TP=-1.5) as in the upstream audio_template.py.
+two-pass loudnorm (I=-14, TP=-1.5) as in the upstream audio_template.py, then a -3 dBFS limiter so the AAC
+encode (stitch.py final) still measures under -1 dBTP.
 """
 import argparse, json, re, subprocess, sys
 from pathlib import Path
@@ -82,11 +83,13 @@ def main():
     mix = voice + music * gain[:, None]
     raw = o / "audio" / "mix_raw.wav"
     raw.parent.mkdir(exist_ok=True)
-    subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-f", "f32le", "-ar", str(SR), "-ac", "2", "-i", "-", str(raw)],
+    subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-f", "f32le", "-ar", str(SR), "-ac", "2", "-i", "-", "-c:a", "pcm_f32le", str(raw)],  # float: nothing clips before loudnorm
                    input=mix.astype(np.float32).tobytes(), check=True)
     j = measure(raw)
     af = (f"loudnorm=I=-14:TP=-1.5:LRA=11:measured_I={j['input_i']}:measured_TP={j['input_tp']}:measured_LRA={j['input_lra']}"
-          f":measured_thresh={j['input_thresh']}:offset={j['target_offset']}:linear=true")
+          f":measured_thresh={j['input_thresh']}:offset={j['target_offset']}:linear=true"
+          # then hold sample peaks at -3 dBFS: the AAC encode in stitch.py overshoots a -1.5 dBTP master by 1 dB or more
+          ",alimiter=limit=0.708:level=disabled:attack=2:release=50")
     out = o / "audio" / "mix.wav"
     subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-i", str(raw), "-af", af, "-ar", str(SR), "-c:a", "pcm_s24le", "-t", f"{total:.3f}", str(out)], check=True)
     raw.unlink()

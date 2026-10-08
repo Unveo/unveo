@@ -6,9 +6,10 @@
   const T = (tag, cls, html, style) => h(tag, cls, html, style);
   const parseNum = v => { const m = String(v).match(/^([^\d-]*)(-?[\d.,]+)(.*)$/); return m ? { pre: m[1], n: Number(m[2].replace(/,/g, "")), post: m[3], dec: (m[2].split(".")[1] || "").length } : null; };
 
-  // an icon from film/icons.js (open-licence, fetched by render.py); coloured by CSS, so it follows the look
+  // an icon from film/icons.js (open-licence, fetched by render.py); coloured by CSS, so it follows the look.
+  // Brand logos (logos:react, logos:claude-icon…) keep their real colours.
   const icon = (name, size, color) => window.ICONS && window.ICONS[name]
-    ? `<span class="ico" style="width:${size}px;height:${size}px;${color ? `color:${color}` : ""}">${window.ICONS[name]}</span>` : "";
+    ? `<span class="ico${String(name).startsWith("logos:") ? " brand" : ""}" style="width:${size}px;height:${size}px;${color ? `color:${color}` : ""}">${window.ICONS[name]}</span>` : "";
   window.ICON = icon;
   const B = {
     kicker: { build: pr => T("div", "eyebrow", esc(pr.text)) },
@@ -79,8 +80,8 @@
       draw: (el, k) => { const i = el.querySelector(".ico"); if (i) i.style.transform = `scale(${0.85 + 0.15 * k})`; },
     },
     "icon-row": {
-      build: pr => T("div", null, (pr.items || []).slice(0, 5).map(x =>
-        `<div class="it" style="display:flex;flex-direction:column;align-items:center;gap:14px;flex:1;text-align:center">${icon(x.icon, 88)}
+      build: pr => T("div", null, (pr.items || []).slice(0, 6).map(x =>  // size: the icon's px (88; ~140 for a wall of logos)
+        `<div class="it" style="display:flex;flex-direction:column;align-items:center;gap:14px;flex:1;text-align:center">${icon(x.icon, pr.size || 88)}
           <div style="font:550 28px/1.25 var(--font-body)">${esc(x.label || "")}</div></div>`).join(""), "display:flex;gap:28px;align-items:flex-start"),
       fit: true,
       draw: (el, k) => [...el.querySelectorAll(".it")].forEach((it, i) => { const q = clamp(k * 1.8 - i * 0.2); it.style.opacity = q; it.style.transform = `translateY(${(1 - q) * 18}px)`; }),
@@ -137,8 +138,10 @@
       },
     },
     "badge-cloud": {
-      build: pr => T("div", null, (pr.items || []).slice(0, 10).map(x =>
-        `<span class="bd chip" style="display:inline-block;margin:0 14px 14px 0;padding:12px 22px;border-radius:999px;font:550 26px var(--font-body)">${esc(x)}</span>`).join("")),
+      build: pr => T("div", null, (pr.items || []).slice(0, 10).map(x => {  // "Text" or {text, icon} (a logo beside it)
+        const it = typeof x === "string" ? { text: x } : x || {};
+        return `<span class="bd chip" style="display:inline-flex;flex-direction:row;align-items:center;gap:12px;margin:0 14px 14px 0;padding:12px 22px;border-radius:999px;font:550 26px var(--font-body)">${it.icon ? icon(it.icon, 32) : ""}${esc(it.text || "")}</span>`;
+      }).join("")),
       fit: true,
       draw: (el, k) => [...el.querySelectorAll(".bd")].forEach((b, i) => { b.style.opacity = clamp(k * 2.5 - i * 0.15); }),
     },

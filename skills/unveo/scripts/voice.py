@@ -6,7 +6,7 @@
 edge (default): each sentence is voiced on its own and joined with natural, varied pauses and a slight
 change of pace, so it doesn't read like one flat machine take. Exact word timings.
 kokoro: offline fallback, used for every scene if edge fails, so the voice never changes mid-video.
-own: the team's own approved takes from the teleprompter studio (studio.py), in voice/own/sNN.*.
+own: the team's own approved takes from the teleprompter studio (studio.py), in unveo-out/your-voice/sNN.*.
 Scenes whose text and voice settings are unchanged are skipped.
 """
 import argparse, asyncio, json, locale, os, platform, re, subprocess, sys, tempfile
@@ -306,6 +306,8 @@ def kokoro_clip(text, accent, path, voice_id=None):
     import soundfile as sf
     from kokoro_onnx import Kokoro
     m = HOME / "models/kokoro"
+    if not (m / "kokoro-v1.0.int8.onnx").exists():
+        raise ImportError(f"the Kokoro model files aren't in {m}")
     if _kokoro is None:
         _kokoro = Kokoro(str(m / "kokoro-v1.0.int8.onnx"), str(m / "voices-v1.0.bin"))
     vid, code, speed = KOKORO.get(accent, KOKORO["uk"] if accent != "us" else KOKORO["us"])
@@ -431,14 +433,24 @@ def main():
             log(f"voicing {sid} with {provider}")
             make(sid, provider)
             voiced.append(sid)
+    except ImportError as ke:  # --provider kokoro without the optional offline voice installed
+        setup = Path(__file__).parent / "check_setup.py"
+        emit("voice", ok=False, user_action=True, fix=f'python3 "{setup}" --fix --with-kokoro',
+             message=f"The offline Kokoro voice isn't installed ({ke}). Install it with the fix command, or use the default edge voice.")
     except RuntimeError as e:
         log(f"{e}; switching every scene to the offline Kokoro voice")
         provider, voiced = "kokoro", []
-        for s in scriptmod.parse((o / "script.md").read_text(encoding="utf-8")):
-            if s["narration"]:
-                texts.setdefault(s["id"], say_as(scriptmod.spoken(s["narration"]), v.get("say_as")))
-                make(s["id"], provider)
-                voiced.append(s["id"])
+        try:
+            for s in scriptmod.parse((o / "script.md").read_text(encoding="utf-8")):
+                if s["narration"]:
+                    texts.setdefault(s["id"], say_as(scriptmod.spoken(s["narration"]), v.get("say_as")))
+                    make(s["id"], provider)
+                    voiced.append(s["id"])
+        except (ImportError, OSError) as ke:  # the offline voice is optional and not installed by default
+            setup = Path(__file__).parent / "check_setup.py"
+            emit("voice", ok=False, user_action=True, fix=f'python3 "{setup}" --fix --with-kokoro',
+                 message=f"The free online voice failed ({e}) and the offline voice isn't installed ({ke.__class__.__name__}). "
+                         "Check the internet connection and run voice.py again, or install the offline voice with the fix command.")
     order = [s["id"] for s in scriptmod.parse((o / "script.md").read_text(encoding="utf-8")) if s["narration"]]
     write_json(vpath, {"provider": provider, "voice": voice_id if provider == "edge" else provider,
                        "lang": lang, "rate": rate, "clips": [clips[i] for i in order if i in clips]})

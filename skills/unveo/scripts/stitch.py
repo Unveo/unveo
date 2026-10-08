@@ -4,7 +4,9 @@
   stitch.py draft                     draft segments + mix -> draft.mp4 (960x540)
   stitch.py final                     segments + audio/mix.wav -> final.mp4
 
-A clip longer than its scene is trimmed; a shorter one holds its last frame. Each cut blends in by the look's transition.
+A recording from the take (capture.py record) is first retimed to its voice: each action with a 'say' word lands
+on that word, sped up to 2.5x where the take ran long and held on a frame where it ran short. A clip longer than its
+scene is trimmed; a shorter one holds its last frame. Each cut blends in by the look's transition.
 """
 import argparse, json, re, subprocess, sys, tempfile
 from pathlib import Path
@@ -157,6 +159,60 @@ def fit(src, dst, dur, w=1920, h=1080, bg="black", frame=None):
                     "-t", f"{dur:.3f}", "-an", *ENC, str(dst)], check=True)
 
 
+def retime_plan(raw_s, anchors, dur, max_speed=2.5, keep_until=None):
+    """[(start, end, speed, hold)] segments of a raw recording that play in `dur` seconds, each anchor (raw time,
+    wanted time) landing on its wanted time where it can: a segment that's early holds its last frame, one that's late
+    plays faster (never above max_speed, never slower than real time). The last segment plays only as fast as it must
+    to show everything up to keep_until (the last action settling; default: all of it), and its tail is trimmed."""
+    keep_until = raw_s if keep_until is None else min(raw_s, keep_until)
+    segs, cur, prev = [], 0.0, 0.0
+    pts = [(r, w) for r, w in sorted(anchors) if 0 < r < raw_s] + [(raw_s, dur)]
+    for i, (r, w) in enumerate(pts):
+        raw_dt, want = r - prev, w - cur
+        if raw_dt <= 0:
+            continue
+        final = i == len(pts) - 1
+        if want <= 0 and final:
+            break
+        need = max(0.0, keep_until - prev) if final else raw_dt
+        speed = 1.0 if want >= need else min(max_speed, need / want) if want > 0 else max_speed
+        play, end = raw_dt / speed, r
+        if final and play > want:  # still too long at full speed: cut the tail
+            end, play = prev + want * speed, want
+        hold = max(0.0, want - play) if not final else 0.0  # the end is held by fit()
+        if end - prev < 0.05 and segs:  # too short to cut out: just wait on the previous frame
+            segs[-1] = (*segs[-1][:3], segs[-1][3] + play + hold)
+        else:
+            segs.append((prev, end, speed, hold))
+        cur, prev = cur + play + hold, r
+    return segs
+
+
+def retime(o, sid, src, scene):
+    """The take's recording of one scene, its actions moved onto their voice words (capture/sNN-timed.mp4)."""
+    import capture
+    take = capture.read_take(o).get(sid)
+    if not take or not take.get("actions") or not (o / "capture" / "steps.json").exists():
+        return src
+    steps = (json.loads((o / "capture" / "steps.json").read_text(encoding="utf-8")).get("scenes", {}).get(sid) or {}).get("steps", [])
+    voice = {c["scene"]: c for c in read_json(o / "voice" / "voice.json")["clips"]} if (o / "voice" / "voice.json").exists() else {}
+    want = capture.schedule(steps, (voice.get(sid) or {}).get("words", []), scene.get("lead_s", 0.3))
+    anchors = [(a["at_s"], want[a["step"]]) for a in take["actions"] if a["step"] < len(want) and want[a["step"]] is not None]
+    keep = max(a["at_s"] for a in take["actions"]) + capture.GLIDE_MS / 1000 + capture.SETTLE_S
+    segs = retime_plan(duration(src), anchors, scene["dur_s"], capture.MAX_SPEED, keep)
+    if len(segs) == 1 and segs[0][2] == 1.0 and segs[0][3] == 0:
+        return src
+    parts = [f"[0:v]split={len(segs)}" + "".join(f"[i{k}]" for k in range(len(segs)))]
+    for k, (a, b, speed, hold) in enumerate(segs):
+        parts.append(f"[i{k}]trim=start={a:.3f}:end={b:.3f},setpts=(PTS-STARTPTS)/{speed:.4f},fps=30"
+                     + (f",tpad=stop_mode=clone:stop_duration={hold:.3f}" if hold > 0.01 else "") + f"[p{k}]")
+    parts.append("".join(f"[p{k}]" for k in range(len(segs))) + f"concat=n={len(segs)}:v=1:a=0[out]")
+    dst = o / "capture" / f"{sid}-timed.mp4"
+    subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-i", str(src), "-filter_complex", ";".join(parts), "-map", "[out]",
+                    "-an", *ENC, str(dst)], check=True)
+    return dst
+
+
 def shots_map(o):
     """scene id -> clips/<file> from shots.md lines like '## shot-01 → scene s07 · … · save as clips/shot-01.mp4'."""
     f = o / "shots.md"
@@ -203,14 +259,15 @@ def ingest(o, placeholders):
     _, handle = looks.plan_for(o)
     step_no = 0
     shots = shots_map(o)
-    missing, missing_ids, made = [], [], []
+    missing, missing_ids, made, no_take = [], [], [], []
     for s in tl["scenes"]:
         sid = s["id"]
         if s["visual"] == "capture":
             src = o / "capture" / f"{sid}.mp4"
             if not src.exists():
-                missing.append(f"capture/{sid}.mp4")
+                no_take.append(sid)
                 continue
+            src = retime(o, sid, src, s)
         elif s["visual"] == "clip":
             shot = shots.get(sid, f"shot-{sid[1:]}")
             src = find_clip(o, shot)
@@ -231,6 +288,9 @@ def ingest(o, placeholders):
         fit(src, o / "render" / "segments" / f"{sid}.mp4", end, *out_size(o), bg=bg, frame=frame)
         fit(src, o / "render" / "draft" / f"{sid}.mp4", end, 960, 540, bg=bg, frame=frame)
         made.append(sid)
+    if no_take:  # a placeholder can't stand in for the app: the take has to be recorded
+        emit("stitch", ok=False, user_action=True, missing_recordings=no_take, made=made,
+             message=f"No recording for {', '.join(no_take)} yet: run capture.py record (the whole take), then ingest again.")
     if missing and (o / "shots.md").exists():  # the person's copy of what to record, next to where the clips go
         clips_dir(o).mkdir(parents=True, exist_ok=True)
         (clips_dir(o) / "what-to-record.md").write_text((o / "shots.md").read_text(encoding="utf-8"), encoding="utf-8")

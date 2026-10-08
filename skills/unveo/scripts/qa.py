@@ -2,7 +2,8 @@
 
   qa.py [--out unveo-out/.work]
 
-Then copies the video, subtitles, a clean script, this report and the preview sheet to unveo-out/.
+When every blocking gate passes, copies the video, subtitles, a clean script, this report, the preview sheet
+and each scene on its own (unveo-out/scenes/sNN-<template>.mp4) to unveo-out/. A failing run publishes nothing.
 """
 import argparse, json, os, re, subprocess, sys
 from pathlib import Path
@@ -52,6 +53,14 @@ def publish(o, brief, tl):
     if (o / "script.md").exists():
         (root / "script.md").write_text(clean_script(o, brief, tl), encoding="utf-8")
         done.append(str(root / "script.md"))
+    scenes = root / "scenes"  # each scene cut from the finished video, with its voice and captions, to review one by one
+    shutil.rmtree(scenes, ignore_errors=True)
+    scenes.mkdir()
+    for sc in tl["scenes"]:
+        dst = scenes / f"{sc['id']}-{sc['template'] or sc['visual']}.mp4"
+        subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-ss", f"{sc['start_s']:.3f}", "-i", str(o / "final.mp4"),
+                        "-t", f"{sc['dur_s']:.3f}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", str(dst)], check=True)
+    done.append(str(scenes))
     return done
 
 
@@ -183,7 +192,7 @@ def main():
     if fails:
         lines += ["", "## How to fix"] + [f"- **{g['gate']}**: {FIX.get(g['gate'], '')}" for g in fails]
     (o / "qa.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    published = publish(o, brief, tl)
+    published = publish(o, brief, tl) if ok else []  # never hand over a video that failed a blocking gate
     design = json.loads((o / "film" / "design.json").read_text(encoding="utf-8")) if (o / "film" / "design.json").exists() else {}
     if ok and design.get("look"):  # so the next video gets a different look
         import looks

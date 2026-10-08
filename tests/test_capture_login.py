@@ -112,9 +112,51 @@ class HiddenRecordingTest(unittest.TestCase):
         self.assertEqual(res["recorded_in"], "hidden")
         self.assertLess(yellow_share(out / "capture/s05.mp4", 0.5), 0.01)
 
-    def test_falls_back_to_the_visible_window_when_the_login_cant_be_copied(self):
-        code, res, out = self.record("/login.html?mem=1")
+    def test_falls_back_to_the_visible_window_when_the_login_lives_only_in_that_page(self):
+        code, res, out = self.record("/login.html?mem=1")  # not in another browser, not in another window
         self.assertEqual(res["recorded_in"], "window")
+
+    def test_an_offscreen_window_shares_the_login_and_films(self):
+        import asyncio
+        from playwright.async_api import async_playwright
+        steps = {"base_url": self.base, "login": {"mode": "manual", "start": "/login.html",
+                                                  "until": {"for": "text", "value": "Continuing as"}}, "scenes": {}}
+
+        async def go():
+            async with async_playwright() as pw:
+                ctx = await pw.chromium.launch_persistent_context(tempfile.mkdtemp(), headless=True)
+                vis = ctx.pages[0]
+                await vis.goto(self.base + "/app.html")
+                await vis.evaluate("localStorage.setItem('token', 't-1')")  # logged in, in the person's browser
+                await vis.goto(self.base + "/login.html")
+                pg = await capture.offscreen_page(ctx, vis, steps, self.base)
+                await pg.goto(self.base + "/app.html")
+                text = await pg.text_content("h1")
+                same = pg is not vis
+                await ctx.close()
+                return text, same
+        text, same = asyncio.run(go())
+        self.assertTrue(same)
+        self.assertEqual(text, "Mini Risk Dashboard")
+
+    def test_the_tint_comes_back_after_the_page_navigates(self):
+        import asyncio
+        from playwright.async_api import async_playwright
+
+        async def go():
+            async with async_playwright() as pw:
+                b = await pw.chromium.launch()
+                page = await b.new_page()
+                await page.goto(self.base + "/auth.html?never=1")
+                keeper = asyncio.ensure_future(capture.keep_tint(page, [("unveo is recording", "Scene 1 of 2", False)]))
+                await asyncio.sleep(1.2)
+                await page.goto(self.base + "/app.html")  # a navigation wipes the page, guide and all
+                await asyncio.sleep(1.5)
+                txt = await page.evaluate("(document.getElementById('__unveo_guide') || {shadowRoot: {textContent: ''}}).shadowRoot.textContent")
+                keeper.cancel()
+                await b.close()
+                return txt
+        self.assertIn("unveo is recording", asyncio.run(go()))
 
     def test_tint_card_says_what_is_happening(self):
         from playwright.sync_api import sync_playwright

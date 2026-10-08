@@ -31,3 +31,7 @@ ISC License, Copyright (c) Lucide Contributors (https://github.com/lucide-icons/
 Icons fetched at render time come from the Iconify API (https://iconify.design) and only from sets
 whose licence needs no attribution (MIT, Apache-2.0, ISC, CC0-1.0, OFL-1.1); each one used is listed
 in unveo-out/.work/icons.json with its licence.
+
+Brand logos (skills/unveo/templates/film/icons/brands.json): from the Iconify "logos" set by Gil Barbara
+(https://github.com/gilbarbara/logos), CC0-1.0. The marks themselves are trademarks of their owners; unveo
+shows them only to name the tools a project uses or mentions, and no endorsement is implied.

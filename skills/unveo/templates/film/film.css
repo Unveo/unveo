@@ -10,6 +10,7 @@ html, body { background: #000; overflow: hidden; text-wrap: pretty; }  /* no one
 #stage.bg-app-shot::before { content: ""; position: absolute; inset: -40px; background: url("assets/probe.png") center/cover; filter: blur(28px) saturate(.6); opacity: .14; }
 .block { position: relative; }
 .ico { display: inline-flex; flex: none; color: var(--accent); }
+.ico.brand { color: inherit; }  /* a brand logo keeps its own colours (logos: set), whatever the look */
 .ico svg { width: 100%; height: 100%; display: block; }
 .scene { position: absolute; inset: 0; visibility: hidden; }
 .abs { position: absolute; }

@@ -64,6 +64,18 @@ class IconFetchTest(unittest.TestCase):
         self.assertIsNone(problem)
         self.assertIn("<svg", svg)
 
+    def test_brand_logos_ship_in_colour_and_need_no_network(self):
+        os.environ["UNVEO_ICON_API"] = "http://127.0.0.1:9"
+        for name in ("logos:react", "logos:python", "logos:claude-icon", "logos:openai-icon", "logos:github-copilot"):
+            svg, problem = render.fetch_icon(name)
+            self.assertIsNone(problem, name)
+            self.assertNotIn("currentColor", svg)  # its own colours, not the look's
+        self.assertIn("logos:postgresql", render.brand_icons())
+
+    def test_built_with_rows_are_collected(self):
+        self.assertEqual(render.icon_names({"built_with": ["logos:react"], "nodes": [{"icon": "logos:postgresql"}]}),
+                         {"logos:react", "logos:postgresql"})
+
     def test_search_lists_only_free_icons(self):
         self.assertEqual(render.search_icons("bank"), ["good:bank", "good:vote"])
 

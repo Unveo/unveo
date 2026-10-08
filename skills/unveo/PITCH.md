@@ -32,7 +32,7 @@ A scene's `target` is your estimate (words ÷ 2.2). The real length comes from i
 
 ## 2. Word budget
 
-`script.py budget --limit <s>` gives it: 60 s → 109 words · 90 s → 170 · 2 min → 231 · 3 min → 352 (English and Hindi alike). Split it by the shares above. `script.py check` fails above budget +5% and warns below 85%.
+`script.py budget --limit <s>` gives it: at a normal pace (+0%), 60 s → 109 words · 90 s → 170 · 2 min → 231 · 3 min → 352 (English and Hindi alike). `script.py check` scales it by the brief's `voice.rate`, so at the default +10% it's about a tenth more (90 s → about 187). Split it by the shares above. `script.py check` fails above budget +5% and warns below 85%.
 
 ## 3. How to write for judges
 
@@ -82,11 +82,11 @@ Narration: <impact line> [brief: close.impact_line]
 
 - **Heading:** `## sNN · <segment> · <visual> · target <s> s`. Add `· steps: sNN` (its own id) on capture scenes, and `· logic: Hn` on explainers.
   - Visuals: `anim:<template>`, `capture` or `clip`.
-  - Templates: `title`, `context`, `problem`, `product-intro`, `close`, `explainer-pipeline-flow`, `explainer-formula-breakdown`, `explainer-model-io`, `explainer-raw-vs-processed`, `explainer-system-map`.
+  - Templates: `compose` (a scene designed from blocks, preferred for context, problem and the intro), `title`, `context`, `problem`, `product-intro`, `close`, `explainer-pipeline-flow`, `explainer-formula-breakdown`, `explainer-model-io`, `explainer-raw-vs-processed`, `explainer-system-map`, and the story scenes `chapter`, `stat-hero`, `before-after`, `annotated-shot` (DESIGN.md).
 - **Every sentence that states something ends with a tag.** Questions (ending in `?`) need none:
   - `[src: path:line]` or `[src: path:start-end]`, with paths from the repo root; several sources are comma-separated
   - `[brief: field.path]`, for the user's answers
-  - `[understanding: confirmed]`, for field and problem lines the user confirmed at Checkpoint A (a shortened version of a confirmed line is fine; new claims are not)
+  - `[understanding: confirmed]`, for field and problem lines in understanding.md: confirmed by the user at Checkpoint A, or in Quick mode written from the repo with its own sources (a shortened version of a confirmed line is fine; new claims are not)
 - **`Narration:`** is exactly what gets spoken, minus the tags.
 - **`On screen:`** is optional, and short.
 

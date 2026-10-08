@@ -1,4 +1,5 @@
-/* system-map (docs/07 §3.5): { title, nodes:[{id,label,kind}], edges:[{from,to,label}], path:[node ids] } */
+/* system-map (docs/07 §3.5): { title, nodes:[{id,label,kind,icon?}], edges:[{from,to,label}], path:[node ids] }
+   icon: a logo for that part (logos:postgresql, logos:openai-icon…), else a glyph for its kind */
 UNVEO.scene("explainer-system-map", {
   build(root, d) {
     const { h, esc, question, exampleTag } = CORE;
@@ -32,7 +33,7 @@ UNVEO.scene("explainer-system-map", {
     });
     root.__nodes = nodes.map(n => {
       const q = pos[n.id];
-      const el = h("div", "abs card", `<span style="font-size:34px;color:var(--accent)">${icon[n.kind] || "◆"}</span><span>${esc(n.label)}</span>`,
+      const el = h("div", "abs card", `${n.icon && ICON(n.icon, 44) || `<span style="font-size:34px;color:var(--accent)">${icon[n.kind] || "◆"}</span>`}<span>${esc(n.label)}</span>`,
         `left:${q.x - 170}px;top:${q.y - 52}px;width:340px;height:104px;display:flex;align-items:center;justify-content:center;gap:16px;font:600 32px var(--font-display);z-index:3`);
       root.append(el);
       return { el, n };

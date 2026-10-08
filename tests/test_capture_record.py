@@ -45,33 +45,42 @@ class RecordTest(unittest.TestCase):
     def tearDownClass(cls):
         cls.srv.shutdown()
 
-    def test_records_each_scene_paced_to_the_voice(self):
+    def test_records_every_scene_in_one_take_at_a_natural_pace(self):
         out = Path(tempfile.mkdtemp())
         (out / "capture").mkdir()
-        (out / "voice").mkdir()
         (out / "capture/steps.json").write_text(json.dumps({"version": 1, "base_url": self.base, "scenes": {
             "s05": {"start": {"do": "goto", "url": "/"}, "steps": [
                 {"do": "type", "target": {"label": "Search"}, "text": "road", "say": "road"},
                 {"do": "click", "target": {"role": "button", "name": "Search"}, "say": "open"}]},
             "s06": {"steps": [{"do": "click", "target": {"role": "link", "name": "Open report"}, "say": "report"}]}}}))
-        (out / "voice/voice.json").write_text(json.dumps({"version": 1, "provider": "edge", "clips": [
-            {"scene": "s05", "file": "voice/s05.mp3", "dur_s": 3.0, "words": ScheduleTest.WORDS},
-            {"scene": "s06", "file": "voice/s06.mp3", "dur_s": 2.0, "words": [{"w": "report", "t0": 0.8, "t1": 1.2}]}]}))
-        (out / "timeline.json").write_text(json.dumps({"version": 1, "fps": 30, "scenes": [
-            {"id": "s05", "visual": "capture", "lead_s": 0.3, "voice_s": 3.0, "dur_s": 3.8, "start_s": 0},
-            {"id": "s06", "visual": "capture", "lead_s": 0.3, "voice_s": 2.0, "dur_s": 2.8, "start_s": 3.8}]}))
-        p = subprocess.run([sys.executable, str(SCRIPTS / "capture.py"), "record", "--out", str(out)],
+        p = subprocess.run([sys.executable, str(SCRIPTS / "capture.py"), "record", "--out", str(out)],  # no voice, no timeline
                            capture_output=True, text=True, timeout=300)
         res = json.loads(p.stdout.strip().splitlines()[-1])
         self.assertEqual(p.returncode, 0, res)
         by = {s["scene"]: s for s in res["scenes"]}
-        for sid, want in (("s05", 3.8), ("s06", 2.8)):
-            f = out / f"capture/{sid}.mp4"
-            self.assertTrue(f.exists(), sid)
-            self.assertAlmostEqual(duration(f), want, delta=0.35)
-        typed = by["s05"]["actions"][0]
-        self.assertAlmostEqual(typed["at_s"], 0.7, delta=0.35)   # 0.3 lead + 0.7 word - 0.3 early
+        take = json.loads((out / "capture/record.json").read_text())
+        for sid in ("s05", "s06"):
+            self.assertAlmostEqual(duration(out / f"capture/{sid}.mp4"), by[sid]["recorded_s"], delta=0.1)
+            self.assertGreaterEqual(by[sid]["recorded_s"], by[sid]["actions"][-1]["at_s"] + capture.SETTLE_S - 0.05)
+            self.assertAlmostEqual(take[sid]["need_s"], take[sid]["recorded_s"] / capture.MAX_SPEED, delta=0.02)
+        self.assertAlmostEqual(by["s05"]["actions"][0]["at_s"], capture.LEAD_S, delta=0.25)  # a natural beat, not the voice
+        self.assertEqual(by["s05"]["actions"][1]["say"], "open")
+        self.assertTrue((out / "capture/take/sheet.png").exists())
 
+    def test_a_failing_scene_stops_the_take_with_evidence(self):
+        out = Path(tempfile.mkdtemp())
+        (out / "capture").mkdir()
+        (out / "capture/steps.json").write_text(json.dumps({"version": 1, "base_url": self.base, "scenes": {
+            "s05": {"start": {"do": "goto", "url": "/"}, "steps": [{"do": "click", "target": {"role": "button", "name": "Serch"}, "timeout_ms": 1500}]},
+            "s06": {"steps": [{"do": "click", "target": {"role": "link", "name": "Open report"}}]}}}))
+        p = subprocess.run([sys.executable, str(SCRIPTS / "capture.py"), "record", "--out", str(out)],
+                           capture_output=True, text=True, timeout=300)
+        res = json.loads(p.stdout.strip().splitlines()[-1])
+        self.assertEqual(p.returncode, 2, res)
+        self.assertEqual([f["scene"] for f in res["failures"]], ["s05"])
+        self.assertNotIn("s06", [s["scene"] for s in res["scenes"]])  # later scenes depend on s05's page
+        self.assertIn("Search", res["failures"][0]["closest"])
+        self.assertTrue(Path(res["failures"][0]["screenshot"]).exists())
 
 if __name__ == "__main__":
     unittest.main()

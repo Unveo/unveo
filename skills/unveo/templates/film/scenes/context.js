@@ -1,4 +1,4 @@
-/* context: { eyebrow?, headline, points: [≤3 strings], stat?: { value, label, source } } */
+/* context: { eyebrow?, headline, points: [≤3 strings or {text, icon}], stat?: { value, label, source } } */
 UNVEO.scene("context", {
   build(root, d) { CORE_LIST.build(root, d, d.eyebrow || "The field", false); },
   draw(t, d, dur, root) { CORE_LIST.draw(t, d, dur, root); },
@@ -12,11 +12,13 @@ window.CORE_LIST = {
     root.__hl = words(h("div", "abs", null, `left:120px;top:176px;width:${hasStat ? 1020 : 1560}px;font:650 76px/1.08 var(--font-display);letter-spacing:-.03em`), d.headline || "");
     root.append(root.__eb, root.__hl);
     const items = d.points || d.pains || [];
-    root.__items = items.slice(0, 3).map((txt, i) => {
+    root.__items = items.slice(0, 3).map((it, i) => {
+      const txt = typeof it === "string" ? it : (it || {}).text || "";
+      const logo = typeof it === "object" && it && it.icon ? ICON(it.icon, 56) : "";
       const row = h("div", "abs card", null, `left:120px;top:${500 + i * 150}px;width:${hasStat ? 1020 : 1560}px;height:124px;display:flex;align-items:center;gap:30px;padding:0 40px`);
-      const mark = isProblem
+      const mark = logo || (isProblem
         ? `<div style="width:18px;height:18px;border-radius:50%;background:var(--bad);flex:none"></div>`
-        : `<div class="mono" style="font:600 30px 'Geist Mono';color:var(--accent);flex:none">0${i + 1}</div>`;
+        : `<div class="mono" style="font:600 30px 'Geist Mono';color:var(--accent);flex:none">0${i + 1}</div>`);
       row.innerHTML = `${mark}<div style="font:500 40px/1.2 var(--font-display)">${esc(txt)}</div>`;
       root.append(row);
       return row;

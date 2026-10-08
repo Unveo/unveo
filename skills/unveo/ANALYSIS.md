@@ -1,4 +1,4 @@
-# Understanding a project (Phase 1, step 6)
+# Understanding a project (Phase 1, step 5)
 
 Goal: an `understanding.md` a judge-minded teammate would agree with. `repo_scan.json` gives you candidates; you decide by reading the real files.
 
@@ -59,7 +59,7 @@ App URL:  <url> (<loads ✓ | failed: reason>, <no login | login needed>)
 ## Key features
 - <feature> (step N)
 
-## Hidden logic I can animate (pick up to 3; 2 recommended)
+## Hidden logic I can animate (pick up to 3; how many follows the focus)
 - [x] H1 <title>: <one line in plain words>
       <file:start-end>, appears at step N · pattern: <pattern>
 - [x] H2 …
@@ -72,4 +72,4 @@ App URL:  <url> (<loads ✓ | failed: reason>, <no login | login needed>)
 - <every file you read>
 ```
 
-Pre-tick the top 2 (`[x]`). When the app isn't a web app, or has no reachable URL, the journey is still written: those steps become clips the user records later.
+Pre-tick as many as the focus allows (`[x]`): balanced 2 (1 at 60 s), product 1 (0 at 60 s), explain 3 (2 at 60 s). When the app isn't a web app, or has no reachable URL, the journey is still written: those steps become clips the user records later.
