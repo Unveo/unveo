@@ -27,6 +27,7 @@ Markers used in every doc:
 | 13 | [SDLC roadmap](13-SDLC-ROADMAP.md) | Milestones M0 to M8, tasks, definition of done | Draft |
 | 14 | [Decisions](14-DECISIONS.md) | Why each decision was made (ADR log) | Draft |
 | 15 | [Weak points](15-WEAK-POINTS.md) | What still hurts, ranked, with status after the first two real videos | Draft |
+| 16 | [Quality audit](16-QUALITY-AUDIT.md) | What to improve in the video itself before launch: motion languages, recordings, story, audio, coverage | Draft |
 | — | [README](../README.md) | Public README draft | Draft |
 
 Owner of all docs: Sambhav Jain. Status values: **Draft** (written, not reviewed), **Reviewed** (your changes applied), **Frozen** (the build depends on it; changes need a new ADR).
