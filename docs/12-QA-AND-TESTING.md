@@ -22,6 +22,12 @@ Two layers:
 | 10 | Black or frozen frames | luma and difference scan | no fully black frame > 0.5 s, no frozen stretch > 3 s except the final hold | No (warn) |
 | 11 | Capture coverage | timeline.json | share of product scenes that are `capture` | No (report) |
 | 12 | Size | file size | report MB; warn above 500 MB (some upload forms cap here) | No (warn) |
+| 13 | Blank frames | each recording at 5 fps, 160×90 gray | no stretch ≥ 0.5 s that's 99.5% one flat colour | Yes |
+| 14 | App errors | `record.json` problems | no error on screen while recording (error text, a dev overlay) | Yes |
+| 15 | App warnings | `record.json` problems | console errors, failed requests, 5xx responses | No (report) |
+| 16 | Readable text | `record.json` text_px × camera zoom × display width | the app's typical text ≥ 18 px at 1080p | No (warn) |
+| 17 | Transitions | three frames per cut | no flat colour over 40% of a transition frame that's in neither scene and isn't their blend | No (warn) |
+| 18 | Privacy | `record.json` blurred | reports what was blurred | No (report) |
 
 **qa.md** starts with a one-line verdict (`PASS · 1:52 · −14.1 LUFS · 0 pops`), then a table of the gates, then fixes for any failure:
 

@@ -25,6 +25,7 @@ DESTRUCTIVE = re.compile(r"delete|remove|\bsend\b|e-?mail|\bsms\b|publish|\bpost
 ENV = re.compile(r"\$([A-Z_][A-Z0-9_]*)")
 DEFAULT_TIMEOUT_MS = 10000
 CURSOR_JS = Path(__file__).resolve().parents[1] / "templates" / "cursor.js"
+PRIVACY_JS = Path(__file__).resolve().parents[1] / "templates" / "privacy.js"
 GUIDE_JS = Path(__file__).resolve().parents[1] / "templates" / "guide.js"
 LOGIN_BAR = "Please log in here, any way you like. unveo carries on by itself once you're in."
 HIDDEN_CHECK_S = float(os.environ.get("UNVEO_HIDDEN_CHECK_S", 8))  # how long the hidden browser may take to show it's logged in
@@ -65,7 +66,7 @@ async def hidden_session(p, vctx, vpage, steps, base):
         b = await p.chromium.launch(args=launch_args(steps))
         c = await b.new_context(storage_state=state, **ctx_args(steps))
         await c.add_init_script(script=session_script(origin, pairs))
-        await c.add_init_script(path=str(CURSOR_JS))
+        await add_page_scripts(c, steps)
         pg = await c.new_page()
         await pg.goto(urljoin(base, steps["login"]["start"]), wait_until="load")
         await aperform(pg, {**login_wait_step(steps), "timeout_ms": int(HIDDEN_CHECK_S * 1000)}, base, os.environ)
@@ -156,7 +157,41 @@ def ctx_args(steps, hi_res=False):
     delivers device pixels when Chrome is started with --force-device-scale-factor (launch_args); the context's
     own device_scale_factor alone still gives CSS-sized frames (measured 7 Oct 2026). CSS zoom is not used."""
     z = float((steps.get("viewport") or {}).get("zoom", 1.0))
-    return {"viewport": {"width": round(1920 / z), "height": round(1080 / z)}, "device_scale_factor": pixel_scale(steps)}
+    args = {"viewport": {"width": round(1920 / z), "height": round(1080 / z)}, "device_scale_factor": pixel_scale(steps)}
+    if steps.get("_scheme"):  # the app's own dark or light theme, to match the look's ground (docs/16 R7)
+        args["color_scheme"] = steps["_scheme"]
+    return args
+
+
+def film_style(o):
+    """(accent, "dark"|"light") of the video being made, from brief.json's palette and the look in film/design.json."""
+    import looks, render
+    try:
+        tokens = json.loads((Path(o) / "brief.json").read_text(encoding="utf-8"))["palette"]["tokens"]
+    except (OSError, ValueError, KeyError):
+        return None, None
+    f = Path(o) / "film" / "design.json"
+    look = (json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}).get("look")
+    tokens = looks.palette(tokens, look) if look and "accent" in tokens else tokens
+    bg = tokens.get("bg")
+    return tokens.get("accent"), (("dark" if render.luminance(bg) < 0.2 else "light") if bg else None)
+
+
+def style_steps(o, steps):
+    """Fill in the private fields the browser needs from the video's style: _accent (cursor ring), _scheme."""
+    accent, scheme = film_style(o)
+    steps.setdefault("_accent", accent)
+    steps.setdefault("_scheme", scheme)
+    return steps
+
+
+async def add_page_scripts(ctx, steps):
+    """Before every page load: the drawn cursor (in the video's accent) and the privacy blur, unless steps.json
+    says "privacy": false (the email on screen is a demo account the team wants shown)."""
+    await ctx.add_init_script(script=f"window.__UNVEO_ACCENT = {json.dumps(steps.get('_accent'))};"
+                              f"window.__UNVEO_PRIVACY = {json.dumps(steps.get('privacy', True) is not False)};")
+    await ctx.add_init_script(path=str(CURSOR_JS))
+    await ctx.add_init_script(path=str(PRIVACY_JS))
 
 
 def launch_args(steps):
@@ -195,6 +230,76 @@ def zoom_crop(t, zooms, W, H, sx=1.0, sy=1.0):
     return 0, 0, W, H
 
 
+# ---------- the camera (docs/16 R1, R2): frame the app's content, then follow the clicks, like Screen Studio
+
+CAM_PAD, CAM_MAX, CAM_FOCUS, CAM_EASE_S = 56, 1.8, 1.3, 0.7  # CSS px around content; most zoom; zoom on a target; move time
+CAM_NEAR_S, CAM_FULL = 2.5, 0.92  # actions closer than this pan instead of zooming out; a crop wider than this is no crop
+FOCUS_DO = {"click", "submit", "type", "select", "hover"}
+
+
+def fit_169(box, W, H, pad=CAM_PAD, max_scale=CAM_MAX):
+    """The 16:9 crop [x, y, w, h] of a W x H page that shows box (CSS px) with padding: never more than max_scale
+    zoom, always inside the page, and the whole page when the content nearly fills it anyway."""
+    x, y, w, h = box
+    cw = min(W, max(w + 2 * pad, (h + 2 * pad) * W / H, W / max_scale))
+    if cw >= W * CAM_FULL:
+        return [0, 0, W, H]
+    ch = cw * H / W
+    x0 = min(max(0, x + w / 2 - cw / 2), W - cw)
+    y0 = min(max(0, y + h / 2 - ch / 2), H - ch)
+    return [round(x0), round(y0), round(cw), round(ch)]
+
+
+def focus_crop(base, target, W, H):
+    """Zoom CAM_FOCUS further in from the base crop, centred on the target but keeping all of it in view."""
+    tx, ty, tw, th = target
+    cw = max(base[2] / CAM_FOCUS, W / CAM_MAX, tw + 2 * CAM_PAD, (th + 2 * CAM_PAD) * W / H)
+    return fit_169([tx + tw / 2 - cw / 2, ty + th / 2 - cw * H / W / 2, cw, cw * H / W], W, H, pad=0)
+
+
+def camera_path(content, actions, W, H):
+    """Keyframes [{t_s, box}] for one scene. content: [(t_s, box)] the page's content box over time (capture
+    measures it at the start and after each action); actions: record.json actions, with their target 'box'.
+    Opens on the content; each click, type or select eases in on its target; a nearby next action pans there
+    instead of zooming out and in; after the last one the camera settles back on the whole content."""
+    if not content:
+        return []
+    at = lambda t: next((b for s, b in reversed(content) if s <= t + 1e-6), content[0][1])
+    path = [{"t_s": 0.0, "box": fit_169(content[0][1], W, H)}]
+    focus = [a for a in actions if a.get("box") and a.get("do") in FOCUS_DO]
+    for i, a in enumerate(focus):
+        base = fit_169(at(a["at_s"]), W, H)
+        path.append({"t_s": a["at_s"], "box": focus_crop(base, a["box"], W, H)})
+        nxt = focus[i + 1] if i + 1 < len(focus) else None
+        far = nxt and (nxt["at_s"] - a.get("end_s", a["at_s"]) > CAM_NEAR_S or
+                       abs(nxt["box"][0] - a["box"][0]) > path[-1]["box"][2] or abs(nxt["box"][1] - a["box"][1]) > path[-1]["box"][3])
+        if not nxt or far:  # back out to the content (as it is after this action) before the next move
+            end = a.get("end_s", a["at_s"] + 0.6)
+            path.append({"t_s": round(end + 0.3, 2), "box": fit_169(at(end), W, H)})
+    return [k for i, k in enumerate(path) if i == 0 or k["box"] != path[i - 1]["box"]]
+
+
+def _cam_at(t, start, end, t0):
+    e = min(1.0, max(0.0, (t - t0) / CAM_EASE_S))
+    e = 4 * e ** 3 if e < 0.5 else 1 - (-2 * e + 2) ** 3 / 2
+    return [a + (b - a) * e for a, b in zip(start, end)]
+
+
+def camera_crop(t, path, W, H, sx=1.0, sy=1.0):
+    """The frame-pixel crop at time t: each keyframe eases (in-out) from wherever the camera was to its box."""
+    if not path:
+        return 0, 0, W, H
+    cur, start, t0 = path[0]["box"], path[0]["box"], 0.0
+    for k in path[1:]:
+        if t < k["t_s"]:
+            break
+        start, cur, t0 = _cam_at(k["t_s"], start, cur, t0), k["box"], k["t_s"]  # from wherever the last move had got to
+    x, y, w, h = _cam_at(t, start, cur, t0)
+    x, y, w = x * sx, y * sy, w * sx
+    h = w * H / W
+    return min(max(0, round(x)), W - round(w)), min(max(0, round(y)), H - round(h)), round(w), round(h)
+
+
 def spotlight(img, k, box, pad=18):
     """Dim everything but the zoom's target (a "spotlight" display): the page stays still, the light moves."""
     from PIL import Image, ImageDraw
@@ -230,6 +335,15 @@ def validate(steps):
             e.append(f"login.until for {u['for']} needs a value")
     blocks = [("login", login.get("steps", []))]
     for sid, sc in scenes.items():
+        if sc.get("reuse"):  # a hook: the end of another scene's take, nothing recorded of its own
+            src = scenes.get(sc["reuse"]) or {}
+            if not src or src.get("reuse"):
+                e.append(f"{sid}: reuse must name a recorded scene in steps.json ({sc['reuse']} isn't one)")
+            if sc.get("steps"):
+                e.append(f"{sid}: a reused scene has no steps of its own")
+            if not 1.0 <= float(sc.get("last_s", 4.0)) <= 8.0:
+                e.append(f"{sid}: last_s must be between 1 and 8 seconds")
+            continue
         zs = [st for st in sc.get("steps", []) if st.get("zoom")]
         if len(zs) > 1:
             e.append(f"{sid}: only one zoom per scene, so it stays subtle ({len(zs)} found)")
@@ -391,6 +505,11 @@ def load_steps(out):
     return steps
 
 
+def recorded(steps):
+    """Scene ids the take records, in order; a reused scene (a hook) is cut from another scene's take instead."""
+    return sorted(sid for sid, sc in steps["scenes"].items() if not sc.get("reuse"))
+
+
 def frame_warnings(steps):
     """An older steps.json may give a scene its own frame; it's ignored (looks.display_for), so it's only a warning."""
     import looks
@@ -405,7 +524,8 @@ def check_cmd(out):
     if steps.get("login"):
         plan["login"] = ([login_plan(steps["login"])] if is_manual(steps) else [plan_line(s) for s in steps["login"]["steps"]])
     for sid, sc in sorted(steps["scenes"].items()):
-        plan[sid] = [plan_line(s) for s in ([sc["start"]] if sc.get("start") else []) + sc.get("steps", [])]
+        plan[sid] = ([f"the last {sc.get('last_s', 4.0):g} s of {sc['reuse']}, shown first as the hook"] if sc.get("reuse") else
+                     [plan_line(s) for s in ([sc["start"]] if sc.get("start") else []) + sc.get("steps", [])])
     emit("capture", plan=plan, warnings=frame_warnings(steps), message="steps.json OK")
 
 
@@ -465,6 +585,99 @@ CANDIDATES_JS = """() => [...document.querySelectorAll('a,button,input,select,te
   .map(e => (e.innerText || e.getAttribute('aria-label') || e.getAttribute('placeholder') || e.value || '').trim())
   .filter(t => t && t.length < 60)"""
 
+# the box [x, y, w, h] (CSS px, in the viewport) holding the page's real content: visible text weighted by area, with
+# the outer 3% of that weight trimmed on each side so a lone logo or footer link doesn't widen it; then every control
+# and picture near that text, so the field or button about to be clicked is never cut off. Also the typical text
+# size (the area-weighted median, CSS px), so QA can tell whether the app's text will be readable in the video.
+CONTENT_JS = """() => {
+  const W = innerWidth, H = innerHeight, rects = [], things = [], sizes = [];
+  const ours = e => e.closest('[data-unveo], #__unveo_guide');
+  const clip = r => { const x0 = Math.max(0, r.left), y0 = Math.max(0, r.top), x1 = Math.min(W, r.right), y1 = Math.min(H, r.bottom);
+    return x1 - x0 > 2 && y1 - y0 > 2 ? [x0, y0, x1, y1, (x1 - x0) * (y1 - y0)] : null; };
+  const add = r => { const c = clip(r); if (c) rects.push(c); };
+  const tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n; (n = tw.nextNode());) {
+    const p = n.parentElement;
+    if (!n.data.trim() || !p || ours(p)) continue;
+    const st = getComputedStyle(p);
+    if (st.visibility === 'hidden' || +st.opacity === 0) continue;
+    const rg = document.createRange(); rg.selectNodeContents(n);
+    const before = rects.length;
+    for (const r of rg.getClientRects()) add(r);
+    for (const r of rects.slice(before)) sizes.push([parseFloat(st.fontSize), r[4]]);
+  }
+  for (const e of document.querySelectorAll('input,select,textarea,button,img,svg,canvas,video,[role=button]')) {
+    if (ours(e)) continue;
+    const c = clip(e.getBoundingClientRect());
+    if (c && c[4] < 0.5 * W * H) things.push(c);
+  }
+  if (!rects.length) rects.push(...things);
+  if (!rects.length) return null;
+  const total = rects.reduce((a, r) => a + r[4], 0);
+  const edge = (i, asc) => { const s = [...rects].sort((a, b) => asc ? a[i] - b[i] : b[i] - a[i]); let acc = 0;
+    for (const r of s) { acc += r[4]; if (acc >= 0.03 * total) return r[i]; } return s[s.length - 1][i]; };
+  let x0 = edge(0, true), y0 = edge(1, true), x1 = edge(2, false), y1 = edge(3, false);
+  const m = 0.25 * Math.max(x1 - x0, y1 - y0);
+  for (const [a, b, c, d] of things) {
+    const cx = (a + c) / 2, cy = (b + d) / 2;
+    if (cx > x0 - m && cx < x1 + m && cy > y0 - m && cy < y1 + m) { x0 = Math.min(x0, a); y0 = Math.min(y0, b); x1 = Math.max(x1, c); y1 = Math.max(y1, d); }
+  }
+  sizes.sort((a, b) => a[0] - b[0]);
+  let acc = 0, font = null;
+  const all = sizes.reduce((a, s) => a + s[1], 0);
+  for (const [f, w] of sizes) { acc += w; if (acc >= all / 2) { font = f; break; } }
+  return {box: [Math.round(x0), Math.round(y0), Math.round(x1 - x0), Math.round(y1 - y0)], font};
+}"""
+
+# an error a judge would see (docs/16 Q2): a framework's error overlay, or an error page's words on screen
+SCREEN_ERROR_JS = """() => {
+  const hits = [];
+  if (document.querySelector('nextjs-portal, vite-error-overlay, #webpack-dev-server-client-overlay, [data-nextjs-dialog]'))
+    hits.push('a development error overlay');
+  const text = (document.body && document.body.innerText || '').slice(0, 20000);
+  const m = text.match(/something went wrong|application error|internal server error|unhandled runtime error|this page could not be found|404[^\\n]{0,12}not found|page not found|failed to fetch|cannot (get|post) \\//i);
+  if (m) hits.push('"' + m[0] + '" on screen');
+  return hits;
+}"""
+
+# a loading state on screen (docs/16 R6): the take's busy time, which the retime cuts first
+BUSY_JS = """() => [...document.querySelectorAll('[aria-busy=true], .spinner, .loading, .loader, [role=progressbar]')]
+  .some(e => { const r = e.getBoundingClientRect(), s = getComputedStyle(e);
+    return r.width > 4 && r.height > 4 && s.visibility !== 'hidden' && +s.opacity > 0.1 && s.display !== 'none'; })"""
+
+
+def idle_spans(times, end_s, keep_after=None, min_gap=0.8, margin=0.15):
+    """When nothing moved on screen: the screencast only sends a frame when the page changes, so a gap between
+    frames longer than min_gap is idle time (less a small margin each side). Nothing after keep_after counts:
+    that's the result the judge reads."""
+    ts = sorted(t for t in times if 0 <= t <= end_s) + [end_s]
+    stop = end_s if keep_after is None else min(end_s, keep_after)
+    out = []
+    for a, b in zip(ts, ts[1:]):
+        b = min(b, stop)
+        if b - a > min_gap:
+            out.append([round(a + margin, 2), round(b - margin, 2)])
+    return out
+
+
+def warm(urls, wait_s=90):
+    """Wake sleeping free-tier servers before the take (docs/16 R6): ask each URL until it answers below 500."""
+    import urllib.error, urllib.request
+    for url in dict.fromkeys(u for u in urls if u):
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < wait_s:
+            try:
+                with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "unveo"}), timeout=30) as r:
+                    if r.status < 500:
+                        break
+            except urllib.error.HTTPError as e:
+                if e.code < 500:
+                    break
+            except (OSError, ValueError):
+                pass
+            log(f"waiting for {url} to wake up…")
+            time.sleep(5)
+
 
 def closest(page, wanted):
     try:
@@ -485,7 +698,7 @@ def env_names(steps):
 
 def dry_run(out):
     from playwright.sync_api import sync_playwright, Error as PWError
-    steps = load_steps(out)
+    steps = style_steps(out_dir(out), load_steps(out))
     missing = [n for n in env_names(steps) if not os.environ.get(n)]
     if missing:
         emit("capture", ok=False, user_action=True, missing_env=missing,
@@ -497,7 +710,7 @@ def dry_run(out):
         old.unlink()
     results, failures, skipped = [], [], []
     blocks = ([("login", steps["login"]["steps"], None)] if steps.get("login") and not is_manual(steps) else []) + [
-        (sid, sc.get("steps", []), sc) for sid, sc in sorted(steps["scenes"].items())]
+        (sid, steps["scenes"][sid].get("steps", []), steps["scenes"][sid]) for sid in recorded(steps)]
     visible = None
     with sync_playwright() as p:
         if is_manual(steps):
@@ -691,19 +904,23 @@ def schedule(steps, words, lead_s):
 
 
 async def glide(page, loc):
+    """Move the drawn cursor onto the target; returns the target's box [x, y, w, h] (CSS px), for the camera."""
     await loc.scroll_into_view_if_needed(timeout=DEFAULT_TIMEOUT_MS)
     box = await loc.bounding_box()
     if box:
         await page.evaluate("([x, y, ms]) => window.__unveoCursor && window.__unveoCursor.moveTo(x, y, ms)",
                             [box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, GLIDE_MS])
+        return [round(box[k]) for k in ("x", "y", "width", "height")]
+    return None
 
 
 async def aperform(page, st, base, env):
+    """Do one step; returns the target's box when the cursor went to one (else None)."""
     to = st.get("timeout_ms", DEFAULT_TIMEOUT_MS)
     loc = locate(page, st["target"]).first if st.get("target") else None
-    do = st["do"]
+    do, box = st["do"], None
     if do in ("click", "submit", "hover", "type", "select"):
-        await glide(page, loc)
+        box = await glide(page, loc)
     if do == "goto":
         await page.goto(urljoin(base, st["url"]), wait_until="load", timeout=to)
     elif do in ("click", "submit"):
@@ -744,11 +961,13 @@ async def aperform(page, st, base, env):
             await page.wait_for_timeout(st["value"])
     elif do == "pause":
         await page.wait_for_timeout(st["ms"])
+    return box
 
 
-def encode(frames, t_start, t_end, path, zooms=(), size=(1920, 1080), light=False):
+def encode(frames, t_start, t_end, path, zooms=(), size=(1920, 1080), light=False, camera=()):
     """Timestamped JPEG frames -> constant 30 fps h264 (1920x1080, or a phone's 430x932). Each frame shows until the
-    next one arrives; zooms crop in smoothly (zoom_crop), or with light=True dim around the target instead (spotlight)."""
+    next one arrives; zooms crop in smoothly (zoom_crop), or with light=True dim around the target instead (spotlight);
+    without zooms, a camera path (camera_path) frames the content and follows the clicks."""
     OW, OH = size
     import io
     from bisect import bisect_right
@@ -771,6 +990,8 @@ def encode(frames, t_start, t_end, path, zooms=(), size=(1920, 1080), light=Fals
             if light:
                 k, z = zoom_k(t, zooms)
                 crop = (0, 0, *img.size, round(k, 2))
+            elif camera and not zooms:
+                crop = camera_crop(t, camera, *img.size, sx, sy)
             else:
                 crop = zoom_crop(t, zooms, *img.size, sx, sy)
             if (idx, crop) != cache_key:
@@ -807,11 +1028,11 @@ async def record_scenes(out):
     later retimes it to the voice. A failing scene ends the take (later scenes depend on its page state)."""
     from playwright.async_api import async_playwright, Error as PWError
     o = Path(out)
-    steps = load_steps(out)
+    steps = style_steps(o, load_steps(out))
     W, H = out_size(o)
     steps["_scale"] = W / 1920  # record at the output's pixel density: 2K is captured natively
     even = lambda v: int(round(v / 2) * 2)
-    order = sorted(steps["scenes"])
+    order = recorded(steps)
     env_missing = [n for n in env_names(steps) if not os.environ.get(n)]
     if env_missing:
         emit("capture", ok=False, user_action=True, missing_env=env_missing,
@@ -822,10 +1043,11 @@ async def record_scenes(out):
     for old in shots.glob("*.png"):
         old.unlink()
     visible, hidden_browser, recorded_in, keeper, tint = None, None, "hidden", None, [None]
+    await asyncio.to_thread(warm, [base] + list(steps.get("warm", [])))
     async with async_playwright() as p:
         if is_manual(steps):
             ctx = browser = await launch_profile_async(p, steps)
-            await ctx.add_init_script(path=str(CURSOR_JS))
+            await add_page_scripts(ctx, steps)
             page = ctx.pages[0] if ctx.pages else await ctx.new_page()
             try:
                 await manual_login_async(page, steps, base)
@@ -847,7 +1069,7 @@ async def record_scenes(out):
         else:
             browser = await p.chromium.launch(args=launch_args(steps))
             ctx = await browser.new_context(**ctx_args(steps))
-            await ctx.add_init_script(path=str(CURSOR_JS))
+            await add_page_scripts(ctx, steps)
             page = await ctx.new_page()
             if steps.get("login"):
                 for st in steps["login"]["steps"]:
@@ -858,6 +1080,40 @@ async def record_scenes(out):
             await guide_async(page, "clear")
             title = await page.title()
             await page.evaluate("t => { document.title = t; }", "● REC · unveo")
+        problems, rolling = [], [None]  # console errors and failed requests during each scene (docs/16 Q2)
+
+        def note(kind, text):
+            if rolling[0]:
+                problems.append({"scene": rolling[0], "kind": kind, "detail": str(text)[:200]})
+        page.on("console", lambda m: m.type == "error" and note("console", m.text))
+        page.on("pageerror", lambda e: note("page error", e))
+        page.on("requestfailed", lambda r: "ERR_ABORTED" not in str(r.failure) and note("request failed", f"{r.method} {r.url} ({r.failure})"))
+        page.on("response", lambda r: r.status >= 500 and note("server error", f"{r.status} {r.request.method} {r.url}"))
+
+        async def content_box():
+            try:
+                c = await page.evaluate(CONTENT_JS)
+            except PWError:
+                return None
+            if c and c.get("font"):
+                fonts.append(c["font"])
+            return c and c["box"]
+
+        async def watch_busy(t0, spans):  # when a spinner or loading state is on screen, in scene time
+            on = None
+            while True:
+                try:
+                    busy = await page.evaluate(BUSY_JS)
+                except PWError:
+                    busy = False
+                now = round(time.monotonic() - t0, 2)
+                if busy and on is None:
+                    on = now
+                elif not busy and on is not None:
+                    spans.append([on, now])
+                    on = None
+                await asyncio.sleep(0.25)
+        css = ctx_args(steps)["viewport"]
         cdp = await ctx.new_cdp_session(page)
         bucket, last = [None], [None]  # frames go to the scene that's rolling; between scenes they're dropped
 
@@ -897,11 +1153,17 @@ async def record_scenes(out):
                 await guide_async(visible, "tint", *tint[0])
             await page.mouse.move(2, 2)  # nudge a repaint so the scene opens on a fresh frame
             await page.evaluate("() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))")
+            scene_url, content, fonts = page.url, [], []
+            first_box = await content_box()
             frames = []
             t0, wall0 = time.monotonic(), time.time()
             if last[0]:
                 frames.append((wall0, *last[0][1:]))  # a still page sends no frames: open on what's showing
-            bucket[0] = frames
+            bucket[0], rolling[0] = frames, sid
+            if first_box:
+                content.append((0.0, first_box))
+            busy = []
+            busy_task = asyncio.ensure_future(watch_busy(t0, busy))
             actions, zooms, err, last_end = [], [], None, 0.0
             for i, st in enumerate(sc.get("steps", [])):
                 f = flag(st)
@@ -911,7 +1173,9 @@ async def record_scenes(out):
                 await asyncio.sleep(max(0.0, last_end + (MIN_GAP_S if actions else LEAD_S) - (time.monotonic() - t0)))
                 actions.append({"step": i, "at_s": round(time.monotonic() - t0, 2), "do": st["do"], "say": st.get("say", "")})
                 try:
-                    await aperform(page, st, base, os.environ)
+                    box = await aperform(page, st, base, os.environ)
+                    if box:
+                        actions[-1]["box"] = box
                     if not same_origin(page.url, base):
                         raise RuntimeError(f"left the app: went outside {base} to {page.url}")
                     if st.get("zoom"):
@@ -933,21 +1197,41 @@ async def record_scenes(out):
                            "closest": near, "screenshot": str(shot)}
                     break
                 last_end = time.monotonic() - t0
+                actions[-1]["end_s"] = round(last_end, 2)
+                after = await content_box()
+                if after:
+                    content.append((round(last_end, 2), after))
             zoom_end = max((z["t_s"] + 2 * ZOOM_EASE_S + z["hold_s"] for z in zooms), default=0.0)
             raw = max(last_end + SETTLE_S, zoom_end, 1.0)  # the scene's natural length: settle after the last action
             await asyncio.sleep(max(0.0, raw - (time.monotonic() - t0)))
             await page.mouse.move(1, 1)  # a fresh frame for the end
             await asyncio.sleep(0.05)
-            bucket[0] = None
+            bucket[0], rolling[0] = None, None
+            busy_task.cancel()
             wall_end = wall0 + raw
+            try:
+                seen = await page.evaluate(SCREEN_ERROR_JS)
+                blurred = await page.evaluate("() => window.__unveoPrivacy ? window.__unveoPrivacy.stats() : null")
+            except PWError:
+                seen, blurred = [], None
+            problems += [{"scene": sid, "kind": "on screen", "detail": x} for x in seen]
+            use_camera = not zooms and not phone and display != "spotlight" and sc.get("camera", steps.get("camera", True)) is not False
+            camera = camera_path(content, actions, css["width"], css["height"]) if use_camera else []
+            busy_idle = [[a, b] for a, b in busy if b - a > 1.0]
+            idle = idle_spans([f[0] - wall0 for f in frames], raw, keep_after=last_end) + busy_idle
             if not err:
                 await page.screenshot(path=str(shots / f"{sid}.png"))
+            if not frames:  # the screencast sent nothing at all (a still page right after a resize): one screenshot
+                frames = [(wall0, base64.b64encode(await page.screenshot(type="jpeg", quality=95)).decode())]
             path = o / "capture" / f"{sid}.mp4"
             size = (even(430 * steps["_scale"]), even(932 * steps["_scale"])) if phone else (W, H)
-            encode(sorted(frames), wall0, wall_end, path, zooms, size=size, light=display == "spotlight")
+            encode(sorted(frames), wall0, wall_end, path, zooms, size=size, light=display == "spotlight", camera=camera)
             area = next(([f[2], f[3]] for f in frames if len(f) == 4 and f[2] and f[3]), None)  # CSS size the camera saw
             results.append({"scene": sid, "file": str(path), "recorded_s": round(raw, 2), "need_s": round(raw / MAX_SPEED, 2),
-                            "actions": actions, "zooms": zooms, "area": area, "ok": err is None})
+                            "actions": actions, "zooms": zooms, "camera": camera, "idle": idle, "url": scene_url,
+                            "blurred": blurred, "problems": [x for x in problems if x["scene"] == sid],
+                            "text_px": min(fonts) if fonts else None,
+                            "area": area, "ok": err is None})
             if err:
                 failures.append(err)
                 break  # the scenes after it start from this page state, so the take stops here
@@ -970,8 +1254,12 @@ async def record_scenes(out):
     sheet = contact_sheet(shots)
     res = {"scenes": results, "failures": failures, "skipped": skipped, "recorded_in": recorded_in,
            "outputs": [r["file"] for r in results] + ([str(sheet)] if sheet else [])}
-    # the take, for stitch.py: each scene's natural length and when its actions happened
-    write_take(o, {r["scene"]: {k: r[k] for k in ("recorded_s", "need_s", "actions", "zooms")} for r in results})
+    shown = [x for r in results for x in r["problems"] if x["kind"] == "on screen"]
+    if shown:
+        res["errors_on_screen"] = shown
+    # the take, for stitch.py and qa.py: each scene's natural length, its actions, camera, idle time and what went wrong
+    write_take(o, {r["scene"]: {k: r[k] for k in ("recorded_s", "need_s", "actions", "zooms", "camera", "idle", "url",
+                                                   "blurred", "problems", "text_px")} for r in results})
     if failures:
         done = [r["scene"] for r in results if r["ok"]]
         emit("capture", ok=False, user_action=True, message=f"{failures[0]['scene']} failed, so the take stopped there "

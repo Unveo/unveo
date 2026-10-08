@@ -180,19 +180,31 @@ def display_for(scene_steps, look, design=None):
     return own if own in SCENE_DISPLAYS else video_frame(look, design)
 
 
-def display_spec(kind, look, tokens, label="", step=None, band=False, design=None):
-    """What stitch.fit needs to set a recording into the frame. None = full-screen.
+def shown_url(url):
+    """The address a window frame shows: host and path, no scheme; nothing for a local server (it isn't live)."""
+    from urllib.parse import urlparse
+    u = urlparse(url or "")
+    if not u.hostname or u.hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1") or u.hostname.endswith(".local"):
+        return ""
+    return (u.netloc + (u.path if u.path != "/" else "")).rstrip("/")
+
+
+def display_spec(kind, look, tokens, label="", step=None, band=False, design=None, url=""):
+    """What stitch.fit needs to set a recording into the frame. None = full-screen, edge to edge.
     spotlight is done while recording (capture.encode), so here it uses the video's frame.
-    band=True keeps CAPTION_BAND free at the bottom for burned-in captions."""
+    band=True keeps CAPTION_BAND free at the bottom for burned-in captions, full-screen too (the recording shrinks
+    a little rather than have captions over the app). url: the page's address, shown in a window's title bar."""
     if kind == "spotlight":
         kind = video_frame(look, design)
-    if kind in (None, "full"):
+    if kind in (None, "full") and not band:
         return None
+    kind = kind or "full"
     dark = kind == "window-dark" or (LOOKS.get(look) or {}).get("palette") == "dark"
     return {"kind": "window" if kind == "window-dark" else kind, "bg": tokens["bg"], "ink": tokens.get("ink", "#111111"),
             "accent": tokens.get("accent", "#111111"), "muted": tokens.get("muted", "#666666"),
             "chrome": "#1d1f24" if dark else tokens.get("surface", "#eeeeee"), "dark": dark,
-            "label": label or "", "step": step, "band": CAPTION_BAND if band else 0}
+            "label": label or "", "step": step, "band": CAPTION_BAND if band else 0,
+            "url": shown_url(url) if kind in ("window", "window-dark") else ""}
 
 
 def frame(look, tokens):

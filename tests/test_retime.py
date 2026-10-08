@@ -40,6 +40,24 @@ class RetimePlanTest(unittest.TestCase):
         self.assertTrue(all(s >= 1.0 for _, _, s, _ in stitch.retime_plan(3.0, [(1.0, 2.0), (2.0, 4.0)], 6.0)))
 
 
+class IdleAndSlowTest(unittest.TestCase):
+    def test_idle_time_is_cut_before_anything_speeds_up(self):
+        segs = stitch.retime_plan(8.0, [(6.0, 4.0)], 6.0, idle=[(2.0, 4.5)])
+        self.assertTrue(all(sp == 1.0 for _, _, sp, _ in segs))      # 2 s of the waiting is cut: all real time
+        self.assertAlmostEqual(played(segs), 6.0, places=3)
+        self.assertAlmostEqual(segs[0][1], 2.5, places=3)            # 0.5 s of the idle stretch is left, then a cut
+        self.assertAlmostEqual(segs[1][0], 4.5, places=3)
+
+    def test_a_glide_or_typing_is_never_sped_past_1_6x(self):
+        segs = stitch.retime_plan(10.0, [(8.0, 4.0)], 6.0, slow=[(1.0, 3.0)])
+        speeds = {round(a, 2): sp for a, _, sp, _ in segs}
+        self.assertEqual(speeds[1.0], stitch.SLOW_SPEED)
+        self.assertGreater(speeds[0.0], stitch.SLOW_SPEED)          # the rest makes up the time
+
+    def test_no_idle_or_slow_keeps_the_old_plan(self):
+        self.assertEqual(stitch.retime_plan(8.0, [(5.0, 2.0)], 6.0, idle=[], slow=[]), stitch.retime_plan(8.0, [(5.0, 2.0)], 6.0))
+
+
 class RetimeIngestTest(unittest.TestCase):
     def test_ingest_moves_the_click_onto_its_word(self):
         o, _ = project()

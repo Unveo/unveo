@@ -1,6 +1,6 @@
 # Recording plan: capture/steps.json (Phase 2)
 
-One scene in steps.json for each `capture` scene in script.md, with the same id. `capture.py record` makes **one take**: one browser session, one continuous recording, every scene in order at a natural pace, so each scene starts where the last one ended. It needs no voice. `stitch.py ingest` later cuts each scene out of the take and retimes it so every step with a `say` word lands on that word (a held frame where the take was early, up to 2.5× faster where it was late).
+One scene in steps.json for each `capture` scene in script.md, with the same id. `capture.py record` makes **one take**: one browser session, one continuous recording, every scene in order at a natural pace, so each scene starts where the last one ended. It needs no voice. `stitch.py ingest` later cuts each scene out of the take and retimes it so every step with a `say` word lands on that word: a held frame where the take was early; where it was late, the idle waits are cut first, then it plays up to 2.5× faster (a cursor glide or typing never above 1.6×, so it never looks robotic).
 
 ```json
 {
@@ -67,7 +67,26 @@ A single scene in steps.json may only use:
 
 Any other per-scene `display` is an error in `capture.py check`.
 
-When captions are burned in, framed displays leave a band at the bottom free, so captions never cover the app.
+When captions are burned in, every display leaves a band at the bottom free, so captions never cover the app; `full` shrinks the recording a little for it. A `window` frame shows the page's real address in its title bar (not for `localhost`): it proves the app is live.
+
+## The camera: framing and following the clicks
+
+Every recording gets a camera automatically, the way Screen Studio exports look:
+- **It frames the content, not the browser.** While recording, capture measures the box holding the page's text and controls and crops to it (16:9, padded, at most 1.8× so it stays sharp). A small card on a big decorative background fills the frame.
+- **It follows the action.** Each click, type, select or hover eases in on its target (1.3× further), pans to the next target when it's close, and settles back on the whole content after the last action.
+- A step's own `zoom` replaces the automatic camera for that scene. `"camera": false` on a scene (or at the top of steps.json) turns it off; `phone` and `spotlight` scenes never get one.
+
+`record.json` keeps each scene's `camera` path, so you can see what it did.
+
+## A hook: the cold open
+
+The hook (PITCH.md) reuses the end of a scene that's already in the take, so nothing is recorded twice:
+
+```json
+"s01": {"reuse": "s07", "last_s": 4}
+```
+
+`last_s` (1–8, default 4) is how much of the end of `s07`'s recording to show. Pick the scene whose last screen shows the result.
 
 Two recordings in a row always **hard cut** (the app just carries on); cuts into and out of animations use the look's transition.
 
@@ -114,12 +133,14 @@ Use the visible English text from `repo_scan.json` (`ui_labels`, `forms`) or the
 - **Never leave the app:** a step that lands on another site fails.
 - **Passwords:** only through `$UNVEO_LOGIN_PASSWORD`, always with `"secret": true`. Never write the value anywhere.
 - Prefer read-only journeys. Use a demo account, never the user's personal one.
+- **Personal data is blurred on the page before a frame is captured:** email addresses, phone numbers and password fields get a frosted box (the app itself isn't changed). Addresses at `example.com`, `example.org`, `test.com` and `demo.com` stay readable. Set `"privacy": false` at the top of steps.json only when the user wants the email on screen shown, such as a public demo account. `record.json` lists what was blurred, and QA reports it.
 
 ## The check and record loop
 
 1. `capture.py check`: fix every error. Its `plan` is the plain-words list you show at Checkpoint B (Guided) and check yourself in Quick mode.
-2. `capture.py record`: the take.
-   - Pass: `capture/sNN.mp4` per scene at its natural length, `capture/record.json` (each scene's length and when its actions happened), and `capture/take/sNN.png` plus `sheet.png` (each scene's last frame).
+2. `capture.py record`: the take. First it wakes `base_url`, plus any URL in `"warm": [...]` at the top of steps.json. Use `warm` for the API's address when the backend is on a free tier that sleeps (Render, Railway, Fly), so the take never films a cold start. The browser asks for the app's dark theme when the look is dark, and its light theme otherwise.
+   - Pass: `capture/sNN.mp4` per scene at its natural length, `capture/take/sNN.png` plus `sheet.png` (each scene's last frame), and `capture/record.json`. For each scene, record.json holds its length, when its actions happened, the camera path, its idle and loading time, its address, what was blurred, and `problems` (console errors, failed requests, server errors, and any error on screen).
+   - `errors_on_screen` in the result means the app showed an error a judge would see ("Something went wrong", a 404 page, a development error overlay). Fix the step or the app, then record again; QA blocks on it.
    - Fail: the take stops at the failing scene (the later ones start from its page). The failure gives the scene, the step index, the error, the 5 `closest` texts on the page, and a screenshot.
 3. Fix a failure from that evidence: usually the target text (use a `closest` match), a missing `wait`, or the wrong start page. Then record the take again. `capture.py dry-run` runs the same steps without a camera (`capture/dryrun/`), which is quicker while fixing when no hand login is needed.
 4. **At most 3 fix rounds per scene.** A scene that still fails becomes `clip` in script.md (`## sNN · product · clip · …`, without `· steps:`), loses its steps.json entry, and gets a shots.md entry with "Why this is a clip: failed while recording".

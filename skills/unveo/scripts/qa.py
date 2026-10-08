@@ -23,7 +23,81 @@ FIX = {
     "secrets": "Delete the file that holds the password, and re-record with \"secret\": true.",
     "voice level": "Re-run mix.py (it levels every line), then stitch.py final.",
     "captions": "Run stitch.py final again (it rebuilds captions.srt and captions.ass from voice.json).",
+    "blank frames": "The page was blank or still loading on camera: add a wait for its content (wait for text) before that "
+                    "step in steps.json, then capture.py record and stitch.py ingest again.",
+    "app errors": "The app showed an error while recording: fix the step (or the app), then capture.py record again.",
 }
+
+
+def gray_frames(path, fps=5, size=(160, 90)):
+    import numpy as np
+    raw = subprocess.run([ffmpeg_exe(), "-v", "quiet", "-i", str(path), "-vf", f"fps={fps},scale={size[0]}:{size[1]},format=gray",
+                          "-f", "rawvideo", "-"], capture_output=True, check=True).stdout
+    return np.frombuffer(raw, np.uint8).reshape(-1, size[1], size[0])
+
+
+def blank_stretches(path, fps=5, min_s=0.5):
+    """[(t0, t1)] where a recording is nearly one flat colour for min_s or longer: a blank page, or a lone spinner
+    on an empty background (docs/16 Q1)."""
+    import numpy as np
+    fr = gray_frames(path, fps)
+    flat = [(np.abs(f.astype(np.int16) - int(np.median(f))) <= 10).mean() >= 0.995 for f in fr]
+    out, start = [], None
+    for i, f in enumerate(flat + [False]):
+        if f and start is None:
+            start = i
+        elif not f and start is not None:
+            if (i - start) / fps >= min_s:
+                out.append((round(start / fps, 1), round(i / fps, 1)))
+            start = None
+    return out
+
+
+def frame_rgb(path, t, size=(160, 90)):
+    import numpy as np
+    raw = subprocess.run([ffmpeg_exe(), "-v", "quiet", "-ss", f"{max(0, t):.3f}", "-i", str(path), "-frames:v", "1", "-vf",
+                          f"scale={size[0]}:{size[1]}", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True).stdout
+    return np.frombuffer(raw, np.uint8).reshape(size[1], size[0], 3) if len(raw) == size[0] * size[1] * 3 else None
+
+
+def flash_in(mid, before, after):
+    """A flat colour filling over 40% of a transition frame that's in neither scene and isn't a blend of them
+    (a crossfade's colours are): a white flash, a half-drawn frame (docs/16 Q4)."""
+    import numpy as np
+    q = lambda f: (f // 32).reshape(-1, 3) @ np.array([64, 8, 1])
+    vals, counts = np.unique(q(mid), return_counts=True)
+    top = vals[counts.argmax()]
+    share = lambda f: float((q(f) == top).mean())
+    if counts.max() / counts.sum() <= 0.4 or share(before) >= 0.1 or share(after) >= 0.1:
+        return False
+    c = mid.reshape(-1, 3)[q(mid) == top].mean(axis=0)
+    b, a = before.reshape(-1, 3).mean(axis=0), after.reshape(-1, 3).mean(axis=0)
+    k = np.clip(np.dot(c - b, a - b) / max(1e-6, np.dot(a - b, a - b)), 0, 1)
+    return float(np.linalg.norm(c - (b + k * (a - b)))) > 40
+
+
+def screen_share(o, sid):
+    """How wide a recording is in the finished frame (1.0 = edge to edge): its display, from stitch.frame_assets."""
+    import looks, stitch
+    brief = json.loads((o / "brief.json").read_text(encoding="utf-8"))
+    tokens = brief.get("palette", {}).get("tokens", {})
+    f = o / "film" / "design.json"
+    design = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+    steps = (json.loads((o / "capture" / "steps.json").read_text(encoding="utf-8")).get("scenes", {})
+             if (o / "capture" / "steps.json").exists() else {})
+    if "accent" not in tokens:
+        return 1.0
+    spec = looks.display_spec(looks.display_for(steps.get(sid), design.get("look"), design), design.get("look"),
+                              looks.palette(tokens, design.get("look")) if design.get("look") else tokens,
+                              band=brief.get("captions", "burned") == "burned", design=design)
+    return stitch.frame_assets(spec, 1920, 1080, o / "render" / "frames")[4] / 1920 if spec else 1.0
+
+
+def recording_of(o, sid):
+    for name in (f"{sid}-timed.mp4", f"{sid}.mp4"):
+        if (o / "capture" / name).exists():
+            return o / "capture" / name
+    return None
 
 
 def clean_script(o, brief, tl):
@@ -100,8 +174,8 @@ def main():
          f"{i_val} LUFS, true peak {tp_val} dBTP (target -14 ± 1, peak ≤ -1)")
 
     import render
-    hits = render.pops(final, [sc["start_s"] for sc in tl["scenes"]])
-    gate("pops", not hits, f"{len(hits)} found" + (f" at {[x['t'] for x in hits[:5]]} s" if hits else ""))
+    pop_hits = render.pops(final, [sc["start_s"] for sc in tl["scenes"]])
+    gate("pops", not pop_hits, f"{len(pop_hits)} found" + (f" at {[x['t'] for x in pop_hits[:5]]} s" if pop_hits else ""))
 
     import looks
     _, handle = looks.plan_for(o)
@@ -119,6 +193,44 @@ def main():
         if sc.get("voice") and sc.get("template") != "close" and not settling and sc["dur_s"] > sc.get("voice_s", 0) + 1.0 + sc.get("lead_s", 0):
             bad.append(f"{sc['id']} runs {sc['dur_s'] - sc['voice_s']:.1f} s past its voice")
     gate("sync", not bad, "; ".join(bad) or "every segment matches its voice")
+
+    take = json.loads(rec.read_text()) if rec.exists() else {}
+    blanks = []
+    for sc in tl["scenes"]:
+        src = recording_of(o, sc["id"]) if sc["visual"] == "capture" else None
+        for a, b in (blank_stretches(src) if src else []):
+            blanks.append(f"{sc['id']} at {sc['start_s'] + a:.1f}–{sc['start_s'] + b:.1f} s")
+    gate("blank frames", not blanks, "; ".join(blanks[:4]) or "no blank or loading screens in the recordings")
+    probs = [x for v in take.values() for x in v.get("problems", [])]
+    shown = [f"{x['scene']}: {x['detail']}" for x in probs if x["kind"] == "on screen"]
+    gate("app errors", not shown, "; ".join(shown[:3]) or "no error on screen while recording")
+    quiet = [f"{x['scene']} {x['kind']}: {x['detail'][:90]}" for x in probs if x["kind"] != "on screen"]
+    gate("app warnings", not quiet, f"{len(quiet)} during the take, e.g. " + "; ".join(quiet[:2]) if quiet
+         else "no console errors or failed requests", blocking=False)
+    hid = {k: v.get("blurred") or {} for k, v in take.items()}
+    n = {kind: sum(h.get(kind, 0) for h in hid.values()) for kind in ("emails", "phones", "passwords")}
+    gate("privacy", True, (f"blurred {n['emails']} email(s), {n['phones']} phone number(s), {n['passwords']} password field(s)"
+                           if any(n.values()) else "no email, phone number or password on screen") if take else "no recordings",
+         blocking=False)
+    small = []  # the app's typical text, as tall as it ends up in a 1080p video (docs/16 Q3)
+    for sid, v in take.items():
+        if v.get("text_px"):
+            crop_w = (v.get("camera") or [{"box": [0, 0, 1920, 1080]}])[0]["box"][2]
+            px = v["text_px"] * 1920 / crop_w * screen_share(o, sid)
+            if px < 18:
+                small.append(f"{sid} ~{px:.0f} px")
+    gate("readable text", not small, f"app text renders small in {', '.join(small)}: add a zoom on that part, or record "
+         "with \"viewport\": {\"zoom\": 1.25}" if small else "the app's text reads at 18 px or more", blocking=False)
+    cuts, _ = looks.plan_for(o)
+    flashes = []
+    for i, c in enumerate(cuts, 1):
+        if c["dur"] > 0 and i < len(tl["scenes"]):
+            t = tl["scenes"][i]["start_s"]
+            mid, before, after = (frame_rgb(final, x) for x in (t + c["dur"] / 2, t - 0.1, t + c["dur"] + 0.1))
+            if all(f is not None for f in (mid, before, after)) and flash_in(mid, before, after):
+                flashes.append(f"{tl['scenes'][i]['id']} at {t:.1f} s")
+    gate("transitions", not flashes, f"a flat flash inside the cut into {', '.join(flashes)}" if flashes
+         else "no flashes inside the transitions", blocking=False)
 
     vl = o / "audio" / "voice_levels.json"
     levels = json.loads(vl.read_text()) if vl.exists() else {}
@@ -185,7 +297,7 @@ def main():
     gate("size", mb < 500, f"{mb:.0f} MB", blocking=False)
 
     ok = all(g["ok"] for g in gates if g["blocking"])
-    head = f"{'PASS' if ok else 'FAIL'} · {int(dur // 60)}:{dur % 60:04.1f} · {i_val} LUFS · {len(hits)} pops"
+    head = f"{'PASS' if ok else 'FAIL'} · {int(dur // 60)}:{dur % 60:04.1f} · {i_val} LUFS · {len(pop_hits)} pops"
     lines = [head, "", "| Gate | Result | Detail |", "|---|---|---|"]
     lines += [f"| {g['gate']} | {'✅' if g['ok'] else ('❌' if g['blocking'] else '⚠️')} | {g['detail']} |" for g in gates]
     fails = [g for g in gates if not g["ok"] and g["blocking"]]

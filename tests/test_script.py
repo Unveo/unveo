@@ -77,6 +77,16 @@ class CheckTest(unittest.TestCase):
         self.assertEqual(out["errors"], [])
         self.assertEqual(out["budget"], 109)
 
+    def test_a_hook_may_open_before_the_title(self):
+        hook = GOOD.replace("## s01 · context · anim:title", "## s00 · hook · capture · target 4 s · steps: s00\n"
+                            "Narration: Civic Watch shows every stuck project. [src: README.md:3]\n\n## s01 · context · anim:title")
+        code, out = check(hook)
+        self.assertEqual([e for e in out["errors"] if "hook" in e or "first scene" in e], [], out["errors"])
+        long = hook.replace("hook · capture · target 4 s", "hook · capture · target 9 s")
+        self.assertTrue(any("5 s at most" in e for e in check(long)[1]["errors"]))
+        late = GOOD.replace("## s06 · close", "## s05b · hook · capture · target 4 s\nNarration: x [src: README.md:3]\n\n## s06 · close")
+        self.assertTrue(any("pitch order" in e or "heading" in e for e in check(late)[1]["errors"]))
+
     def test_untagged_sentence_is_an_error(self):
         code, out = check(GOOD.replace("Citizens rarely see which ones are stuck. [understanding: confirmed]",
                                        "Citizens rarely see which ones are stuck."))

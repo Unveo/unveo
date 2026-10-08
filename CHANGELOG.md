@@ -12,6 +12,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: semv
   - Captions burned in plus captions.srt.
   - Per-video design brief (the app's font, motion, background), building blocks and compose scenes, overflow, contrast and crowding checks, QA feel report.
   - setup_app.py: plan, install --yes, start --yes, stop for local Node and Python apps.
+- Round 7, the quality audit's Round A (docs/16):
+  - A camera on every recording: it frames the app's content and follows each click, Screen Studio style.
+  - Emails, phone numbers and passwords are blurred before a frame is captured.
+  - A cold-open hook, cut from the take, with the title over its last frame.
+  - Idle waits and spinners are cut before anything speeds up; typing and glides at most 1.6×.
+  - Captions never cover a full-screen recording; window frames show the live address.
+  - Cursor in the accent colour, on a curved path; the app's dark theme for dark looks; sleeping servers woken first.
+  - New QA gates: blank frames, errors on screen (blocking); console errors, readable text, flashes in transitions, privacy (reported).
+  - Fixed: the QA headline counted hype words as pops.
 - Round 6:
   - One take: every scene recorded in order in one session at a natural pace; stitch.py retimes each scene to its voice.
   - An offscreen window in your own browser when a hidden one is refused; the yellow tint stays up until the window closes.

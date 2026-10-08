@@ -13,7 +13,7 @@ from common import emit  # noqa: E402
 
 RATE = {"en": 2.2, "hi": 2.2}  # words per second, measured in M0 (docs/06 §2)
 SILENT_S = 5.5                  # 2.5 s title card + 3 s end-card hold
-SEGMENTS = ["context", "problem", "product", "close"]
+SEGMENTS = ["hook", "context", "problem", "product", "close"]  # hook: an optional cold open before the title (docs/16 S1)
 SHARE = {"context": 0.10, "problem": 0.15, "product": 0.65, "close": 0.10}
 FOCUS = {  # brief.focus: the time split and how many explainers (docs/15 A8)
     "product": {"share": {"context": 0.08, "problem": 0.10, "product": 0.74, "close": 0.08}, "explainers": (0, 1)},
@@ -147,9 +147,16 @@ def check(out):
     if -1 in order:
         errors.append(f"segments must be one of {SEGMENTS}")
     elif order != sorted(order):
-        errors.append("segments are out of pitch order: context, problem, product, close")
-    if not scenes or scenes[0]["template"] != "title":
-        errors.append("the first scene must be anim:title")
+        errors.append("segments are out of pitch order: hook (optional), context, problem, product, close")
+    hooks = [s for s in scenes if s["segment"] == "hook"]
+    opening = scenes[len(hooks):][:1] if hooks and scenes[:len(hooks)] == hooks else scenes[:1]
+    if len(hooks) > 1:
+        errors.append("one hook scene at most: the single most impressive moment")
+    for s in hooks:
+        if s["visual"] not in ("capture", "clip") or s["target_s"] > 5:
+            errors.append(f"{s['id']}: the hook is the app itself (capture or clip), 5 s at most")
+    if not opening or opening[0]["template"] != "title":
+        errors.append("the first scene must be anim:title (after the hook, if there is one)")
     if not scenes or scenes[-1]["template"] != "close":
         errors.append("the last scene must be anim:close")
 

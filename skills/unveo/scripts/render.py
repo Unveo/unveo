@@ -409,9 +409,25 @@ def prepare(out):
             data = data or {"shot_id": s["id"], "what_to_record": "The recorded app plays here."}
         scenes.append({"id": s["id"], "template": tpl or "placeholder", "dur_s": s["dur_s"], "start_s": s.get("start_s", 0),
                        "visual": s["visual"], "voice": s.get("voice"), "handle_s": handle.get(s["id"], 0.0), "data": data})
+    for sc in scenes:  # a title after a hook sits over the hook's last frame (docs/16 S1)
+        if sc["template"] == "title" and sc["data"].get("backdrop"):
+            sc["data"]["backdrop_img"] = backdrop(o, film, sc["data"]["backdrop"])
     write_icons(o, film, design, scenes)
     (film / "timeline.js").write_text("window.TIMELINE = " + json.dumps({"fps": FPS, "design": design, "scenes": scenes}, ensure_ascii=False) + ";\n")
     return film, scenes
+
+
+def backdrop(o, film, sid):
+    """The last frame of scene sid's recording (a hook's: the end of the scene it reuses) as film/assets/backdrop-sid.png."""
+    f = o / "capture" / "steps.json"
+    reuse = ((json.loads(f.read_text(encoding="utf-8")).get("scenes", {}) if f.exists() else {}).get(sid) or {}).get("reuse")
+    src = o / "capture" / f"{reuse or sid}.mp4"
+    if not src.exists():
+        return None
+    (film / "assets").mkdir(exist_ok=True)
+    dst = film / "assets" / f"backdrop-{sid}.png"
+    subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-sseof", "-0.2", "-i", str(src), "-frames:v", "1", str(dst)], check=True)
+    return f"assets/{dst.name}"
 
 
 def scene_hash(film, sc, mode):

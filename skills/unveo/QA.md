@@ -15,6 +15,16 @@
 | end card | Links on the close scene equal brief.close.links | Copy them exactly |
 | secrets | No login password in any output | Delete the file and re-record with `"secret": true` |
 | captions | `captions.srt` exists (unless captions are off) and no caption runs past the end | Re-run `stitch.py final` |
+| blank frames | No recording is a blank or loading screen for 0.5 s or more | Add a `wait` for the page's content (`"for": "text"`) before that step, then `capture.py record` and `stitch.py ingest` |
+| app errors | The app showed no error on screen while recording (an error page, "Something went wrong", a dev overlay) | Fix the step (or the app), then record again |
 
-Reported but not blocking: `feel` (real app on screen at least half the product time, no hype words on screen), `placeholders` (clip scenes still showing a "Recording needed" card), capture coverage, and size (a warning above 500 MB). Only a run that passes every blocking gate is copied to `unveo-out/` (with each scene in `unveo-out/scenes/`).
+Reported but not blocking:
+- `feel`: real app on screen at least half the product time, no hype words on screen.
+- `placeholders`: clip scenes still showing a "Recording needed" card.
+- `app warnings`: console errors and failed requests during the take. Look at them; a failed request often explains an empty screen.
+- `privacy`: what was blurred.
+- `readable text`: the app's typical text would end up under about 18 px tall in a 1080p video. Zoom on that part, or record with `"viewport": {"zoom": 1.25}`.
+- `transitions`: a flat flash (white or one colour, not a blend of the two scenes) inside a cut. Re-render the scenes on either side, or pick another transition.
+- capture coverage.
+- size: a warning above 500 MB. Only a run that passes every blocking gate is copied to `unveo-out/` (with each scene in `unveo-out/scenes/`).
 After fixing, re-run only the affected steps, then `stitch.py final` and `qa.py` again.

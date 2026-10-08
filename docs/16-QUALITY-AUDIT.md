@@ -30,6 +30,33 @@ Each item has an id, the problem, the evidence, the fix, and an effort estimate:
 
 ---
 
+## Progress
+
+Status key: ✅ done · 🔵 part done, the rest is noted · ⛔ not doing.
+
+**Round A, readability and trust (done 8 Oct 2026):**
+
+| Id | Status | What was built |
+|---|---|---|
+| R1 | ✅ | The camera frames the content box (text and controls, measured while recording), 16:9, padded, at most 1.8× |
+| R2 | ✅ | Each click, type, select or hover eases in 1.3× on its target, pans between nearby targets, and settles back on the content. A step's own `zoom` still overrides it, and `"camera": false` turns it off |
+| R3 | ✅ | The click ring uses the video's accent; the cursor bows slightly on its way and is 1.2× larger |
+| R4 | ✅ | Retime cuts idle stretches (no frame change, or a spinner on screen) before speeding up; glides and typing are capped at 1.6× |
+| R5 | ✅ | `privacy.js` blurs emails, phone numbers and password fields in an overlay before frames are captured; `record.json` and QA report what was blurred. Demo domains stay readable; `"privacy": false` shows everything |
+| R6 | ✅ | `base_url` and `warm` URLs are woken before the take; loading time counts as idle, so the retime cuts it |
+| R7 | ✅ | The browser asks for the app's dark or light theme to match the look's ground |
+| S1 | ✅ | An optional `hook` scene (a `reuse` of a later scene's take, 3–5 s, one spoken line); the title can sit over its last frame (`"backdrop"`) |
+| CA2 | ✅ | `full` recordings shrink a little to keep the caption band free |
+| D4 | 🔵 | The window frame shows the real address (never `localhost`). The new device-frame option waits for Round B's backgrounds |
+| Q1 | ✅ | QA blocks on a recording that's blank or loading for 0.5 s or more |
+| Q2 | ✅ | Console errors, failed requests and server errors are recorded per scene; an error on screen blocks QA |
+| Q3 | ✅ | Capture measures the app's typical text size; QA warns when it ends up under about 18 px at 1080p |
+| Q4 | ✅ | QA flags a flat colour inside a transition that isn't a blend of the two scenes |
+
+**Not doing:** ⛔ AU4 (more narration languages). The ground rule is English and Hindi only.
+
+---
+
 ## MO · Motion design: the main finding
 
 ### What we have today

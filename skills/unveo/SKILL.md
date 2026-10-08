@@ -147,13 +147,14 @@ At 60 s add "60 s fits about 3 screens, or 2 screens and 1 explanation." Save `v
 ## Phase 2: Write
 
 **9. Script.** Read `<SKILL_DIR>/PITCH.md` now. Write `OUT/script.md` in its exact format:
+- a hook first when a screen of the app says a lot on its own (PITCH.md §1): its result moment, 3–5 s, then the title over it
 - one capture scene per journey step (or `clip` when `capture_enabled` is false)
 - the selected explainers cut in after their `shown_at_step`
 - the impact line in the close scene
 
 Run `"<PY>" "<SKILL_DIR>/scripts/script.py" check` and fix every listed error until it exits 0. Mention any `warnings` in one line each.
 
-**10. Record the app, in one take** (skip when `capture_enabled` is false). Read `<SKILL_DIR>/CAPTURE.md` now. Write `OUT/capture/steps.json` with one entry per capture scene. Then:
+**10. Record the app, in one take** (skip when `capture_enabled` is false). Read `<SKILL_DIR>/CAPTURE.md` now. Write `OUT/capture/steps.json` with one entry per capture scene (the hook is a `reuse` of a later scene). If the backend sleeps on a free tier, list its address in `warm`. Then:
 - Run `"<PY>" "<SKILL_DIR>/scripts/capture.py" check` and fix every error.
 - Run `"<PY>" "<SKILL_DIR>/scripts/capture.py" record`. It needs no voice: every scene runs in order in one browser session, under one continuous recording, at a natural pace, and comes out as `capture/sNN.mp4` at its own length. Later, `stitch.py ingest` cuts and retimes each one so its clicks land on their words. It logs in once, and runs in the background (no window) unless the user logs in by hand.
 - **A failure** stops the take at that scene (the ones after it depend on its page). Fix it from `closest` and the screenshot, then run `record` again; it's quick, because nothing waits for a voice. That's at most 3 rounds; a scene that still fails becomes a clip (CAPTURE.md, step 4), and the take is recorded again without it.
@@ -162,6 +163,7 @@ Run `"<PY>" "<SKILL_DIR>/scripts/script.py" check` and fix every listed error un
 - **Manual login:** before `record`, tell the user: "A browser window is opening. Log in there however you normally do; a dotted arrow shows where. Once you're in, the window turns yellow and says it's recording; unveo works in the background. Please leave it open until it says Done." The profile remembers the login, so a second take usually needs none. If it exits 2 with a login timeout, ask whether they want to try again or record those scenes as clips. **Quick:** try once more, telling the user the window is open again; after a second timeout, make those scenes clips and carry on.
 - **One-time actions:** if a step can't be undone for the user (a form that accepts one response per person, an order, a vote), add `"once": true` to it. It's then flagged ⚠️ and skipped unless they approve it, and they should know it uses up their real entry (suggest a second account). **Quick:** never approve one; end the scene just before it, and write the narration to match (don't say it was submitted).
 - Re-run `script.py check` after any scene turns into a clip.
+- If the result has `errors_on_screen`, the app showed an error a judge would see: fix the step and record again (QA blocks on it).
 - When the take passes, run `state.py set capture done`. Look at `OUT/capture/take/sheet.png` (each scene's last frame) if you can view images.
 
 **11. Shot list.** If any scene is `clip`, write `OUT/shots.md` as PITCH.md shows, and run `script.py check` again.

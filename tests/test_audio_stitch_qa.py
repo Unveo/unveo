@@ -45,7 +45,8 @@ def project(limit=60):
                                           "-pix_fmt", "yuv420p", "-c:v", "libx264", str(f)], check=True)
     src("navy", 2.5 + looks.T_DEFAULT, o / "render/segments/s01.mp4")  # rendered segments run on into the next scene
     src("white", 4.0, o / "render/segments/s04.mp4")
-    src("gray", 5.0, o / "capture/s02.mp4")           # longer than its 3.0 s: trimmed
+    subprocess.run([FF, "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=s=1920x1080:r=30:d=5", "-pix_fmt", "yuv420p",
+                    "-c:v", "libx264", str(o / "capture/s02.mp4")], check=True)  # the app (not blank); longer than its 3.0 s: trimmed
     src("teal", 1.0, o / "your-clips/shot-01.mp4")         # shorter than its 2.0 s: last frame held
     for sid, *_, vs in scenes:
         if vs:
@@ -191,6 +192,25 @@ class StitchQaTest(unittest.TestCase):
         self.assertEqual(code, 2)
         failed = {g["gate"] for g in res["gates"] if not g["ok"] and g["blocking"]}
         self.assertLessEqual({"duration", "end card"}, failed)
+
+
+class BrokenFrameTest(unittest.TestCase):
+    def test_a_blank_stretch_in_a_recording_is_found(self):
+        import qa
+        with tempfile.TemporaryDirectory() as d:
+            v = Path(d) / "rec.mp4"  # 1 s of the app, 1.5 s of a blank white page, 1 s of the app again
+            subprocess.run([FF, "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=s=640x360:r=30:d=3.5", "-vf",
+                            "drawbox=c=white:t=fill:enable='between(t,1,2.5)'", "-pix_fmt", "yuv420p", str(v)], check=True)
+            (a, b), = qa.blank_stretches(v)
+        self.assertAlmostEqual(a, 1.0, delta=0.25)
+        self.assertAlmostEqual(b, 2.6, delta=0.25)
+
+    def test_a_white_flash_inside_a_transition_is_caught_but_a_crossfade_is_not(self):
+        import numpy as np, qa
+        before = np.zeros((90, 160, 3), np.uint8) + np.array([20, 40, 160], np.uint8)
+        after = np.zeros((90, 160, 3), np.uint8) + np.array([200, 60, 30], np.uint8)
+        self.assertTrue(qa.flash_in(np.full((90, 160, 3), 255, np.uint8), before, after))
+        self.assertFalse(qa.flash_in(((before.astype(int) + after) // 2).astype(np.uint8), before, after))
 
 
 if __name__ == "__main__":

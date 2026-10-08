@@ -5,7 +5,8 @@
   stitch.py final                     segments + audio/mix.wav -> final.mp4
 
 A recording from the take (capture.py record) is first retimed to its voice: each action with a 'say' word lands
-on that word, sped up to 2.5x where the take ran long and held on a frame where it ran short. A clip longer than its
+on that word. Where the take ran long, idle stretches are cut first, then it plays up to 2.5x faster (a cursor
+glide or typing at most 1.6x); where it ran short, it holds on a frame. A clip longer than its
 scene is trimmed; a shorter one holds its last frame. Each cut blends in by the look's transition.
 """
 import argparse, json, re, subprocess, sys, tempfile
@@ -60,16 +61,20 @@ def frame_assets(frame, w, h, folder):
         ih = even(min(h * 0.86, room - 2 * pad)); iw = even(ih * 430 / 932); extra = 2 * pad
     elif kind == "split":
         iw = even(min(w * 0.60, room * 16 / 9)); ih = even(iw * 9 / 16); extra = 0
+    elif kind == "full":  # edge to edge, shrunk just enough to keep the caption band free (docs/16 CA2)
+        ih = even(h - round(frame.get("band", 0) * k)); iw = even(min(w, ih * 16 / 9)); ih = even(iw * 9 / 16); r = 0; extra = 0
     else:  # float, tilt
         iw = even(min(w * 0.88 if kind == "float" else w * 0.78, room * 16 / 9)); ih = even(iw * 9 / 16); extra = 0
-    top = (h - round(frame.get("band", 0) * k) - ih - extra) // 2  # centred in the space above the band
+    top = 0 if kind == "full" else (h - round(frame.get("band", 0) * k) - ih - extra) // 2  # centred above the band
     x = round(w * 0.055) if kind == "split" else (w - iw) // 2
     y = top + (bar if kind == "window" else pad)
     if not bg_png.exists():
         img = Image.new("RGB", (w, h), frame["bg"])
         shadow = Image.new("L", (w, h), 0)
         sd = ImageDraw.Draw(shadow)
-        if kind == "laptop":
+        if kind == "full":
+            pass
+        elif kind == "laptop":
             sd.rounded_rectangle((x - pad, y - pad + round(18 * k), x + iw + pad, y + ih + pad + base + round(18 * k)), round(24 * k), fill=60)
         elif kind == "phone":
             sd.rounded_rectangle((x - pad, y - pad + round(16 * k), x + iw + pad, y + ih + pad + round(16 * k)), r + pad, fill=70)
@@ -86,6 +91,18 @@ def frame_assets(frame, w, h, folder):
             for i in range(3):
                 cx, cy = x + round((24 + i * 22) * k), y - bar // 2
                 d.ellipse((cx - round(6 * k), cy - round(6 * k), cx + round(6 * k), cy + round(6 * k)), fill=dot)
+            if frame.get("url"):  # the real address: it's live, not a mock (docs/16 D4)
+                font = ImageFont.truetype(str(Path(__file__).resolve().parents[1] / "templates" / "film" / "fonts" / "geist-semibold.ttf"), round(17 * k))
+                pw, ph = round(iw * 0.42), round(26 * k)
+                px, py = x + (iw - pw) // 2, y - bar // 2 - ph // 2
+                d.rounded_rectangle((px, py, px + pw, py + ph), ph // 2, fill="#2a2d33" if frame.get("dark") else "#ffffff")
+                text, room_px = frame["url"], pw - round(28 * k)
+                if d.textlength(text, font=font) > room_px:
+                    while len(text) > 8 and d.textlength(text + "…", font=font) > room_px:
+                        text = text[:-1]
+                    text += "…"
+                tw = d.textlength(text, font=font)
+                d.text((px + (pw - tw) / 2, py + ph / 2), text, font=font, anchor="lm", fill=frame.get("muted", "#777777"))
         elif kind == "laptop":
             d.rounded_rectangle((x - pad, y - pad, x + iw + pad, y + ih + pad), round(18 * k), fill="#1c1c1f")
             bw = round(w * 0.82)
@@ -159,32 +176,97 @@ def fit(src, dst, dur, w=1920, h=1080, bg="black", frame=None):
                     "-t", f"{dur:.3f}", "-an", *ENC, str(dst)], check=True)
 
 
-def retime_plan(raw_s, anchors, dur, max_speed=2.5, keep_until=None):
+IDLE_KEEP_S, SLOW_SPEED = 0.2, 1.6  # what's left of an idle stretch once cut; the most a glide or typing is sped up
+
+
+def _clip(spans, a, b):
+    return [(max(a, x), min(b, y)) for x, y in spans if min(b, y) - max(a, x) > 0.01]
+
+
+def squeeze(a, b, want, idle=(), slow=(), max_speed=2.5):
+    """[(start, end, speed)] pieces of raw [a, b] that play in about `want` seconds: idle stretches are cut first
+    (each down to IDLE_KEEP_S), then the rest speeds up, a glide or typing never past SLOW_SPEED (docs/16 R4).
+    When even that's too long, it plays at the caps and runs late."""
+    if b - a <= want:
+        return [(a, b, 1.0)]
+    idle = sorted(_clip(idle, a, b))
+    excess, spare = (b - a) - want, sum(max(0.0, y - x - IDLE_KEEP_S) for x, y in idle)
+    cut = min(1.0, excess / spare) if spare > 0 else 0.0
+    kept, pos = [], a  # raw spans that stay, after the idle cuts
+    for x, y in idle:
+        keep = (y - x) - max(0.0, y - x - IDLE_KEEP_S) * cut
+        kept.append((pos, x + keep))
+        pos = y
+    kept.append((pos, b))
+    kept = [(x, y) for x, y in kept if y - x > 1e-6]
+    left = sum(y - x for x, y in kept)
+    if left <= want + 1e-9:
+        return [(x, y, 1.0) for x, y in kept]
+    # split what's kept into slow (glides, typing) and normal parts, then find one speed s for all of it
+    marks = sorted({v for x, y in kept for v in (x, y)} | {v for x, y in _clip(slow, a, b) for v in (x, y)})
+    parts = []
+    for x, y in zip(marks, marks[1:]):
+        mid = (x + y) / 2
+        if any(kx <= mid <= ky for kx, ky in kept):
+            parts.append((x, y, any(sx <= mid <= sy for sx, sy in slow)))
+    S = sum(y - x for x, y, sl in parts if sl)
+    N = left - S
+    if left / SLOW_SPEED <= want:
+        sp = left / want
+    else:
+        room = want - S / SLOW_SPEED
+        sp = N / room if room > 0 and N > 0 else max_speed
+    sp = max(1.0, min(max_speed, sp))
+    return [(x, y, min(sp, SLOW_SPEED) if sl else sp) for x, y, sl in parts]
+
+
+def retime_plan(raw_s, anchors, dur, max_speed=2.5, keep_until=None, idle=(), slow=()):
     """[(start, end, speed, hold)] segments of a raw recording that play in `dur` seconds, each anchor (raw time,
     wanted time) landing on its wanted time where it can: a segment that's early holds its last frame, one that's late
-    plays faster (never above max_speed, never slower than real time). The last segment plays only as fast as it must
-    to show everything up to keep_until (the last action settling; default: all of it), and its tail is trimmed."""
+    first loses its idle time, then plays faster (never above max_speed, a glide or typing never above SLOW_SPEED,
+    never slower than real time). The last segment plays only as fast as it must to show everything up to keep_until
+    (the last action settling; default: all of it), and its tail is trimmed. Gaps between segments are cut."""
     keep_until = raw_s if keep_until is None else min(raw_s, keep_until)
     segs, cur, prev = [], 0.0, 0.0
     pts = [(r, w) for r, w in sorted(anchors) if 0 < r < raw_s] + [(raw_s, dur)]
+
+    def add(a, b, speed, hold):
+        if b - a < 0.05 and segs:  # too short to cut out: just wait on the previous frame
+            segs[-1] = (*segs[-1][:3], segs[-1][3] + (b - a) / speed + hold)
+        elif segs and abs(segs[-1][1] - a) < 1e-9 and segs[-1][2] == speed and segs[-1][3] == 0:
+            segs[-1] = (segs[-1][0], b, speed, hold)
+        else:
+            segs.append((a, b, speed, hold))
+
     for i, (r, w) in enumerate(pts):
-        raw_dt, want = r - prev, w - cur
-        if raw_dt <= 0:
+        want = w - cur
+        if r - prev <= 0:
             continue
         final = i == len(pts) - 1
         if want <= 0 and final:
             break
-        need = max(0.0, keep_until - prev) if final else raw_dt
-        speed = 1.0 if want >= need else min(max_speed, need / want) if want > 0 else max_speed
-        play, end = raw_dt / speed, r
-        if final and play > want:  # still too long at full speed: cut the tail
-            end, play = prev + want * speed, want
-        hold = max(0.0, want - play) if not final else 0.0  # the end is held by fit()
-        if end - prev < 0.05 and segs:  # too short to cut out: just wait on the previous frame
-            segs[-1] = (*segs[-1][:3], segs[-1][3] + play + hold)
+        if final:
+            pieces = squeeze(prev, max(prev, keep_until), want, idle, slow, max_speed) if keep_until > prev else []
+            play = sum((y - x) / sp for x, y, sp in pieces)
+            if play < want and r > keep_until:  # time to spare: show the tail at real time
+                pieces.append((max(prev, keep_until), min(r, max(prev, keep_until) + want - play), 1.0))
+            t = 0.0
+            for x, y, sp in pieces:  # trim whatever runs past the scene's end
+                if t + (y - x) / sp > want:
+                    y = x + (want - t) * sp
+                if y - x > 1e-6:
+                    add(x, y, sp, 0.0)
+                t += (y - x) / sp
+                if t >= want - 1e-9:
+                    break
+            cur += t
         else:
-            segs.append((prev, end, speed, hold))
-        cur, prev = cur + play + hold, r
+            pieces = squeeze(prev, r, want, idle, slow, max_speed)
+            play = sum((y - x) / sp for x, y, sp in pieces)
+            for k, (x, y, sp) in enumerate(pieces):
+                add(x, y, sp, max(0.0, want - play) if k == len(pieces) - 1 else 0.0)
+            cur += max(want, play)
+        prev = r
     return segs
 
 
@@ -198,8 +280,10 @@ def retime(o, sid, src, scene):
     voice = {c["scene"]: c for c in read_json(o / "voice" / "voice.json")["clips"]} if (o / "voice" / "voice.json").exists() else {}
     want = capture.schedule(steps, (voice.get(sid) or {}).get("words", []), scene.get("lead_s", 0.3))
     anchors = [(a["at_s"], want[a["step"]]) for a in take["actions"] if a["step"] < len(want) and want[a["step"]] is not None]
-    keep = max(a["at_s"] for a in take["actions"]) + capture.GLIDE_MS / 1000 + capture.SETTLE_S
-    segs = retime_plan(duration(src), anchors, scene["dur_s"], capture.MAX_SPEED, keep)
+    keep = max(a.get("end_s", a["at_s"] + capture.GLIDE_MS / 1000) for a in take["actions"]) + capture.SETTLE_S
+    slow = [(a["at_s"], a.get("end_s", a["at_s"] + capture.GLIDE_MS / 1000)) for a in take["actions"] if a.get("do") in capture.FOCUS_DO]
+    idle = [(x, y) for x, y in take.get("idle", []) if not any(x < b and a < y for a, b in slow)]
+    segs = retime_plan(duration(src), anchors, scene["dur_s"], capture.MAX_SPEED, keep, idle, slow)
     if len(segs) == 1 and segs[0][2] == 1.0 and segs[0][3] == 0:
         return src
     parts = [f"[0:v]split={len(segs)}" + "".join(f"[i{k}]" for k in range(len(segs)))]
@@ -210,6 +294,19 @@ def retime(o, sid, src, scene):
     dst = o / "capture" / f"{sid}-timed.mp4"
     subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-i", str(src), "-filter_complex", ";".join(parts), "-map", "[out]",
                     "-an", *ENC, str(dst)], check=True)
+    return dst
+
+
+def hook(o, sid, sc):
+    """capture/<sid>.mp4 from the last `last_s` seconds of the reused scene's raw take (its result on screen)."""
+    src = o / "capture" / f"{sc['reuse']}.mp4"
+    if not src.exists():
+        return None
+    dst = o / "capture" / f"{sid}.mp4"
+    last = float(sc.get("last_s", 4.0))
+    start = max(0.0, duration(src) - last)
+    subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-ss", f"{start:.3f}", "-i", str(src), "-t", f"{last:.3f}", "-an", *ENC, str(dst)],
+                   check=True)
     return dst
 
 
@@ -257,12 +354,19 @@ def ingest(o, placeholders):
     steps = json.loads((o / "capture" / "steps.json").read_text(encoding="utf-8")).get("scenes", {}) if (o / "capture" / "steps.json").exists() else {}
     journey = (json.loads((o / "brief.json").read_text(encoding="utf-8")).get("understanding") or {}).get("journey") or []
     _, handle = looks.plan_for(o)
+    import capture
+    takes = capture.read_take(o)
     step_no = 0
     shots = shots_map(o)
     missing, missing_ids, made, no_take = [], [], [], []
     for s in tl["scenes"]:
         sid = s["id"]
-        if s["visual"] == "capture":
+        if s["visual"] == "capture" and (steps.get(sid) or {}).get("reuse"):
+            src = hook(o, sid, steps[sid])  # the cold open: the end of another scene's take
+            if not src:
+                no_take.append(steps[sid]["reuse"])
+                continue
+        elif s["visual"] == "capture":
             src = o / "capture" / f"{sid}.mp4"
             if not src.exists():
                 no_take.append(sid)
@@ -284,7 +388,9 @@ def ingest(o, placeholders):
         step_no += 1
         sc = steps.get(sid) or {}
         label = sc.get("label") or (journey[step_no - 1].split("→")[0].strip() if step_no <= len(journey) else "")
-        frame = looks.display_spec(looks.display_for(sc, look, design), look, tokens, label, step_no, band=burned, design=design) if styled else None
+        url = (takes.get(sc.get("reuse") or sid) or {}).get("url", "")
+        frame = looks.display_spec(looks.display_for(sc, look, design), look, tokens, label, step_no, band=burned, design=design,
+                                   url=url) if styled else None
         fit(src, o / "render" / "segments" / f"{sid}.mp4", end, *out_size(o), bg=bg, frame=frame)
         fit(src, o / "render" / "draft" / f"{sid}.mp4", end, 960, 540, bg=bg, frame=frame)
         made.append(sid)

@@ -4,10 +4,13 @@
 
 | Segment | Share | Scenes, in order | Visual |
 |---|---|---|---|
-| `context` | 10% | `s01` title card (2.5 s, no voice) + 1 context scene | `anim:title`, then `anim:compose` (or `anim:context`) |
+| `hook` (optional) | — | `s01`: the single most impressive moment of the app (the result screen, the flagged item), 3–5 s, with one spoken line | `capture` (a `reuse` of a later scene's take, CAPTURE.md) or `clip` |
+| `context` | 10% | the title card (2.5 s, no voice) + 1 context scene | `anim:title`, then `anim:compose` (or `anim:context`) |
 | `problem` | 15% | 1–2 problem scenes | `anim:compose` or `anim:problem` |
 | `product` | 65% | 1 `anim:product-intro` (4–6 s), then 1 scene per journey step, with the selected explainers cut in | `capture` (or `clip`) + `anim:explainer-<pattern>` |
 | `close` | 10% | 1 close scene: the impact line spoken, links held about 3 s | `anim:close` |
+
+**Open on the hook when the app has a moment worth showing.** Judges decide in the first 3–5 seconds, and a silent title card wastes them. The hook is the end of a later recording, cut from the same take ("This survey stops fake answers before they're saved."). Give the title after it `"backdrop": "<hook id>"` in its data, so the title sits over the hook's last frame instead of on a separate card. A hook takes its words from the product share. Skip it only when no screen of the app says much on its own.
 
 Prefer `anim:compose` for the context, problem and intro beats: it's laid out for this story (DESIGN.md §2). The fixed templates are a fallback; a script that uses only them gets a warning.
 
@@ -61,7 +64,10 @@ A scene's `target` is your estimate (words ÷ 2.2). The real length comes from i
 # Script: <project name>
 Limit: 2:00 · Language: en · Budget: 231 words
 
-## s01 · context · anim:title · 2.5 s
+## s01 · hook · capture · target 4 s · steps: s01
+Narration: <one line on what the judge is seeing>. [src: …]
+
+## s02 · context · anim:title · 2.5 s
 (no narration)
 On screen: "<project>" · <event> · <team>
 

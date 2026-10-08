@@ -89,6 +89,9 @@ The voice is recorded before capture, so each capture scene has a fixed duration
 - **Cursor:** headless Chromium has no visible cursor, so `templates/film/cursor.js` is injected (`add_init_script`). It draws a macOS-style pointer that glides with an ease-in-out over 450–700 ms to each target's centre, and shows a soft ripple on click.
 - **Zoom:** the browser is zoomed to 125% (`deviceScaleFactor` 1, CSS zoom on `html`) so the UI reads well at 1080p. Per app, the agent can set `viewport.zoom` from 1.0 to 1.5.
 - **Clean frame:** cookie banners are closed automatically if a button reads "Accept", "Got it" or "OK"; `prefers-reduced-motion` is off; the Chromium automation info bar is hidden by headless mode.
+- **Camera (round 7, docs/16 R1–R2):** capture measures the page's content box at each scene start and after every action, and each action's target box. `capture.camera_path` turns them into keyframes (frame the content; ease 1.3× in on each target; pan between nearby ones; settle back), and `encode` crops along them. A step's `zoom` overrides it for that scene.
+- **Privacy (round 7, R5):** `templates/privacy.js` is injected with the cursor and blurs emails, phone numbers and password fields in an overlay before any frame is captured.
+- **What went wrong (round 7, Q2, R6):** console errors, failed requests, 5xx responses, error text on screen, loading spinners and frame gaps (idle time) are saved per scene in `record.json`.
 - **The trim mark:** each scene's recording starts when the page is ready (network idle after `start`), not on browser launch. The time at which the first action happens is saved, so stitch.py can cut cleanly.
 
 ## 5. Login and data

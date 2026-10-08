@@ -84,6 +84,24 @@ class DisplayTest(unittest.TestCase):
                 self.assertLess(np.abs(band - [0xf5, 0xef, 0xe3]).mean(), 4, kind)  # nothing drawn where captions go
 
 
+class BandAndAddressTest(unittest.TestCase):
+    def test_full_screen_keeps_the_caption_band_free(self):
+        self.assertIsNone(looks.display_spec("full", "swiss", TOKENS))
+        spec = looks.display_spec("full", "swiss", TOKENS, band=True)
+        with tempfile.TemporaryDirectory() as d:
+            _, _, x, y, iw, ih = stitch.frame_assets(spec, 1920, 1080, Path(d))
+        self.assertEqual(y, 0)
+        self.assertLessEqual(ih, 1080 - looks.CAPTION_BAND)
+        self.assertAlmostEqual(iw / ih, 16 / 9, delta=0.01)
+        self.assertEqual(x, (1920 - iw) // 2)
+
+    def test_window_shows_a_live_address_but_never_localhost(self):
+        self.assertEqual(looks.shown_url("https://survey.vercel.app/q/3?x=1"), "survey.vercel.app/q/3")
+        self.assertEqual(looks.shown_url("http://localhost:3000/"), "")
+        self.assertEqual(looks.display_spec("window", "editorial", TOKENS, url="https://a.app/")["url"], "a.app")
+        self.assertEqual(looks.display_spec("float", "editorial", TOKENS, url="https://a.app/")["url"], "")
+
+
 class SpotlightAndPhoneRecordTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
