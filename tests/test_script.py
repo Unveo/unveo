@@ -50,11 +50,11 @@ def check(text, brief=BRIEF, shots=None):
 
 class BudgetTest(unittest.TestCase):
     def test_budget_words_match_the_spec_table(self):
-        self.assertEqual([script.budget_words(s) for s in (60, 90, 120, 180)], [109, 170, 231, 352])
+        self.assertEqual([script.budget_words(s) for s in (60, 90, 120, 180)], [113, 173, 234, 356])
 
     def test_faster_voice_fits_more_words(self):
-        self.assertEqual(script.budget_words(120, "en", "+10%"), 254)
-        self.assertEqual(script.budget_words(120, "en", "+0%"), 231)
+        self.assertEqual(script.budget_words(120, "en", "+10%"), 257)
+        self.assertEqual(script.budget_words(120, "en", "+0%"), 234)
         self.assertEqual(script.rate_factor("-5%"), 0.95)
 
 
@@ -75,7 +75,7 @@ class CheckTest(unittest.TestCase):
         code, out = check(GOOD)
         self.assertEqual(code, 0, out)
         self.assertEqual(out["errors"], [])
-        self.assertEqual(out["budget"], 109)
+        self.assertEqual(out["budget"], 113)
 
     def test_a_hook_may_open_before_the_title(self):
         hook = GOOD.replace("## s01 · context · anim:title", "## s00 · hook · capture · target 4 s · steps: s00\n"
@@ -86,6 +86,22 @@ class CheckTest(unittest.TestCase):
         self.assertTrue(any("5 s at most" in e for e in check(long)[1]["errors"]))
         late = GOOD.replace("## s06 · close", "## s05b · hook · capture · target 4 s\nNarration: x [src: README.md:3]\n\n## s06 · close")
         self.assertTrue(any("pitch order" in e or "heading" in e for e in check(late)[1]["errors"]))
+
+    def test_a_story_archetype_changes_what_the_script_needs(self):
+        demo = GOOD.replace("Limit: 2:00 · Language: en", "Limit: 2:00 · Language: en · Story: demo-first")
+        _, out = check(demo)
+        self.assertEqual(out["story"], "demo-first")
+        self.assertTrue(any("needs a hook" in e for e in out["errors"]), out["errors"])  # demo-first opens on the result
+        _, out = check(GOOD.replace("Language: en", "Language: en · Story: sideways"))
+        self.assertTrue(any("isn't one of" in e for e in out["errors"]))
+
+    def test_flat_rhythm_is_a_warning_and_a_punch_scene_fixes_it(self):
+        flat = GOOD.replace("target 9 s", "target 11 s").replace("target 12 s", "target 11 s")
+        _, out = check(flat)
+        self.assertTrue(any("rhythm is flat" in w for w in out["warnings"]), out["warnings"])
+        punchy = flat.replace("## s03 · problem · anim:problem · target 11 s", "## s03 · problem · anim:kinetic · target 3 s")
+        _, out = check(punchy)
+        self.assertFalse(any("rhythm" in w for w in out["warnings"]))
 
     def test_untagged_sentence_is_an_error(self):
         code, out = check(GOOD.replace("Citizens rarely see which ones are stuck. [understanding: confirmed]",

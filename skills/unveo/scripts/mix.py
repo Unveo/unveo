@@ -2,7 +2,8 @@
 
   mix.py [--out unveo-out/.work]   ->  audio/mix.wav
 
-Each voice clip lands at its scene's start + lead; the music ducks 9 dB under the voice;
+Each voice clip lands at its scene's start + lead; the music ducks 9 dB under the voice; the sound effects
+(audio/sfx.wav) go on top as they are;
 two-pass loudnorm (I=-14, TP=-1.5) as in the upstream audio_template.py, then a -3 dBFS limiter so the AAC
 encode (stitch.py final) still measures under -1 dBTP.
 """
@@ -81,6 +82,10 @@ def main():
     active = np.abs(voice).max(axis=1) > 10 ** (-40 / 20)
     gain = 1 - (1 - 10 ** (-DUCK_DB / 20)) * envelope(active)
     mix = voice + music * gain[:, None]
+    sfx_f = o / "audio" / "sfx.wav"  # clicks, whooshes and thumps (score.py): already quiet, never ducked
+    if sfx_f.exists():
+        fx = load(sfx_f)[:n]
+        mix[: len(fx)] += fx
     raw = o / "audio" / "mix_raw.wav"
     raw.parent.mkdir(exist_ok=True)
     subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-f", "f32le", "-ar", str(SR), "-ac", "2", "-i", "-", "-c:a", "pcm_f32le", str(raw)],  # float: nothing clips before loudnorm

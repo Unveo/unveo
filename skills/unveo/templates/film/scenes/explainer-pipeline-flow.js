@@ -5,16 +5,16 @@ UNVEO.scene("explainer-pipeline-flow", {
     root.__q = question(root, d.title);
     exampleTag(root, d);
     const st = (d.stages || []).slice(0, 6), n = Math.max(1, st.length);
-    const gap = 56, w = Math.min(330, (1680 - gap * (n - 1)) / n), y = 470;
+    const gap = 56, w = Math.min(360, (1680 - gap * (n - 1)) / n), y = 400;  // sized to the canvas (docs/16 D1)
     const left0 = 120 + (1680 - (w * n + gap * (n - 1))) / 2;
-    const track = h("div", "abs", null, `left:${left0 + w / 2}px;top:${y + 100}px;height:6px;border-radius:6px;background:var(--accent);width:0`);
+    const track = h("div", "abs", null, `left:${left0 + w / 2}px;top:${y + 140}px;height:6px;border-radius:6px;background:var(--accent);width:0`);
     root.append(track);
     root.__track = track; root.__trackW = (n - 1) * (w + gap);
     root.__boxes = st.map((s, i) => {
-      const b = h("div", "abs card", null, `left:${left0 + i * (w + gap)}px;top:${y}px;width:${w}px;height:200px;padding:26px;display:flex;flex-direction:column;gap:8px;z-index:2`);
-      b.innerHTML = `<div class="mono" style="font:600 22px 'Geist Mono';color:var(--accent)">0${i + 1}</div>
-        <div style="font:600 34px/1.15 var(--font-display)">${esc(s.label || s.name)}</div>
-        <div class="mono" style="margin-top:auto;font:400 21px 'Geist Mono';color:var(--muted)">${esc(s.tool || s.name || "")}</div>`;
+      const b = h("div", "abs card", null, `left:${left0 + i * (w + gap)}px;top:${y}px;width:${w}px;height:280px;padding:30px;display:flex;flex-direction:column;gap:10px;z-index:2`);
+      b.innerHTML = `<div class="mono" style="font:600 24px 'Geist Mono';color:var(--accent)">0${i + 1}</div>
+        <div style="font:600 ${n > 4 ? 36 : 42}px/1.12 var(--font-display)">${esc(s.label || s.name)}</div>
+        <div class="mono" style="margin-top:auto;font:400 23px 'Geist Mono';color:var(--muted);overflow-wrap:anywhere">${esc(s.tool || s.name || "")}</div>`;
       root.append(b);
       return { b, cx: left0 + i * (w + gap) + w / 2 };
     });
@@ -22,9 +22,14 @@ UNVEO.scene("explainer-pipeline-flow", {
       root.__trig = h("div", "abs", `⏱ ${esc(d.trigger.label)}`, `left:${left0}px;top:${y - 90}px;padding:12px 24px;border-radius:999px;background:var(--ink);color:var(--bg);font:500 26px var(--font-display)`);
       root.append(root.__trig);
     }
-    root.__tok = h("div", "abs mono", "", `top:${y + 250}px;padding:14px 24px;border-radius:16px;background:var(--accent2);color:#fff;font:600 26px 'Geist Mono';white-space:nowrap;transform:translateX(-50%);z-index:3`);
+    root.__tok = h("div", "abs mono", "", `top:${y + 330}px;padding:14px 24px;border-radius:16px;background:var(--accent2);color:#fff;font:600 26px 'Geist Mono';white-space:nowrap;transform:translateX(-50%);z-index:3`);
     root.append(root.__tok);
     root.__pay = (d.payloads || []).map(String);
+    // a pulse that keeps travelling the track once it's built, so the scene never freezes (docs/16 MO3)
+    root.__pulse = h("div", "abs", null, `top:${y + 133}px;width:20px;height:20px;margin-left:-10px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 8px color-mix(in srgb, var(--accent) 22%, transparent);z-index:1;opacity:0`);
+    root.append(root.__pulse);
+    root.__x0 = left0 + w / 2;
+    root.__focus = root.__boxes[root.__boxes.length - 1] && root.__boxes[root.__boxes.length - 1].b;  // the end zooms into the last stage
   },
   draw(t, d, dur, root) {
     const { p, riseWords, rise, beat, E, lerp, clamp } = CORE;
@@ -41,6 +46,9 @@ UNVEO.scene("explainer-pipeline-flow", {
     root.__tok.style.left = x + "px";
     root.__tok.textContent = root.__pay[Math.min(root.__pay.length - 1, Math.round(k))] || "";
     root.__tok.style.opacity = root.__pay.length ? p(t, t2, .4) : 0;
+    const built = t1 + 0.3 + (n * 0.18 + 0.5) / CORE.style().speed, cyc = ((t - built) / 1.8) % 1;
+    root.__pulse.style.left = root.__x0 + root.__trackW * E.ioC(Math.max(0, cyc)) + "px";
+    root.__pulse.style.opacity = t > built ? 0.85 * Math.sin(Math.PI * Math.max(0, cyc)) : 0;
     root.__boxes.forEach((b, j) => {
       const on = t >= t2 && Math.abs(k - j) < 0.5;
       b.b.style.boxShadow = on ? "0 0 0 4px var(--accent), 0 18px 50px rgba(0,0,0,.08)" : "";

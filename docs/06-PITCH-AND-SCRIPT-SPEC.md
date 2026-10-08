@@ -30,17 +30,17 @@ These are targets for writing. The real lengths come from the voice clips ([03 t
 ## 2. Word budget
 
 ```
-speaking_s = limit_s × 0.92 − 5.5        # 8% safety margin; 2.5 s title + 3 s end-card hold are silent
+speaking_s = limit_s × 0.92 − 4.0        # 8% safety margin; 2.5 s title + 1.5 s end-card hold are silent
 words      = speaking_s × rate
 rate       = 2.2 words/s (English, en-IN voices at +0%) · 2.2 words/s (Hindi)   # measured in M0
 ```
 
 | Limit | English words | Hindi words |
 |---|---|---|
-| 60 s | 109 | 109 |
-| 90 s | 170 | 170 |
-| 2 min | 231 | 231 |
-| 3 min | 352 | 352 |
+| 60 s | 113 | 113 |
+| 90 s | 173 | 173 |
+| 2 min | 234 | 234 |
+| 3 min | 356 | 356 |
 
 Each segment gets its share of the total. The agent counts words per scene while writing. After `voice.py`, `plan_timeline.py` measures the real total; if it's over `limit × 0.98`, the shorten loop runs ([02 §4](02-USER-FLOW.md#4-failure-paths)).
 

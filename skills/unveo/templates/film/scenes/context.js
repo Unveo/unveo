@@ -9,7 +9,7 @@ window.CORE_LIST = {
     const { h, esc, words, num } = CORE;
     const hasStat = d.stat && d.stat.value != null;
     root.__eb = h("div", "abs eyebrow", esc(eyebrow), "left:120px;top:120px" + (isProblem ? ";color:var(--bad)" : ""));
-    root.__hl = words(h("div", "abs", null, `left:120px;top:176px;width:${hasStat ? 1020 : 1560}px;font:650 76px/1.08 var(--font-display);letter-spacing:-.03em`), d.headline || "");
+    root.__hl = words(h("div", "abs", null, `left:120px;top:176px;width:${hasStat ? 1020 : 1560}px;font:650 calc(70px * min(var(--type-scale, 1), 1.2))/1.08 var(--font-display);letter-spacing:-.03em`), d.headline || "");
     root.append(root.__eb, root.__hl);
     const items = d.points || d.pains || [];
     root.__items = items.slice(0, 3).map((it, i) => {

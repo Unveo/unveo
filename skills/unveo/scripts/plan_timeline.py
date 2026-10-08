@@ -10,7 +10,7 @@ from common import emit, out_dir, read_json, write_json  # noqa: E402
 import script as scriptmod  # noqa: E402
 
 FPS, W, H = 30, 1920, 1080
-TITLE_S, END_HOLD_S = 2.5, 3.0
+TITLE_S, END_HOLD_S = 2.5, 1.5  # the close is short and moving (docs/16 S4)
 LEAD_S, TAIL_ANIM_S, TAIL_REC_S = 0.3, 0.4, 0.5
 
 
@@ -39,6 +39,21 @@ def build(scenes, clips, limit_s, needs=None):
     return {"fps": FPS, "width": W, "height": H, "limit_s": limit_s, "total_s": round(start, 3), "scenes": out}
 
 
+def snap_to_beat(tl, bpm, limit_s, most=0.35):
+    """Lengthen scene tails (by at most `most` s) so cuts land on the music's beat (docs/16 AU1); the video still fits
+    the limit, so where there's no room it stays as it was."""
+    beat, start, out = 60 / bpm, 0.0, []
+    for s in tl["scenes"]:
+        end = start + s["dur_s"]
+        extra = math.ceil(round(end / beat, 6)) * beat - end
+        dur = round(frames(s["dur_s"] + extra), 4) if 0 < extra <= most else s["dur_s"]
+        out.append({**s, "dur_s": dur, "tail_s": round(s["tail_s"] + dur - s["dur_s"], 4), "start_s": round(start, 4)})
+        start += dur
+    if start > limit_s * 0.98:
+        return tl
+    return {**tl, "total_s": round(start, 3), "scenes": out, "bpm": bpm}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", default="unveo-out/.work")
@@ -54,6 +69,12 @@ def main():
     rec = o / "capture" / "record.json"
     needs = {k: v["need_s"] for k, v in json.loads(rec.read_text()).items()} if rec.exists() else {}
     tl = build(scenes, clips, brief["limit_s"], needs)
+    import looks
+    f = o / "film" / "design.json"
+    design = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+    if design.get("look"):
+        style = design.get("motion_style") or looks.motion_for(design["look"], looks.history())  # as render.py will pick it
+        tl = snap_to_beat(tl, looks.MUSIC[style][1], brief["limit_s"])
     write_json(o / "timeline.json", tl)
     cap = brief["limit_s"] * 0.98
     if tl["total_s"] > cap:

@@ -55,13 +55,32 @@ class BoxTest(unittest.TestCase):
         from common import ffmpeg_exe
         from PIL import Image
         d = Path(tempfile.mkdtemp())
-        (d / "c.ass").write_text(captions.ASS_HEAD + "Dialogue: 0,0:00:00.00,0:00:02.00,Default,,0,0,0,,You sign in with Google, so there's\\Nno password.\n")
+        (d / "c.ass").write_text(captions.DEFAULT_HEAD + "Dialogue: 0,0:00:00.00,0:00:02.00,Default,,0,0,0,,You sign in with Google, so there's\\Nno password.\n")
         subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=white:s=1920x1080:d=1", "-vf",
                         f"subtitles={d / 'c.ass'}:fontsdir={captions.FONTS}", "-frames:v", "1", str(d / "c.png")], check=True)
         a = np.array(Image.open(d / "c.png").convert("L")).astype(int)
         rows = [r for r in range(700, 1080) if (a[r] < 200).sum() > 50]
         lefts = {int(np.argmax(a[r] < 200)) for r in rows}
         self.assertLessEqual(max(lefts) - min(lefts), 2, lefts)  # one box: every row starts at the same x
+
+
+class LookStyleTest(unittest.TestCase):
+    def test_karaoke_times_each_word_and_keeps_the_line_break(self):
+        c = {"words": ["Pick", "a", "state,", "then", "a", "project."], "times": [1.0, 1.3, 1.4, 2.0, 2.2, 2.3], "start": 0.9, "end": 3.0, "split": 3}
+        self.assertEqual(captions.ass_text(c, True, {}), "{\\k10}{\\k30}Pick {\\k10}a {\\k60}state,\\N{\\k20}then {\\k10}a {\\k70}project.")
+        self.assertEqual(captions.ass_text(c, False, {"upper": True, "prefix": "> "}), "> PICK A STATE,\\NTHEN A PROJECT.")
+
+    def test_each_look_gets_readable_colours_in_its_own_style(self):
+        d = Path(tempfile.mkdtemp())
+        (d / "film").mkdir()
+        (d / "brief.json").write_text(json.dumps({"palette": {"tokens": {"bg": "#ffffff", "ink": "#111111", "accent": "#4f46e5", "accent2": "#0ea5e9",
+                                                                         "surface": "#f4f4f5", "muted": "#666666"}}}))
+        for look in ("terminal", "poster", "editorial"):
+            (d / "film/design.json").write_text(json.dumps({"look": look}))
+            head, folder, st = captions.look_style(d)
+            self.assertIn("Style: Default,", head)
+            self.assertTrue((folder / "geist-semibold.ttf").exists())
+        self.assertTrue(st["italic"])  # editorial: serif italic
 
 
 class StitchBurnTest(unittest.TestCase):

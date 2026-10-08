@@ -6,16 +6,23 @@ Animated scenes are one HTML page (`OUT/film/index.html`). render.py copies the 
 
 | Template | Data | Notes |
 |---|---|---|
-| `title` | `{"title", "event", "team"}` | From brief.header |
+| `title` | `{"title", "event", "team", "backdrop"?}` | From brief.header. `backdrop`: the hook's scene id, to sit over its last frame |
 | `context` | `{"eyebrow"?, "headline", "points": [≤3], "stat"?: {"value", "label", "source"}}` | headline ≤ 9 words; points ≤ 5 words each; stat only with a real source |
 | `problem` | `{"eyebrow"?, "headline", "pains": [≤3], "stat"?}` | Same limits |
 | `product-intro` | `{"name", "one_liner", "screenshot": "assets/probe.png"}` | The screenshot is the app's probe image; omit it if there's no app. The last second zooms into it, which hands off to the first recording |
 | `explainer-*` | See EXPLAINERS.md | |
-| `close` | `{"title", "impact_line", "links": [{"label","url"}], "extra_line"}` | `impact_line` and `links` **copied exactly** from brief.close; QA compares them |
+| `close` | `{"title", "impact_line", "links": [{"label","url"}], "extra_line", "credits"?, "built_with"?}` | `impact_line` and `links` **copied exactly** from brief.close; QA compares them. `credits` defaults to brief.header.team |
+| `kinetic` | `{"text"}` | One short line in huge type, one or two words at a time, cut on the spoken words. For 2–3 s punch scenes and hooks. `**word**` marks the one emphasis |
+| `built-with` | `{"logos": [logo ids], "line", "kicker"?}` | The stack's real logos and one cited sentence on the hardest part (PITCH.md §1) |
 | `placeholder` | `{"shot_id", "what_to_record"}` | Used automatically for missing clips |
 | `compose` | `{"layout", "blocks": [...]}` | Your own scene from building blocks; see DESIGN.md. Prefer it whenever a template doesn't fit the story |
 
 On-screen text summarises; the voice explains. Don't put the narration sentence on screen word for word.
+
+Every scene, any template:
+- **One emphasis:** wrap the key word or words in `**…**` in a headline, heading or text (only the first pair counts). The motion language draws it (an underline, a pill, a ring…). It lands at `"emphasis_at"` (seconds or `"word:<word>"`), by default about 40% in.
+- **The camera** moves every animated scene a little, by the motion language. `"camera": false` in a scene's data keeps it still.
+- **Explainers** end with a short zoom into their answer, and one that follows a recording draws over that recording's frozen, blurred last frame. `"backdrop": false` turns that off.
 
 ## Commands
 

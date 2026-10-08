@@ -24,14 +24,22 @@ def rgb_at(path, t):
 
 
 class CutPlanTest(unittest.TestCase):
-    def test_every_boundary_gets_a_transition_from_the_look(self):
-        cuts = looks.cuts(SCENES, "swiss")
+    def test_every_boundary_gets_a_transition_from_the_motion_language(self):
+        cuts = looks.cuts(SCENES, "swiss")                # swiss moves with snap unless design.json says otherwise
         self.assertEqual(len(cuts), 4)
         self.assertEqual(cuts[0]["type"], "fade")         # out of the title: always a soft fade
-        self.assertEqual(cuts[1]["dur"], 0)               # swiss: anim -> anim is a hard cut
-        self.assertEqual(cuts[2]["type"], "wipeleft")     # anim -> recording
+        self.assertEqual(cuts[1]["dur"], 0)               # snap: anim -> anim is a hard cut
+        self.assertEqual(cuts[2]["type"], "accent-wipe")  # anim -> recording: an accent bar sweeps across
         self.assertEqual(cuts[3]["type"], "fade")         # into the close
         self.assertTrue(all(c["dur"] in (0, looks.T_DEFAULT) for c in cuts))
+        self.assertEqual(looks.cuts(SCENES, "swiss", {"motion_style": "glide"})[2]["type"], "card")
+
+    def test_a_recording_into_an_explainer_fades_and_a_flash_is_two_frames(self):
+        rec = [{"id": "s05", "visual": "capture", "template": None}, {"id": "s06", "visual": "anim", "template": "explainer-model-io"},
+               {"id": "s07", "visual": "capture", "template": None}]
+        cuts = looks.cuts(rec, "terminal", {"motion_style": "typewriter"})
+        self.assertEqual(cuts[0]["type"], "fade")         # the explainer draws over the recording's last frame
+        self.assertEqual((cuts[1]["type"], cuts[1]["dur"]), ("flash", round(looks.T_FLASH, 3)))
 
     def test_two_recordings_in_a_row_hard_cut_so_the_app_never_ghosts(self):
         scenes = [{"id": "s05", "visual": "capture", "template": None}, {"id": "s06", "visual": "capture", "template": None},
@@ -68,10 +76,30 @@ class StitchTransitionTest(unittest.TestCase):
         self.assertGreater(np.abs(mid - gray).sum(), 20)
         self.assertTrue(np.all(mid >= np.minimum(navy, gray) - 12) and np.all(mid <= np.maximum(navy, gray) + 12))
 
+    def test_drawn_transitions_render_and_keep_the_length(self):
+        for kind in ("accent-wipe", "card", "dip-accent"):
+            o, total = self.build({"look": "swiss", "transition": {"type": kind, "dur": 0.45}})
+            d, _ = info(o / "final.mp4")
+            self.assertAlmostEqual(d, total, delta=0.1, msg=kind)
+        mid = rgb_at(o / "final.mp4", 2.5 + 0.45 / 2)  # dip-accent: the swiss accent fills the middle of the cut
+        self.assertGreater(np.abs(mid - rgb_at(o / "final.mp4", 1.0)).sum(), 30)
+
     def test_zero_length_transition_is_a_hard_cut(self):
         o, _ = self.build({"look": "editorial", "transition": {"dur": 0}})
         gray = rgb_at(o / "final.mp4", 3.6)
         self.assertLess(np.abs(rgb_at(o / "final.mp4", 2.55) - gray).sum(), 12)
+
+
+class BeatTest(unittest.TestCase):
+    def test_cuts_snap_to_the_beat_only_where_there_is_room(self):
+        scenes = [{"id": f"s0{i}", "segment": "product", "visual": "anim", "template": "compose", "narration": "x"} for i in range(1, 4)]
+        clips = {s["id"]: {"file": "v.mp3", "dur_s": 3.0} for s in scenes}  # 3.7 s scenes: 0.3 s short of a beat
+        tl = plan_timeline.build(scenes, clips, 60)
+        snapped = plan_timeline.snap_to_beat(tl, 120, 60)
+        for s in snapped["scenes"]:
+            end = s["start_s"] + s["dur_s"]
+            self.assertAlmostEqual(end / 0.5, round(end / 0.5), delta=0.07)  # every cut on a beat at 120 BPM
+        self.assertEqual(plan_timeline.snap_to_beat(tl, 120, tl["total_s"] / 0.98)["total_s"], tl["total_s"])  # no room: unchanged
 
 
 class SettleTest(unittest.TestCase):

@@ -1,8 +1,9 @@
-/* close: { title, impact_line, links: [{label, url}], extra_line, built_with?: [icon names, ≤6] } — links typeset exactly as given */
+/* close: { title, impact_line, links: [{label, url}], extra_line, credits?, built_with?: [icon names, ≤6] } — links typeset exactly as given.
+   credits: who made it ("Priya Sharma · Arjun Rao"); render.py fills it from brief.header.team when the data has none. */
 UNVEO.scene("close", {
   build(root, d) {
     const { h, esc, words } = CORE;
-    root.__im = words(h("div", "abs", null, "left:120px;top:150px;width:1560px;font:650 74px/1.12 var(--font-display);letter-spacing:-.03em"), d.impact_line || "");
+    root.__im = words(h("div", "abs", null, "left:120px;top:150px;width:1560px;font:650 calc(68px * min(var(--type-scale, 1), 1.2))/1.12 var(--font-display);letter-spacing:-.03em"), d.impact_line || "");
     root.append(root.__im);
     root.__links = (d.links || []).slice(0, 3).map((l, i) => {
       const c = h("div", "abs card", null, `left:120px;top:${560 + i * 128}px;width:1560px;height:104px;display:flex;align-items:center;gap:36px;padding:0 40px`);
@@ -13,7 +14,8 @@ UNVEO.scene("close", {
       root.append(c);
       return c;
     });
-    root.__ti = h("div", "abs", `${esc(d.title || "")}${d.extra_line ? `<span style="color:var(--muted);font-weight:500"> · ${esc(d.extra_line)}</span>` : ""}`,
+    root.__ti = h("div", "abs", `${esc(d.title || "")}${d.extra_line ? `<span style="color:var(--muted);font-weight:500"> · ${esc(d.extra_line)}</span>` : ""}` +
+      (d.credits ? `<span style="color:var(--muted);font-weight:500"> · Made by ${esc(d.credits)}</span>` : ""),
       "left:120px;bottom:90px;font:700 34px var(--font-display)");
     root.append(root.__ti);
     const motifs = (d.built_with || []).length ? d.built_with.slice(0, 6)  // the stack's logos, else the motifs

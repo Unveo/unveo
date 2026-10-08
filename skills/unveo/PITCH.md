@@ -8,7 +8,7 @@
 | `context` | 10% | the title card (2.5 s, no voice) + 1 context scene | `anim:title`, then `anim:compose` (or `anim:context`) |
 | `problem` | 15% | 1–2 problem scenes | `anim:compose` or `anim:problem` |
 | `product` | 65% | 1 `anim:product-intro` (4–6 s), then 1 scene per journey step, with the selected explainers cut in | `capture` (or `clip`) + `anim:explainer-<pattern>` |
-| `close` | 10% | 1 close scene: the impact line spoken, links held about 3 s | `anim:close` |
+| `close` | 10% | 1 close scene, 4–5 s: the impact line spoken, links and credits held about 1.5 s | `anim:close` |
 
 **Open on the hook when the app has a moment worth showing.** Judges decide in the first 3–5 seconds, and a silent title card wastes them. The hook is the end of a later recording, cut from the same take ("This survey stops fake answers before they're saved."). Give the title after it `"backdrop": "<hook id>"` in its data, so the title sits over the hook's last frame instead of on a separate card. A hook takes its words from the product share. Skip it only when no screen of the app says much on its own.
 
@@ -28,6 +28,22 @@ Seconds per segment: 60 s → 6 / 9 / 39 / 6 · 90 s → 9 / 14 / 58 / 9 · 2 mi
 
 A scene's `target` is your estimate (words ÷ 2.2). The real length comes from its voice clip later, so keep targets honest: `script.py check` warns when a scene's words need noticeably more time than its target.
 
+**Story archetypes.** The table above is the default, *problem → product*. Pick the structure that fits the project, and not the one the last video used (`script.py check` warns on a repeat). Put it in the header: `Story: demo-first`.
+
+| Story | Structure | Needs | Fits |
+|---|---|---|---|
+| `problem-product` (default) | context, problem, the product step by step, explainers, close | product, close | civic, research |
+| `demo-first` | the hook on the result, then "here's how we got there", steps, one explainer, close | hook, product, close (0–1 explainer) | consumer apps, dev tools |
+| `day-in-the-life` | a named persona from the README's users, their moment of pain, then the product through their eyes | context, problem, product, close | health, education, community |
+| `before-after` | the old way (an `anim:before-after` scene, or a dull recording), then the product side by side | problem, product, close | productivity, automation |
+| `how-it-works` | a short tour, then 2–3 explainers as the main act | product, close (2–3 explainers) | ML, infrastructure, APIs |
+
+Only `problem-product` checks the time split above; the others keep the word budget and the explainer rules.
+
+**Rhythm.** Don't make every scene the same length. Put a 2–3 s punch scene between two longer ones: one line in huge type (`anim:kinetic`, "One answer per developer.") or one number (`anim:stat-hero`). `script.py check` warns when every scene runs within ±25% of the same length.
+
+**How it's built.** Judging rubrics weigh technical difficulty. For a technical track, one `anim:built-with` beat (5–7 s) shows the stack's logos and one sentence on the hardest part, cited like any claim ("Two answers can't race in: one transaction locks the user row." [src: …]).
+
 **Explainers:** one per selected hidden logic (from brief.json), 8–14 s each.
 - Put each one **right after** the scene for its `shown_at_step`.
 - Never put two explainers back to back, never directly after `product-intro` (show the app first), and never as the last product scene.
@@ -35,7 +51,7 @@ A scene's `target` is your estimate (words ÷ 2.2). The real length comes from i
 
 ## 2. Word budget
 
-`script.py budget --limit <s>` gives it: at a normal pace (+0%), 60 s → 109 words · 90 s → 170 · 2 min → 231 · 3 min → 352 (English and Hindi alike). `script.py check` scales it by the brief's `voice.rate`, so at the default +10% it's about a tenth more (90 s → about 187). Split it by the shares above. `script.py check` fails above budget +5% and warns below 85%.
+`script.py budget --limit <s>` gives it: at a normal pace (+0%), 60 s → 113 words · 90 s → 173 · 2 min → 234 · 3 min → 356 (English and Hindi alike). `script.py check` scales it by the brief's `voice.rate`, so at the default +10% it's about a tenth more (90 s → about 191). Split it by the shares above. `script.py check` fails above budget +5% and warns below 85%.
 
 ## 3. How to write for judges
 
@@ -62,7 +78,7 @@ A scene's `target` is your estimate (words ÷ 2.2). The real length comes from i
 
 ```markdown
 # Script: <project name>
-Limit: 2:00 · Language: en · Budget: 231 words
+Limit: 2:00 · Language: en · Budget: 234 words · Story: problem-product
 
 ## s01 · hook · capture · target 4 s · steps: s01
 Narration: <one line on what the judge is seeing>. [src: …]
@@ -86,6 +102,7 @@ On screen: Example data
 Narration: <impact line> [brief: close.impact_line]
 ```
 
+- **Header:** `Limit`, `Language`, `Budget`, and `Story` when it isn't problem-product.
 - **Heading:** `## sNN · <segment> · <visual> · target <s> s`. Add `· steps: sNN` (its own id) on capture scenes, and `· logic: Hn` on explainers.
   - Visuals: `anim:<template>`, `capture` or `clip`.
   - Templates: `compose` (a scene designed from blocks, preferred for context, problem and the intro), `title`, `context`, `problem`, `product-intro`, `close`, `explainer-pipeline-flow`, `explainer-formula-breakdown`, `explainer-model-io`, `explainer-raw-vs-processed`, `explainer-system-map`, and the story scenes `chapter`, `stat-hero`, `before-after`, `annotated-shot` (DESIGN.md).

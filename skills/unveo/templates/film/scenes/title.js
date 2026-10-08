@@ -3,18 +3,21 @@
 UNVEO.scene("title", {
   build(root, d) {
     const { h, esc, words } = CORE;
-    root.__ev = h("div", "abs eyebrow", esc(d.event || ""), "left:160px;top:330px");
-    root.__ti = words(h("div", "abs", null, "left:160px;top:380px;width:1600px;font:700 132px/1.02 var(--font-display);letter-spacing:-.04em"), d.title || "");
-    root.__bar = h("div", "abs", null, "left:164px;top:560px;height:8px;border-radius:8px;background:var(--accent)");
-    root.__tm = h("div", "abs", esc(d.team || ""), "left:164px;top:600px;font:500 34px var(--font-display);color:var(--muted)");
+    // one column, centred on the frame's height: a long title wraps and everything below follows it
+    const col = h("div", "abs", null, "left:160px;top:0;bottom:0;width:1600px;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:26px");
     const motif = ((window.TIMELINE.design || {}).motifs || [])[0];  // the project's world, e.g. a parliament for MPLADS
-    root.__mo = h("div", "abs", motif && window.ICON ? ICON(motif, 120) : "", "left:160px;top:190px");
+    root.__mo = h("div", null, motif && window.ICON ? ICON(motif, 120) : "");
+    root.__ev = h("div", "eyebrow", esc(d.event || ""));
+    root.__ti = words(h("div", null, null, "font:700 calc(120px * min(var(--type-scale, 1), 1.35))/1.02 var(--font-display);letter-spacing:-.04em;text-wrap:balance"), d.title || "");
+    root.__bar = h("div", null, null, "height:8px;border-radius:8px;background:var(--accent);margin-left:4px;width:0");
+    root.__tm = h("div", null, esc(d.team || ""), "margin-left:4px;font:500 34px var(--font-display);color:var(--muted)");
+    col.append(...[root.__mo, root.__ev, root.__ti, root.__bar, root.__tm].filter(e => e.innerHTML !== "" || e === root.__bar || e === root.__ti));
     if (d.backdrop_img) {
       root.__bd = h("div", "abs", null, `inset:0;background:url(${d.backdrop_img}) center/cover`);
       root.__wash = h("div", "abs", null, "inset:0;background:var(--bg)");
       root.append(root.__bd, root.__wash);
     }
-    root.append(root.__mo, root.__ev, root.__ti, root.__bar, root.__tm);
+    root.append(col);
   },
   draw(t, d, dur, root) {
     const { p, riseWords, rise, drift, E } = CORE;

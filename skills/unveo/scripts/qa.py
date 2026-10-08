@@ -224,7 +224,7 @@ def main():
     cuts, _ = looks.plan_for(o)
     flashes = []
     for i, c in enumerate(cuts, 1):
-        if c["dur"] > 0 and i < len(tl["scenes"]):
+        if c["dur"] > 0 and i < len(tl["scenes"]) and c["type"] not in looks.DRAWN - {"card"}:  # those show the accent on purpose
             t = tl["scenes"][i]["start_s"]
             mid, before, after = (frame_rgb(final, x) for x in (t + c["dur"] / 2, t - 0.1, t + c["dur"] + 0.1))
             if all(f is not None for f in (mid, before, after)) and flash_in(mid, before, after):
@@ -290,6 +290,14 @@ def main():
     gate("placeholders", not holes, f"{holes} still show a 'Recording needed' card: record the clips, then stitch.py ingest" if holes
          else "every clip is recorded", blocking=False)
 
+    design = json.loads((o / "film" / "design.json").read_text(encoding="utf-8")) if (o / "film" / "design.json").exists() else {}
+    motion = looks.motion_of(design.get("look"), design)
+    this = {"look": design.get("look"), "motion_style": motion, "story": res.get("story", "problem-product"), "music": looks.MUSIC[motion][0]}
+    last = (looks.history() or [{}])[-1]
+    same = [k for k, v in this.items() if v and last.get(k) == v]
+    gate("repetition", len(same) < 2, f"same {', '.join(same)} as the last video: change one (DESIGN.md, PITCH.md §1)" if len(same) >= 2
+         else "different from the last video" + (f" (same {same[0]})" if same else ""), blocking=False)
+
     rec = [sc for sc in tl["scenes"] if sc["segment"] == "product" and sc["visual"] in ("capture", "clip")]
     cap = sum(1 for sc in rec if sc["visual"] == "capture")
     gate("capture coverage", True, f"{cap} of {len(rec)} product recordings automatic", blocking=False)
@@ -305,10 +313,8 @@ def main():
         lines += ["", "## How to fix"] + [f"- **{g['gate']}**: {FIX.get(g['gate'], '')}" for g in fails]
     (o / "qa.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     published = publish(o, brief, tl) if ok else []  # never hand over a video that failed a blocking gate
-    design = json.loads((o / "film" / "design.json").read_text(encoding="utf-8")) if (o / "film" / "design.json").exists() else {}
-    if ok and design.get("look"):  # so the next video gets a different look
-        import looks
-        looks.remember(None, {"project": brief.get("project", {}).get("name", ""), "look": design["look"],
+    if ok and design.get("look"):  # so the next video gets a different look, motion, story and music (docs/16 Q5)
+        looks.remember(None, {"project": brief.get("project", {}).get("name", ""), **this,
                               "fonts": [design.get("display_font"), design.get("body_font")]})
     if not ok:
         emit("qa", ok=False, user_action=True, gates=gates, outputs=published, message=head)

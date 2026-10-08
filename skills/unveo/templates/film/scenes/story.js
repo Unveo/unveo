@@ -18,6 +18,11 @@
   UNVEO.scene("before-after", via(d => ({ layout: "stack", blocks: [
     ...(d.title ? [{ type: "heading", area: "top", props: { text: d.title } }] : []),
     { type: "compare", area: "middle", props: { before: d.before, after: d.after }, at: 0.3 }] })));
+  // built-with (docs/16 S5): the stack's real logos and one cited sentence on the hardest part
+  UNVEO.scene("built-with", via(d => ({ layout: "centered-hero", blocks: [
+    { type: "kicker", area: "main", props: { text: d.kicker || "Built with" } },
+    { type: "logo-wall", area: "main", props: { items: d.logos || [], size: 104 }, at: 0.25 },
+    ...(d.line ? [{ type: "text", area: "below", props: { text: d.line }, at: 1.0 }] : [])] })));
   UNVEO.scene("annotated-shot", via(d => ({ layout: "full-bleed-shot", blocks: [
     { type: "callout", area: "shot", props: { src: d.src || "assets/probe.png", pins: d.pins || [] }, at: 0.1 },
     { type: "heading", area: "caption", props: { text: d.title || "" }, at: 0.4 }] })));

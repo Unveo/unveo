@@ -4,7 +4,7 @@ UNVEO.scene("product-intro", {
     const { h, esc, words } = CORE;
     const col = h("div", "abs", null, "left:120px;top:0;bottom:0;width:760px;display:flex;flex-direction:column;justify-content:center;gap:24px");
     root.__eb = h("div", "eyebrow", "Introducing");
-    root.__nm = words(h("div", null, null, "font:700 104px/1.02 var(--font-display);letter-spacing:-.04em"), d.name || "");
+    root.__nm = words(h("div", null, null, "font:700 calc(96px * min(var(--type-scale, 1), 1.3))/1.02 var(--font-display);letter-spacing:-.04em"), d.name || "");
     root.__ol = h("div", null, esc(d.one_liner || ""), "margin-top:8px;font:500 40px/1.3 var(--font-display);color:var(--muted)");
     col.append(root.__eb, root.__nm, root.__ol);
     if ((d.built_with || []).length) {  // the project's stack, as its real logos

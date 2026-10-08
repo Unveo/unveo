@@ -16,6 +16,7 @@ UNVEO.scene("explainer-raw-vs-processed", {
     };
     root.__raw = table(d.raw || {}, 120, false);
     root.__cln = table(d.processed || {}, 1100, true);
+    root.__focus = root.__cln;
     root.__steps = (d.steps || []).slice(0, 4).map((s, i) => {
       const c = h("div", "abs", esc(s), `left:840px;top:${370 + i * 92}px;width:240px;padding:14px 18px;border-radius:14px;background:var(--ink);color:var(--bg);font:500 22px/1.2 var(--font-display);text-align:center`);
       root.append(c);
@@ -33,7 +34,8 @@ UNVEO.scene("explainer-raw-vs-processed", {
     root.__steps.forEach((s, i) => rise(s, p(t, b(1) + 0.8 + i * 0.45, .5, E.outBack), 20));
     rise(root.__cln, p(t, b(2), .8, E.outExpo), 40);
     root.__cln.querySelectorAll(".cell").forEach((c, i) => {
-      const k = p(t, b(2) + 0.5 + i * 0.05, .4) * (1 - p(t, b(2) + 1.6 + i * 0.05, .6));
+      const sweep = t > b(2) + 2.4 ? Math.max(0, Math.sin(((t - b(2) - 2.4) * 2.2 - i * 0.35))) * 0.6 : 0;  // a slow sweep keeps it alive
+      const k = Math.max(p(t, b(2) + 0.5 + i * 0.05, .4) * (1 - p(t, b(2) + 1.6 + i * 0.05, .6)), sweep);
       c.style.background = `color-mix(in srgb, var(--accent2) ${Math.round(28 * k)}%, transparent)`;
     });
   },

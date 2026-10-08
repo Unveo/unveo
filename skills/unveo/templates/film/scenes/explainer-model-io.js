@@ -30,7 +30,9 @@ UNVEO.scene("explainer-model-io", {
       <div class="mono conf" style="font:600 24px 'Geist Mono';color:var(--accent2)"></div>` : ""}${alts}`;
     root.__a1 = h("div", "abs", "→", "left:700px;top:445px;font:600 64px var(--font-display);color:var(--muted)");
     root.__a2 = h("div", "abs", "→", "left:1165px;top:445px;font:600 64px var(--font-display);color:var(--muted)");
-    root.append(root.__in, root.__ring, root.__m, root.__out, root.__a1, root.__a2);
+    root.__flow = h("div", "abs", null, "top:487px;width:18px;height:18px;margin-left:-9px;border-radius:50%;background:var(--accent2);opacity:0");
+    root.append(root.__flow, root.__in, root.__ring, root.__m, root.__out, root.__a1, root.__a2);
+    root.__focus = root.__out;
   },
   draw(t, d, dur, root) {
     const { p, riseWords, rise, beat, E, num } = CORE;
@@ -45,6 +47,9 @@ UNVEO.scene("explainer-model-io", {
     root.__ring.style.transform = `scale(${1 + pulse * 0.04})`;
     rise(root.__a2, p(t, b(3) - 0.2, .5), 0);
     rise(root.__out, p(t, b(3), .7, E.outExpo), 40);
+    const cyc = ((t - b(3) - 1) / 1.6) % 1;  // then examples keep flowing in, through the model, and out (MO3)
+    root.__flow.style.left = 680 + 560 * E.ioC(Math.max(0, cyc)) + "px";
+    root.__flow.style.opacity = t > b(3) + 1 ? 0.9 * Math.sin(Math.PI * Math.max(0, cyc)) : 0;
     const c = (d.output || {}).confidence;
     if (c != null) {
       const k = p(t, b(3) + 0.4, 1.2, E.outExpo);

@@ -24,7 +24,8 @@ Reported but not blocking:
 - `app warnings`: console errors and failed requests during the take. Look at them; a failed request often explains an empty screen.
 - `privacy`: what was blurred.
 - `readable text`: the app's typical text would end up under about 18 px tall in a 1080p video. Zoom on that part, or record with `"viewport": {"zoom": 1.25}`.
-- `transitions`: a flat flash (white or one colour, not a blend of the two scenes) inside a cut. Re-render the scenes on either side, or pick another transition.
+- `repetition`: the look, motion language, story and music share two or more with the last video. Change one (DESIGN.md, PITCH.md §1).
+- `transitions`: a flat flash (white or one colour, not a blend of the two scenes) inside a cut (the accent wipe, the dip and the one-frame flash are drawn that way on purpose and aren't counted). Re-render the scenes on either side, or pick another transition.
 - capture coverage.
 - size: a warning above 500 MB. Only a run that passes every blocking gate is copied to `unveo-out/` (with each scene in `unveo-out/scenes/`).
 After fixing, re-run only the affected steps, then `stitch.py final` and `qa.py` again.

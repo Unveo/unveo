@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from common import emit  # noqa: E402
 
 RATE = {"en": 2.2, "hi": 2.2}  # words per second, measured in M0 (docs/06 §2)
-SILENT_S = 5.5                  # 2.5 s title card + 3 s end-card hold
+SILENT_S = 4.0                  # 2.5 s title card + 1.5 s end-card hold
 SEGMENTS = ["hook", "context", "problem", "product", "close"]  # hook: an optional cold open before the title (docs/16 S1)
 SHARE = {"context": 0.10, "problem": 0.15, "product": 0.65, "close": 0.10}
 FOCUS = {  # brief.focus: the time split and how many explainers (docs/15 A8)
@@ -22,6 +22,22 @@ FOCUS = {  # brief.focus: the time split and how many explainers (docs/15 A8)
 }
 
 
+# story archetypes (docs/16 S2): script.md's "Story:" line. Segments keep the pitch order; what changes is which ones
+# a story needs, and how many explainers. Only problem-product checks the time split.
+STORIES = {
+    "problem-product": {"need": {"product", "close"}},  # the default: as lenient as before archetypes existed
+    "demo-first": {"need": {"hook", "product", "close"}, "explainers": (0, 1)},
+    "day-in-the-life": {"need": {"context", "problem", "product", "close"}},
+    "before-after": {"need": {"problem", "product", "close"}},
+    "how-it-works": {"need": {"product", "close"}, "explainers": (2, 3)},
+}
+
+
+def story_of(text):
+    m = re.search(r"Story:\s*([\w-]+)", text.split("\n## ", 1)[0])
+    return m.group(1) if m else "problem-product"
+
+
 def explainer_bounds(focus, limit_s):
     lo, hi = FOCUS.get(focus, FOCUS["balanced"])["explainers"]
     if limit_s <= 60:  # a minute has no room for many
@@ -29,7 +45,8 @@ def explainer_bounds(focus, limit_s):
         lo = min(lo, hi)
     return lo, hi
 PATTERNS = ["pipeline-flow", "formula-breakdown", "model-io", "raw-vs-processed", "system-map"]
-TEMPLATES = {"title", "context", "problem", "product-intro", "close", "compose", "chapter", "stat-hero", "before-after", "annotated-shot"} | {f"explainer-{p}" for p in PATTERNS}
+TEMPLATES = {"title", "context", "problem", "product-intro", "close", "compose", "chapter", "stat-hero", "before-after", "annotated-shot",
+             "kinetic", "built-with"} | {f"explainer-{p}" for p in PATTERNS}
 HEADING = re.compile(r"^## (s\d{2}) · (\w+) · (anim:[\w-]+|capture|clip) · (?:target )?(\d+(?:\.\d+)?) s"
                      r"(?: · steps: (s\d{2}))?(?: · logic: (H\d+))?\s*$")
 TAG = re.compile(r"\[(src|brief|understanding):\s*((?:[^\[\]]|\[[^\]]*\])*)\]")  # paths may hold [state]
@@ -139,6 +156,16 @@ def check(out):
     scenes, bad = parse_all(text)
     errors = [f"heading doesn't match '## sNN · segment · visual · target N s': {b}" for b in bad]
     warnings, cache = [], {}
+    story = story_of(text)
+    if story not in STORIES:
+        errors.append(f"Story: {story} isn't one of {list(STORIES)}")
+        story = "problem-product"
+    missing = STORIES[story]["need"] - {s["segment"] for s in scenes}
+    if missing:
+        errors.append(f"a {story} story needs a {', '.join(sorted(missing))} segment (PITCH.md §1)")
+    import looks
+    if (looks.history() or [{}])[-1].get("story") == story:
+        warnings.append(f"the last video told a {story} story too; another archetype would feel fresher (PITCH.md §1)")
 
     ids = [s["id"] for s in scenes]
     if len(set(ids)) != len(ids):
@@ -163,7 +190,7 @@ def check(out):
     selected = {h["id"] for h in brief.get("understanding", {}).get("hidden_logic", []) if h.get("selected")}
     explainers = [s for s in scenes if (s["template"] or "").startswith("explainer-")]
     focus = brief.get("focus", "balanced")
-    lo, hi = explainer_bounds(focus, brief.get("limit_s", 120))
+    lo, hi = STORIES[story].get("explainers") or explainer_bounds(focus, brief.get("limit_s", 120))
     lo = min(lo, len(selected))  # can't ask for more explainers than the user picked
     if len(explainers) > hi:
         errors.append(f"focus '{focus}' at {brief.get('limit_s', 120)} s allows at most {hi} explainer(s); found {len(explainers)}")
@@ -208,15 +235,19 @@ def check(out):
         errors.append(f"{total} words is over the budget of {budget}: cut about {total - budget} words, mostly from product scenes")
     elif total < budget * 0.85:
         warnings.append(f"{total} words is well under the budget of {budget}: the video will run short of the limit")
-    for seg, share in FOCUS.get(brief.get("focus", "balanced"), FOCUS["balanced"])["share"].items():
+    for seg, share in (FOCUS.get(brief.get("focus", "balanced"), FOCUS["balanced"])["share"].items() if story == "problem-product" else []):
         w = sum(s["words"] for s in scenes if s["segment"] == seg)
         if total and abs(w / total - share) > 0.12:
             warnings.append(f"{seg} has {w / total:.0%} of the words; the pitch aims for {share:.0%}")
+    body = [s["target_s"] for s in scenes if s["template"] not in ("title", "close")]
+    if len(body) >= 4 and all(abs(x / (sum(body) / len(body)) - 1) <= 0.25 for x in body):  # docs/16 S3
+        warnings.append(f"every scene runs about {sum(body) / len(body):.0f} s: the rhythm is flat. Put a 2–3 s punch scene "
+                        "(anim:kinetic, one line in big type, or anim:stat-hero) between two longer ones")
     middle = [s for s in scenes if s["template"] in ("context", "problem", "product-intro", "compose")]
     if middle and not any(s["template"] == "compose" for s in middle):
         warnings.append("context, problem and product-intro all use the fixed templates: compose at least one of them "
                         "for this story (DESIGN.md), so the video doesn't look like every other unveo video")
-    return {"scenes": [{k: s[k] for k in ("id", "segment", "visual", "template", "target_s", "words")} for s in scenes],
+    return {"story": story, "scenes": [{k: s[k] for k in ("id", "segment", "visual", "template", "target_s", "words")} for s in scenes],
             "words": total, "budget": budget, "errors": errors, "warnings": warnings}
 
 

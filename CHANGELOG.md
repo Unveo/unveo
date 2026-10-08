@@ -12,6 +12,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: semv
   - Captions burned in plus captions.srt.
   - Per-video design brief (the app's font, motion, background), building blocks and compose scenes, overflow, contrast and crowding checks, QA feel report.
   - setup_app.py: plan, install --yes, start --yes, stop for local Node and Python apps.
+- Round 8, the quality audit's Round B (docs/16):
+  - Eight motion languages: entrances, text, one emphasis per scene and a moving camera follow the video's motion style, chosen per look and never the same as the last video.
+  - Cuts drawn in the accent colour, explainers over the recording they explain, explainers that keep moving and end on their answer.
+  - Nine new blocks (logo wall, ticker, chat, code, map pins, line chart, donut, phone stack, terminal), five new layouts, bigger type that fills the frame, moving backgrounds, a device frame.
+  - Music that changes with the motion style, cuts on the beat, sound effects on clicks, cuts and numbers.
+  - Captions in the look's typeface and colours, with optional word-by-word highlighting.
+  - Story archetypes, kinetic punch scenes, a built-with beat, a shorter close with credits.
+  - Checks: too-empty frames, flat rhythm, and repeats of the last video's look, motion, story or music.
 - Round 7, the quality audit's Round A (docs/16):
   - A camera on every recording: it frames the app's content and follows each click, Screen Studio style.
   - Emails, phone numbers and passwords are blurred before a frame is captured.

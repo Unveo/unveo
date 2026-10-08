@@ -1,5 +1,5 @@
 /* compose: a scene the agent designs for this story from building blocks (DESIGN.md).
-   data: { layout: "split"|"stack"|"grid-2x2"|"center"|"hero", blocks: [{ type, area, props, at, enter }] } */
+   data: { layout, blocks: [{ type, area, props, at, enter }] }. Without a layout, the look's layout family picks one. */
 (function () {
   const AREAS = {
     split: { left: [120, 140, 780, 800], right: [1000, 140, 800, 800] },
@@ -11,19 +11,29 @@
     "three-col": { a: [120, 160, 520, 760], b: [700, 160, 520, 760], c: [1280, 160, 520, 760] },
     asymmetric: { wide: [120, 140, 1120, 800], side: [1300, 140, 500, 800] },
     "full-bleed-shot": { shot: [0, 0, 1920, 860], caption: [120, 890, 1680, 150] },
+    // docs/16 D1: layouts that use the whole canvas
+    "centered-hero": { main: [200, 160, 1520, 560], below: [360, 760, 1200, 220] },
+    "full-type": { main: [120, 100, 1680, 880] },
+    "left-heavy": { main: [120, 120, 1080, 840], side: [1280, 200, 520, 680] },
+    diagonal: { a: [120, 100, 1100, 420], b: [700, 560, 1100, 420] },
+    bento: { a: [120, 110, 1060, 500], b: [1210, 110, 590, 500], c: [120, 640, 590, 330], d: [740, 640, 1060, 330] },
   };
-  function fitArea(area) {  // shrink every text in the area together until it fits; never overflow
+  const FAMILY = { editorial: "left-heavy", grid: "bento", centered: "centered-hero" };  // design.json layout_family
+  function fitArea(area) {  // grow text into a roomy area (up to 1.6x, docs/16 D1), then shrink it until it fits; never overflow
     const els = [...area.querySelectorAll("[data-fit], [data-fit] *")].filter(e => e.style.fontSize || getComputedStyle(e).fontSize);
-    for (let k = 0; k < 40; k++) {
-      const over = area.scrollHeight > area.clientHeight + 1 || [...area.querySelectorAll("[data-fit]")].some(e => e.scrollWidth > e.clientWidth + 1);
-      if (!over) return;
-      els.forEach(e => { e.style.fontSize = Math.max(14, parseFloat(getComputedStyle(e).fontSize) * 0.93) + "px"; });
+    const over = () => area.scrollHeight > area.clientHeight + 1 || [...area.querySelectorAll("[data-fit]")].some(e => e.scrollWidth > e.clientWidth + 1);
+    const used = () => [...area.children].reduce((a, c) => a + c.offsetHeight, 0) / Math.max(1, area.clientHeight);
+    const scale = f => els.forEach(e => { e.style.fontSize = Math.max(14, parseFloat(getComputedStyle(e).fontSize) * f) + "px"; });
+    if (els.length && !area.querySelector('[data-grow="0"]')) {
+      for (let k = 0; k < 8 && used() < 0.5 && !over(); k++) scale(1.06);
     }
+    for (let k = 0; k < 40 && over(); k++) scale(0.93);
   }
   window.COMPOSE_AREAS = AREAS;
   UNVEO.scene("compose", {
     build(root, d) {
-      const layout = AREAS[d.layout] || AREAS.stack;
+      const fam = FAMILY[((window.TIMELINE || {}).design || {}).layout_family];
+      const layout = AREAS[d.layout] || AREAS[fam] || AREAS.stack;
       root.__areas = {};
       Object.entries(layout).forEach(([name, [x, y, w, hh]]) => {
         const a = CORE.h("div", "abs area", null, `left:${x}px;top:${y}px;width:${w}px;height:${hh}px;display:flex;flex-direction:column;justify-content:center;gap:22px;overflow:hidden`);
@@ -53,7 +63,7 @@
         if (enter === "fade") el.style.opacity = k;
         else if (enter === "draw" || enter === "count") el.style.opacity = Math.min(1, k * 3);
         else rise(el, k, 28);
-        if (def.draw) def.draw(el, k, b.props || {});
+        if (def.draw) def.draw(el, k, b.props || {}, (t - at) * (window.CORE_SPEED || 1));
       });
     },
   });

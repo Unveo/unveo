@@ -60,6 +60,7 @@ The **frame is set once for the whole video** in `film/design.json` as `"display
 | `laptop` | inside a drawn laptop | a product feel |
 | `tilt` | a gentle 3D turn | calm, editorial videos |
 | `split` | the app on the left, the step number and `label` large on the right | multi-step journeys |
+| `device` | a thin dark bezel with a soft shadow, on a gradient of the look's colours | a polished, current product feel |
 
 A single scene in steps.json may only use:
 - **`"display": "phone"`:** a genuinely mobile screen, recorded at a phone's size (430×932) inside a phone.

@@ -44,7 +44,7 @@ UNVEO.scene("explainer-formula-breakdown", {
       <div class="mono" style="font:500 26px 'Geist Mono';color:var(--muted)">${esc(r.scale || "")}</div>
       <div class="band" style="margin-left:auto;padding:10px 22px;border-radius:999px;font:600 28px var(--font-display);color:#fff"></div></div>`;
     root.append(sig, ex, res);
-    Object.assign(root, { __sig: sig, __ex: ex, __res: res, __expr: String(d.expression || "") });
+    Object.assign(root, { __sig: sig, __ex: ex, __res: res, __expr: String(d.expression || ""), __focus: res });
   },
   draw(t, d, dur, root) {
     const { p, riseWords, rise, num, beat, E, clamp } = CORE;
@@ -61,7 +61,7 @@ UNVEO.scene("explainer-formula-breakdown", {
       c.line.style.strokeDashoffset = c.L * (1 - p(t, b(3) + i * 0.08, .9, E.ioC));
     });
     const sk = p(t, b(3) + 0.5, .6, E.outBack);
-    root.__sig.style.transform = `scale(${sk})`;
+    root.__sig.style.transform = `scale(${sk * (1 + 0.04 * Math.sin(Math.max(0, t - b(3) - 1.2) * 3))})`;  // keeps breathing
     root.__sig.style.opacity = clamp(sk * 2);
     const n = Math.round(root.__expr.length * p(t, b(3) + 0.6, 1.4, E.lin));
     root.__ex.textContent = root.__expr.slice(0, n);

@@ -47,11 +47,33 @@ Status key: ✅ done · 🔵 part done, the rest is noted · ⛔ not doing.
 | R7 | ✅ | The browser asks for the app's dark or light theme to match the look's ground |
 | S1 | ✅ | An optional `hook` scene (a `reuse` of a later scene's take, 3–5 s, one spoken line); the title can sit over its last frame (`"backdrop"`) |
 | CA2 | ✅ | `full` recordings shrink a little to keep the caption band free |
-| D4 | 🔵 | The window frame shows the real address (never `localhost`). The new device-frame option waits for Round B's backgrounds |
+| D4 | ✅ | The window frame shows the real address (never `localhost`). Round B added the `device` display: a thin bezel on a soft gradient |
 | Q1 | ✅ | QA blocks on a recording that's blank or loading for 0.5 s or more |
 | Q2 | ✅ | Console errors, failed requests and server errors are recorded per scene; an error on screen blocks QA |
 | Q3 | ✅ | Capture measures the app's typical text size; QA warns when it ends up under about 18 px at 1080p |
 | Q4 | ✅ | QA flags a flat colour inside a transition that isn't a blend of the two scenes |
+
+**Round B, the modern feel (done 8 Oct 2026):**
+
+| Id | Status | What was built |
+|---|---|---|
+| MO1 | ✅ | 8 motion languages (glide, snap, cinematic, typewriter, draw, blueprint, stack, kinetic) in `core.js`. Every template's entrances, text, its one `**emphasis**` and a camera layer per scene follow the video's `motion_style`. Each look lists the styles that suit it; render.py picks one the last video didn't use and saves it in design.json. The stills sheet names it |
+| MO2 | 🔵 | Cuts follow the motion language, with transitions drawn in the accent colour (accent wipe, the card the recording grows out of, a dip through the accent, a one-frame flash). An explainer after a recording draws over that recording's frozen, blurred last frame. Left: a match cut from an explainer's box to the next scene's card |
+| MO3 | ✅ | Explainers keep moving after they're built (a pulse along the pipeline, flowing edges in the system map, examples flowing through model-io, a breathing Σ, a sweep over the clean table) and end with a short zoom into their answer |
+| MO4 | ✅ | New blocks: logo-wall, ticker, chat, code, map-pins, line-chart, donut, phone-stack, terminal |
+| D1 | ✅ | A type scale per look; compose text grows into empty room (up to 1.6×); explainer boxes sized to the canvas; layouts centered-hero, full-type, left-heavy, diagonal, bento; a "too empty" warning below 30% filled |
+| D2 | ✅ | `layout_family` is real: a compose scene without a layout takes the family's |
+| D3 | ✅ | `radial` (a drifting accent glow) and `dots` (a panning dot grid) backgrounds, on the film's own clock |
+| AU1 | ✅ | Seven synthesised instruments and six progressions, picked by the motion language; cuts snap to the beat when there's room (at most 0.35 s per scene) |
+| AU2 | ✅ | Generated ticks on clicks (timed through the retime), whooshes under cuts, thumps when a number lands, about 24 dB under the voice; `"sfx": false` turns them off |
+| AU3 | ✅ | The setup round offers the offline voice (Kokoro) |
+| CA1 | ✅ | A caption style per look (typeface fetched as TrueType, colours from the palette, contrast kept at 4.5:1), and karaoke word highlighting with `"caption_words": true` |
+| S2 | ✅ | Five story archetypes (`Story:` in script.md) with their own required segments and explainer counts; a repeat of the last video's story is a warning |
+| S3 | ✅ | `anim:kinetic` punch scenes; `script.py check` warns when every scene is about the same length |
+| S4 | ✅ | The close holds 1.5 s, not 3; team credits on the end card; the camera layer moves it |
+| S5 | ✅ | `anim:built-with`: the stack's logos and one cited sentence on the hardest part |
+| Q5 | ✅ | history.json records look, motion, story and music; QA's `repetition` report flags two or more repeats |
+| Q6 | ✅ | The empty-frame warning (D1) |
 
 **Not doing:** ⛔ AU4 (more narration languages). The ground rule is English and Hindi only.
 

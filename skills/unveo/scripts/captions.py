@@ -4,8 +4,10 @@
 
 brief.captions: "burned" (default) · "srt" (file only) · "off".
 Captions show the real words ("MPLADS"), even when voice.say_as makes the voice say "M P lads".
+They match the look (docs/16 CA1): its typeface and colours (serif italic on paper, mono for terminal, heavy capitals
+for poster…). brief.caption_words = true lights each word as it's spoken (karaoke), from the voice's word timings.
 """
-import argparse, json, re, sys
+import argparse, json, os, re, sys, urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -15,6 +17,22 @@ import voice as voicemod  # noqa: E402
 
 MAX_LINE, MAX_LINES, MAX_DUR, MIN_DUR = 42, 2, 4.0, 1.2
 FONTS = Path(__file__).resolve().parents[1] / "templates" / "film" / "fonts"
+TTF_HOME = Path(os.environ.get("UNVEO_HOME", Path.home() / ".unveo")) / "fonts" / "ttf"
+# per look: typeface (a Google Font, fetched as .ttf for libass; Geist when offline), size, bold, italic, capitals,
+# and colours from the look's palette: text and box ("ink"/"bg"/"accent"/"on" or a hex)
+STYLES = {
+    "editorial": {"font": "Fraunces", "size": 44, "bold": 0, "italic": 1, "text": "ink", "box": "bg"},
+    "civic": {"font": "Source Serif 4", "size": 42, "bold": 1, "italic": 0, "text": "bg", "box": "ink"},
+    "notebook": {"font": "Instrument Serif", "size": 52, "bold": 0, "italic": 1, "text": "ink", "box": "bg"},
+    "terminal": {"font": "JetBrains Mono", "size": 36, "bold": 0, "italic": 0, "text": "accent", "box": "#0b0c0e", "prefix": "> "},
+    "poster": {"font": "Archivo Black", "size": 38, "bold": 0, "italic": 0, "upper": True, "text": "on", "box": "accent"},
+    "swiss": {"font": "Inter Tight", "size": 40, "bold": 1, "italic": 0, "text": "bg", "box": "ink"},
+    "product": {"font": None, "size": 40, "bold": 1, "italic": 0, "text": "ink", "box": "#ffffff"},
+    "blueprint": {"font": "Space Grotesk", "size": 40, "bold": 0, "italic": 0, "text": "ink", "box": "bg"},
+    "neo-brutal": {"font": "Bricolage Grotesque", "size": 42, "bold": 1, "italic": 0, "text": "#111111", "box": "#fdfa8d"},
+    "soft": {"font": "Nunito", "size": 42, "bold": 1, "italic": 0, "text": "ink", "box": "#ffffff"},
+}
+DEFAULT = {"font": None, "size": 40, "bold": 0, "italic": 0, "text": "#ffffff", "box": "#141414"}
 # BorderStyle 4 (libass): one box behind the whole caption, not a box per line; the outline is transparent and only
 # pads the box. MarginV 26 puts it inside the caption band that framed recordings leave free (looks.CAPTION_BAND).
 ASS_HEAD = """[Script Info]
@@ -26,11 +44,69 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Geist SemiBold,40,&H00FFFFFF,&H00FFFFFF,&HFF141414,&H40141414,0,0,0,0,100,100,0,0,4,12,0,2,160,160,26,1
+Style: Default,{font},{size},{text},{dim},&HFF000000,{box},{bold},{italic},0,0,100,100,0,0,4,12,0,2,160,160,26,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
+
+
+DEFAULT_HEAD = ASS_HEAD.format(font="Geist SemiBold", size=40, text="&H00FFFFFF", dim="&H80FFFFFF", box="&H18141414", bold=0, italic=0)
+
+
+def ttf(name, bold, italic):
+    """A Google Font as a .ttf libass can read (cached), or None. Google serves TrueType to an old browser signature."""
+    import urllib.parse
+    slug = re.sub(r"\W+", "-", name.lower()).strip("-")
+    for ital, wght in ((italic, 700 if bold else 400), (0, 700 if bold else 400), (0, 400)):
+        f = TTF_HOME / f"{slug}-{ital}-{wght}.ttf"
+        if f.exists():
+            return f
+        try:
+            q = urllib.parse.quote_plus(name) + (f":ital,wght@1,{wght}" if ital else f":wght@{wght}")
+            css = urllib.request.urlopen(urllib.request.Request(f"https://fonts.googleapis.com/css2?family={q}",
+                                                                headers={"User-Agent": "Mozilla/4.0"}), timeout=10).read().decode()
+            url = re.search(r"url\((https://[^)]+\.ttf)\)", css)
+            if url:
+                TTF_HOME.mkdir(parents=True, exist_ok=True)
+                f.write_bytes(urllib.request.urlopen(url.group(1), timeout=15).read())
+                return f
+        except Exception:
+            continue
+    return None
+
+
+def ass_colour(hex_, alpha=0):
+    r, g, b = (int(hex_.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+    return f"&H{alpha:02X}{b:02X}{g:02X}{r:02X}"
+
+
+def look_style(o):
+    """This video's caption style and the folder holding its font (for stitch.py's fontsdir)."""
+    import looks, render
+    o = Path(o)
+    f = o / "film" / "design.json"
+    design = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+    look = design.get("look")
+    st = {**DEFAULT, **STYLES.get(look, {})}
+    tokens = json.loads((o / "brief.json").read_text(encoding="utf-8")).get("palette", {}).get("tokens", {})
+    tokens = looks.palette(tokens, look) if look and "accent" in tokens else tokens
+    on = "#111111" if "accent" in tokens and render.contrast("#111111", tokens["accent"]) >= render.contrast("#ffffff", tokens["accent"]) else "#ffffff"
+    pick = lambda v, fb: v if str(v).startswith("#") else ({"on": on}.get(v) or tokens.get(v) or fb)
+    text, box = pick(st["text"], "#ffffff"), pick(st["box"], "#141414")
+    if render.contrast(text, box) < 4.5:  # never unreadable, whatever the palette does
+        text = "#111111" if render.contrast("#111111", box) >= render.contrast("#ffffff", box) else "#ffffff"
+    folder = o / "captions-fonts"
+    folder.mkdir(exist_ok=True)
+    name = "Geist SemiBold"
+    src = ttf(st["font"], st["bold"], st["italic"]) if st["font"] else None
+    if src:
+        (folder / src.name).write_bytes(src.read_bytes())
+        name = st["font"]
+    (folder / "geist-semibold.ttf").write_bytes((FONTS / "geist-semibold.ttf").read_bytes())
+    head = ASS_HEAD.format(font=name, size=st["size"], text=ass_colour(text), box=ass_colour(box, 0x18),
+                           dim=ass_colour(text, 0x80), bold=-1 if st["bold"] and src else 0, italic=-1 if st["italic"] else 0)
+    return head, folder, st
 
 
 def _core(tok):
@@ -56,17 +132,16 @@ def align(text, words, say_as, dur):
     return [{"w": e["w"], "t0": round(e["t0"] + start, 3), "t1": round(e["t1"] + start, 3)} for e in est]
 
 
+def split_at(words):
+    """Where a caption breaks into two lines (the most even split), or None when it fits on one."""
+    if len(" ".join(words)) <= MAX_LINE:
+        return None
+    return min(range(1, len(words)), key=lambda i: max(len(" ".join(words[:i])), len(" ".join(words[i:]))))
+
+
 def two_lines(words):
-    text = " ".join(words)
-    if len(text) <= MAX_LINE:
-        return text
-    best = None
-    for i in range(1, len(words)):
-        a, b = " ".join(words[:i]), " ".join(words[i:])
-        worst = max(len(a), len(b))
-        if best is None or worst < best[0]:
-            best = (worst, f"{a}\n{b}")
-    return best[1]
+    i = split_at(words)
+    return " ".join(words) if i is None else " ".join(words[:i]) + "\n" + " ".join(words[i:])
 
 
 def group(toks, scene_end):
@@ -74,7 +149,7 @@ def group(toks, scene_end):
 
     def flush():
         if cur:
-            cues.append({"words": [t["w"] for t in cur], "start": cur[0]["t0"], "end": cur[-1]["t1"]})
+            cues.append({"words": [t["w"] for t in cur], "times": [t["t0"] for t in cur], "start": cur[0]["t0"], "end": cur[-1]["t1"]})
             cur.clear()
 
     for t in toks:
@@ -98,8 +173,27 @@ def group(toks, scene_end):
         c["end"] = min(max(c["end"] + 0.15, c["start"] + MIN_DUR), nxt, scene_end)
         if c["end"] - c["start"] < MIN_DUR:
             c["start"] = max(prev, c["end"] - MIN_DUR)
-        c["text"] = two_lines(c.pop("words"))
+        c["split"] = split_at(c["words"])
+        c["text"] = two_lines(c["words"])
     return cues
+
+
+def ass_text(c, karaoke, st):
+    """One caption in ASS: the look's capitals or prefix, \\N between the lines, and {\\k} word timings for karaoke."""
+    words = [w.upper() if st.get("upper") else w for w in c["words"]]
+    if words and st.get("prefix"):
+        words[0] = st["prefix"] + words[0]
+    out = []
+    if karaoke:  # each word lights up when it's spoken (secondary = not yet)
+        ts = c["times"] + [c["end"]]
+        out.append(f"{{\\k{max(0, round((ts[0] - c['start']) * 100))}}}")
+    for i, w in enumerate(words):
+        if i and i == c["split"]:
+            out.append("\\N")
+        elif i:
+            out.append(" ")
+        out.append((f"{{\\k{max(1, round((ts[i + 1] - ts[i]) * 100))}}}" if karaoke else "") + w)
+    return "".join(out)
 
 
 def srt_time(t):
@@ -127,11 +221,14 @@ def build(o):
         off = sc["start_s"] + sc.get("lead_s", 0)
         scene_end = sc["start_s"] + sc["dur_s"] - off
         for c in group(align(narr[sc["id"]], clip.get("words") or [], say_as, clip["dur_s"]), scene_end):
-            cues.append({"start": round(c["start"] + off, 3), "end": round(c["end"] + off, 3), "text": c["text"]})
+            cues.append({**c, "start": round(c["start"] + off, 3), "end": round(c["end"] + off, 3),
+                         "times": [round(x + off, 3) for x in c["times"]]})
     (o / "captions.srt").write_text("".join(f"{i}\n{srt_time(c['start'])} --> {srt_time(c['end'])}\n{c['text']}\n\n"
                                             for i, c in enumerate(cues, 1)), encoding="utf-8")
-    (o / "captions.ass").write_text(ASS_HEAD + "".join(
-        f"Dialogue: 0,{ass_time(c['start'])},{ass_time(c['end'])},Default,,0,0,0,,{c['text'].replace(chr(10), '\\N')}\n" for c in cues),
+    head, _, st = look_style(o)
+    karaoke = brief.get("caption_words") is True
+    (o / "captions.ass").write_text(head + "".join(
+        f"Dialogue: 0,{ass_time(c['start'])},{ass_time(c['end'])},Default,,0,0,0,,{ass_text(c, karaoke, st)}\n" for c in cues),
         encoding="utf-8")
     return cues
 

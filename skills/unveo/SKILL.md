@@ -58,10 +58,11 @@ Ask in **rounds**: put every question of a round in one call. In Claude Code, th
 2. **Exit 0:** note `py`. If `warnings` is not empty, mention each one in one line.
 3. **Exit 2:** ask, with choices:
    > unveo needs to install a few free tools (about 400 MB, one time): Python packages and a Chromium browser. Install now?
-   > Install (Recommended) · Show me the commands
+   > Install (Recommended) · Install, plus a voice that works offline (about 350 MB more) · Show me the commands
 
-   **Quick** (the `--quick` argument was given): install without asking, and say so in one line.
+   **Quick** (the `--quick` argument was given): install without asking (no offline voice), and say so in one line.
    - **Install:** run the same command with `--fix`. Tell the user it can take a few minutes. `--fix` prints the same JSON at the end, so read that.
+   - **Plus offline voice:** run it with `--fix --with-kokoro`. The free online voice (edge-tts) is unofficial and can stop working when Microsoft changes its service; with Kokoro installed, voice.py falls back to it by itself (docs/16 AU3).
    - **Show me the commands:** print each failing check's `fix`, one per line, and stop.
 4. If it still exits 2 after `--fix`: show each failing check's name, `detail` and `fix`, and stop. **Exit 1:** show the error and stop.
 5. For `check`, finish with `unveo setup OK · Python <checks.python.detail> · Chromium ready` and stop. Otherwise run `state.py set setup done` and continue.
@@ -237,13 +238,13 @@ For placeholders, run it with `--placeholders`. **Quick:** placeholders; the Rev
 2. Run `"<PY>" "<SKILL_DIR>/scripts/render.py" final`.
 3. Run `state.py set render done`.
 
-**20. Music and mix.** Run `"<PY>" "<SKILL_DIR>/scripts/score.py"`, then `"<PY>" "<SKILL_DIR>/scripts/mix.py"`.
+**20. Music and mix.** Run `"<PY>" "<SKILL_DIR>/scripts/score.py"`, then `"<PY>" "<SKILL_DIR>/scripts/mix.py"`. The music follows the motion language (DESIGN.md), and quiet sound effects sit under the voice: a tick on each click, a whoosh under each transition, a thump when a number lands. `"sfx": false` in brief.json leaves the effects out.
 
 **21. Stitch.** Run `"<PY>" "<SKILL_DIR>/scripts/stitch.py" final`. It also builds the captions from the voice timings:
 - `captions.srt`, for YouTube or Devpost uploads
 - `captions.ass`, burned into final.mp4 because judges often watch muted
 
-Captions show the real words even where `say_as` changes the pronunciation. `brief.captions` is `burned` (the default), `srt` (the file only) or `off`.
+Captions show the real words even where `say_as` changes the pronunciation, in the look's own typeface and colours. `brief.captions` is `burned` (the default), `srt` (the file only) or `off`; `"caption_words": true` lights each word as it's spoken.
 
 **22. QA.** Read `<SKILL_DIR>/QA.md`. Run `"<PY>" "<SKILL_DIR>/scripts/qa.py"`. Fix every failing blocking gate as QA.md says, re-run only the affected steps, then stitch and QA again. When it passes, `state.py set qa done`.
 

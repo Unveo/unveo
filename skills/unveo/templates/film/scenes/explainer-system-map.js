@@ -39,6 +39,8 @@ UNVEO.scene("explainer-system-map", {
       return { el, n };
     });
     root.__pos = pos;
+    const last = (d.path || []).filter(id => pos[id]).slice(-1)[0];
+    root.__focus = (root.__nodes.find(x => x.n.id === last) || root.__nodes[root.__nodes.length - 1] || {}).el;
     root.__dot = h("div", "abs", null, "width:30px;height:30px;margin:-15px 0 0 -15px;border-radius:50%;background:var(--accent2);box-shadow:0 0 0 10px color-mix(in srgb, var(--accent2) 25%, transparent);z-index:1")  // passes behind node cards;
     root.append(root.__dot);
   },
@@ -47,7 +49,12 @@ UNVEO.scene("explainer-system-map", {
     const b = i => beat(d, i, dur, 3);
     riseWords(root.__q, t, 0.1);
     root.__nodes.forEach((n, i) => rise(n.el, p(t, b(1) + i * 0.12, .6, E.outBack), 24));
-    root.__edges.forEach((e, i) => { e.ln.style.strokeDashoffset = e.L * (1 - p(t, b(1) + 0.6 + i * 0.12, .7, E.ioC)); e.lab.style.opacity = 0; });
+    root.__edges.forEach((e, i) => {
+      const k = p(t, b(1) + 0.6 + i * 0.12, .7, E.ioC);
+      if (k < 1) { e.ln.style.strokeDasharray = e.L; e.ln.style.strokeDashoffset = e.L * (1 - k); }
+      else { e.ln.style.strokeDasharray = "10 14"; e.ln.style.strokeDashoffset = -t * 40; }  // drawn: data keeps flowing along it
+      e.lab.style.opacity = 0;
+    });
     const path = (d.path || []).filter(id => root.__pos[id]);
     if (path.length > 1) {
       const t2 = b(2), seg = Math.max(0.4, (dur - 0.8 - t2) / (path.length - 1));

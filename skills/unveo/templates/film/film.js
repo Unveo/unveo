@@ -15,6 +15,7 @@
       const D = T.design || {};
       if (D.background && D.background !== "plain") stage.classList.add("bg-" + D.background);
       window.CORE_SPEED = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--motion-speed")) || 1;
+      window.MOTION_STYLE = D.motion_style || "glide";
       stage.style.transform = `scale(${W / 1920})`;
       document.body.style.width = W + "px";
       const list = T.scenes.filter(s => (only ? s.id === only : true));
@@ -33,7 +34,18 @@
         stage.append(el);
         const def = SCENES[s.template] || SCENES.placeholder;
         def.build(el, s.data || {}, s);
-        return (built[s.id] = { el, def, s });
+        if (s.data && s.data.backdrop_img && s.template !== "title") {  // the recording just shown, frozen behind (MO2)
+          el.__bd = document.createElement("div");
+          el.__bd.className = "abs";
+          el.__bd.style.cssText = `inset:-40px;background:url(${s.data.backdrop_img}) center/cover`;
+          el.prepend(el.__bd);
+        }
+        // the camera layer (docs/16 MO1): everything the scene built moves as one, by the motion language
+        const cam = document.createElement("div");
+        cam.className = "cam";
+        cam.append(...el.childNodes);
+        el.append(cam);
+        return (built[s.id] = { el, cam, def, s });
       };
       let shown = null;
       window.seek = t => {
@@ -42,7 +54,19 @@
         if (shown && shown !== r) shown.el.style.visibility = "hidden";
         r.el.style.visibility = "inherit";
         shown = r;
-        r.def.draw(Math.min(lt, s.dur_s), s.data || {}, s.dur_s, r.el);
+        const tt = Math.min(lt, s.dur_s), d = s.data || {};
+        if (r.el.__bd) {
+          const k = CORE.p(tt, 0, 0.7, CORE.E.ioC);
+          r.el.__bd.style.filter = `blur(${k * 14}px)`;
+          r.el.__bd.style.opacity = 1 - 0.7 * k;
+        }
+        r.def.draw(tt, d, s.dur_s, r.el);
+        const emAt = typeof d.emphasis_at === "number" ? d.emphasis_at : Math.max(1.4, Math.min(s.dur_s * 0.4, 3));
+        CORE.emphasis(r.el, CORE.p(tt, emAt, 0.6, CORE.E.ioC));
+        r.cam.style.transform = s.visual === "anim" && d.camera !== false ? CORE.camera(tt, s.dur_s, r.focus) : "";
+        const T = (s.start_s || 0) + tt;  // the film's own clock, so a moving background runs on across cuts
+        stage.style.setProperty("--bx", `${(Math.sin(T * 0.07) * 6).toFixed(3)}%`);
+        stage.style.setProperty("--by", `${(Math.cos(T * 0.05) * 4).toFixed(3)}%`);
         return lt;
       };
       // build every scene up front so fonts and images load before the first capture
@@ -50,6 +74,14 @@
       const imgs = [...document.images].map(i => (i.complete ? null : new Promise(r => { i.onload = i.onerror = r; })));
       Promise.all([document.fonts.ready, ...imgs]).then(() => {
         Object.values(built).forEach(r => r.def.fit && r.def.fit(r.el));  // re-fit text now the real fonts are in
+        Object.values(built).forEach(r => {  // where the explainer's answer is, for its last-moment zoom (MO3)
+          const f = r.el.__focus;
+          if (!f) return;
+          r.el.style.visibility = "inherit";
+          const a = f.getBoundingClientRect(), st = stage.getBoundingClientRect(), k = W / 1920;
+          r.focus = { x: (a.left + a.width / 2 - st.left) / k, y: (a.top + a.height / 2 - st.top) / k, z: r.el.__focusZ || 0.1 };
+          r.el.style.visibility = "hidden";
+        });
         window.seek(0);
         window.ready = true;
       });

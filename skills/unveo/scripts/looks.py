@@ -41,6 +41,33 @@ LOOKS = {
              "frame": "float", "palette": "soft"},
 }
 
+# per look (docs/16 MO1, D1–D3): the motion languages that suit it (first = default), how big the type runs,
+# the layout family compose scenes default to, and the background when the look itself sets none
+STYLE = {
+    "editorial": {"motion": ["glide", "cinematic", "draw"], "type_scale": 1.15, "layout_family": "editorial"},
+    "swiss": {"motion": ["snap", "stack", "kinetic"], "type_scale": 1.4, "layout_family": "grid", "background": "dots"},
+    "terminal": {"motion": ["typewriter", "snap", "blueprint"], "type_scale": 1.2, "layout_family": "grid"},
+    "notebook": {"motion": ["draw", "glide", "stack"], "type_scale": 1.2, "layout_family": "editorial"},
+    "poster": {"motion": ["kinetic", "snap", "cinematic"], "type_scale": 1.6, "layout_family": "centered"},
+    "product": {"motion": ["stack", "cinematic", "glide"], "type_scale": 1.25, "layout_family": "grid", "background": "radial"},
+    "blueprint": {"motion": ["blueprint", "draw", "typewriter"], "type_scale": 1.2, "layout_family": "grid"},
+    "civic": {"motion": ["glide", "cinematic", "stack"], "type_scale": 1.15, "layout_family": "editorial"},
+    "neo-brutal": {"motion": ["snap", "kinetic", "stack"], "type_scale": 1.4, "layout_family": "centered"},
+    "soft": {"motion": ["stack", "glide", "cinematic"], "type_scale": 1.25, "layout_family": "centered", "background": "radial"},
+}
+MOTION_STYLES = ("glide", "snap", "cinematic", "typewriter", "draw", "blueprint", "stack", "kinetic")
+# the score for each motion language (docs/16 AU1): score.py's instrument and its tempo; plan_timeline snaps cuts to the beat
+MUSIC = {"glide": ("pad", 96), "snap": ("pluck", 116), "cinematic": ("swell", 80), "typewriter": ("tick", 120),
+         "draw": ("keys", 90), "blueprint": ("pulse", 100), "stack": ("pluck", 112), "kinetic": ("drive", 124)}
+
+
+def motion_for(look, hist=None):
+    """The video's motion language: the look's first that the last video didn't use."""
+    options = (STYLE.get(look) or {}).get("motion") or ["glide", "snap"]
+    last = (hist or [{}])[-1].get("motion_style") if hist else None
+    return next((m for m in options if m != last), options[0])
+
+
 # which looks suit which kind of project (words in understanding.field / problem); the agent still decides
 FITS = {
     "civic": "government public civic parliament mp mla constituency fund budget policy election citizen ward municipal scheme",
@@ -57,25 +84,33 @@ FITS = {
 
 
 T_DEFAULT = 0.45  # seconds a transition overlaps the next scene
-# per look: the cut into or out of a recording, and the cut between two animations (None = a hard cut)
+# per motion language (docs/16 MO2): the cut into or out of a recording, and the cut between two animations
+# (None = a hard cut). Besides ffmpeg's xfade names, stitch.py draws its own: accent-wipe (a bar in the accent colour
+# sweeps across), card (the next scene grows out of a card in the middle), dip-accent (through the accent colour),
+# flash (a hard cut with one accent frame)
 TRANSITIONS = {
-    "editorial": {"rec": "fade", "anim": "dissolve"},
-    "swiss": {"rec": "wipeleft", "anim": None},
-    "terminal": {"rec": "fadeblack", "anim": "fade"},
-    "notebook": {"rec": "fade", "anim": "dissolve"},
-    "poster": {"rec": "slideleft", "anim": "slideleft"},
-    "product": {"rec": "smoothleft", "anim": "fade"},
+    "glide": {"rec": "card", "anim": "fade"},
+    "snap": {"rec": "accent-wipe", "anim": None},
+    "cinematic": {"rec": "dip-accent", "anim": "fade"},
+    "typewriter": {"rec": "flash", "anim": None},
+    "draw": {"rec": "slideleft", "anim": "dissolve"},
     "blueprint": {"rec": "wiperight", "anim": "fade"},
-    "civic": {"rec": "fade", "anim": "dissolve"},
-    "neo-brutal": {"rec": "slideup", "anim": None},
-    "soft": {"rec": "circleopen", "anim": "fade"},
+    "stack": {"rec": "slideleft", "anim": "slideleft"},
+    "kinetic": {"rec": "accent-wipe", "anim": None},
 }
+DRAWN = {"accent-wipe", "card", "dip-accent", "flash"}
+T_FLASH = 2 / 30
+
+
+def motion_of(look, design=None):
+    return (design or {}).get("motion_style") or ((STYLE.get(look) or {}).get("motion") or ["glide"])[0]
 
 
 def cuts(scenes, look, design=None):
-    """One transition per boundary between scene i and i+1: {"type": xfade name, "dur": seconds (0 = hard cut)}.
-    Into or out of the title and the close is always a soft fade. design["transition"] = {"type", "dur"} overrides."""
-    rule = TRANSITIONS.get(look) or {"rec": "fade", "anim": "fade"}
+    """One transition per boundary between scene i and i+1: {"type": xfade or drawn name, "dur": seconds (0 = hard cut)}.
+    Into or out of the title and the close is always a soft fade, and so is a recording into an explainer drawn over
+    its last frame (it's about that screen). design["transition"] = {"type", "dur"} overrides."""
+    rule = TRANSITIONS.get(motion_of(look, design)) or TRANSITIONS["glide"]
     over = (design or {}).get("transition") or {}
     out = []
     for a, b in zip(scenes, scenes[1:]):
@@ -85,10 +120,12 @@ def cuts(scenes, look, design=None):
             kind = rule["anim"]
         elif a.get("visual") in ("capture", "clip") and b.get("visual") in ("capture", "clip"):
             kind = None  # the app just carries on from one step to the next: a blend would only ghost it
+        elif a.get("visual") == "capture" and str(b.get("template") or "").startswith("explainer-"):
+            kind = "fade"
         else:
             kind = rule["rec"]
         kind = over.get("type", kind)
-        dur = float(over.get("dur", T_DEFAULT)) if kind else 0.0
+        dur = float(over.get("dur", T_FLASH if kind == "flash" else T_DEFAULT)) if kind else 0.0
         out.append({"type": kind or "fade", "dur": round(dur, 3), "at": b.get("start_s")})
     return out
 
@@ -139,12 +176,17 @@ def candidates(hist, n=3, field=""):
     return sorted(LOOKS, key=lambda k: (-score(k), list(LOOKS).index(k)))[:n]
 
 
-def defaults(look, app_font=None):
+def defaults(look, app_font=None, hist=None):
     d = dict(LOOKS.get(look) or {})
     for role in ("display_font", "body_font"):
         if d.get(role) == "app":
             d[role] = app_font or "Geist"
-    return {k: d[k] for k in ("display_font", "body_font", "motion", "background") if k in d}
+    st = STYLE.get(look) or {}
+    if d.get("background", "plain") == "plain" and st.get("background"):
+        d["background"] = st["background"]
+    out = {k: d[k] for k in ("display_font", "body_font", "motion", "background") if k in d}
+    return {**out, "motion_style": motion_for(look, history() if hist is None else hist),
+            "type_scale": st.get("type_scale", 1.2), "layout_family": st.get("layout_family", "editorial")}
 
 
 def palette(tokens, look):
@@ -164,7 +206,7 @@ def palette(tokens, look):
     return dict(tokens)
 
 
-DISPLAYS = ("full", "window", "window-dark", "float", "laptop", "phone", "tilt", "split", "spotlight")
+DISPLAYS = ("full", "window", "window-dark", "float", "laptop", "phone", "tilt", "split", "spotlight", "device")
 SCENE_DISPLAYS = ("phone", "spotlight")  # the only displays a single scene may pick; the frame is per video
 CAPTION_BAND = 170  # px at 1080p kept free under a framed recording, so captions never cover the app
 

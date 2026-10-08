@@ -279,14 +279,17 @@ def search_icons(query, limit=20):
 
 
 def icon_names(obj):
-    """Every icon a scene's data asks for: values under "icon", "motifs" and "built_with"."""
+    """Every icon a scene's data asks for: values under "icon", "motifs", "built_with" and "logos", and plain icon ids
+    in "items" (a logo-wall's "logos:react")."""
     out = set()
     if isinstance(obj, dict):
         for k, v in obj.items():
             if k == "icon" and isinstance(v, str):
                 out.add(v)
-            elif k in ("motifs", "built_with") and isinstance(v, list):
+            elif k in ("motifs", "built_with", "logos") and isinstance(v, list):
                 out |= {x for x in v if isinstance(x, str)}
+            elif k == "items" and isinstance(v, list) and any(isinstance(x, str) and re.fullmatch(r"[a-z0-9-]+:[a-z0-9-]+", x) for x in v):
+                out |= {x for x in v if isinstance(x, str) and re.fullmatch(r"[a-z0-9-]+:[a-z0-9-]+", x)} | icon_names([x for x in v if not isinstance(x, str)])
             else:
                 out |= icon_names(v)
     elif isinstance(obj, list):
@@ -336,7 +339,9 @@ def design_css(film, design):
                  f'  --font-display: "{families["display_font"]}", "Geist";\n'
                  f'  --font-body: "{families["body_font"]}", "Geist";\n'
                  f"  --motion-speed: {speed};\n"
-                 f"  /* background: {design.get('background', 'plain')} · layout: {design.get('layout_family', 'editorial')} · accent: {design.get('accent_use', 'sparing')} */\n}}")
+                 f"  --type-scale: {float(design.get('type_scale', 1.2))};\n"
+                 f"  /* background: {design.get('background', 'plain')} · layout: {design.get('layout_family', 'editorial')} · "
+                 f"motion: {design.get('motion_style', 'glide')} · accent: {design.get('accent_use', 'sparing')} */\n}}")
     (film / "design.css").write_text("\n".join(lines) + "\n")
 
 
@@ -352,6 +357,8 @@ def resolve_word_times(data, words, lead):
         b["at"] = when(b.get("at"))
     if "beats" in data:
         data["beats"] = [when(v) for v in data["beats"]]
+    if isinstance(data.get("emphasis_at"), str):  # the one emphasis (**word**) lands on its word too
+        data["emphasis_at"] = when(data["emphasis_at"])
     return data
 
 
@@ -381,6 +388,9 @@ def prepare(out):
     design = json.loads((film / "design.json").read_text(encoding="utf-8")) if (film / "design.json").exists() else {}
     look = design.get("look")
     scan = json.loads((o / "repo_scan.json").read_text(encoding="utf-8")) if (o / "repo_scan.json").exists() else {}
+    if look and not design.get("motion_style"):  # chosen once (against the last video) and kept, so a re-render moves the same way
+        design["motion_style"] = looks.motion_for(look, looks.history())
+        (film / "design.json").write_text(json.dumps(design, indent=2, ensure_ascii=False), encoding="utf-8")
     design = {**looks.defaults(look, (scan.get("fonts") or [None])[0]), **design}  # the look's defaults; the agent's choices win
     tokens = json.loads((o / "brief.json").read_text(encoding="utf-8"))["palette"]["tokens"]
     tokens = looks.palette(tokens, look) if "accent" in tokens else tokens
@@ -398,20 +408,29 @@ def prepare(out):
     words_by = {c["scene"]: c.get("words", []) for c in read_json(vpath)["clips"]} if vpath.exists() else {}
     tl = read_json(o / "timeline.json")
     handle = looks.handles(tl["scenes"], look, design)  # extra seconds past the end, for the transition into the next scene
+    team = (json.loads((o / "brief.json").read_text(encoding="utf-8")).get("header") or {}).get("team", "")
     scenes = []
     for s in tl["scenes"]:
         f = film / "data" / f"{s['id']}.json"
         data = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
-        if s.get("template") == "compose" or str(s.get("template", "")).startswith("explainer-"):
+        if s.get("template") == "compose" or str(s.get("template", "")).startswith("explainer-") or "emphasis_at" in data:
             data = resolve_word_times(data, words_by.get(s["id"], []), s.get("lead_s", 0))
+        if s.get("template") == "close" and not data.get("credits") and team:  # the people who made it (docs/16 S4)
+            data["credits"] = team
+        if s.get("template") == "kinetic":  # big type cut on every spoken word
+            data["word_times"] = [round(s.get("lead_s", 0) + w["t0"], 3) for w in words_by.get(s["id"], [])]
         tpl = s.get("template") if s["visual"] == "anim" else "placeholder"
         if s["visual"] != "anim":
             data = data or {"shot_id": s["id"], "what_to_record": "The recorded app plays here."}
         scenes.append({"id": s["id"], "template": tpl or "placeholder", "dur_s": s["dur_s"], "start_s": s.get("start_s", 0),
                        "visual": s["visual"], "voice": s.get("voice"), "handle_s": handle.get(s["id"], 0.0), "data": data})
-    for sc in scenes:  # a title after a hook sits over the hook's last frame (docs/16 S1)
+    for i, sc in enumerate(scenes):  # a title after a hook sits over the hook's last frame (docs/16 S1)
         if sc["template"] == "title" and sc["data"].get("backdrop"):
             sc["data"]["backdrop_img"] = backdrop(o, film, sc["data"]["backdrop"])
+        prev = scenes[i - 1] if i else None  # an explainer right after a recording draws over its last frame (MO2)
+        if (str(sc["template"]).startswith("explainer-") and prev and prev["visual"] == "capture"
+                and sc["data"].get("backdrop") is not False):
+            sc["data"]["backdrop_img"] = backdrop(o, film, prev["id"])
     write_icons(o, film, design, scenes)
     (film / "timeline.js").write_text("window.TIMELINE = " + json.dumps({"fps": FPS, "design": design, "scenes": scenes}, ensure_ascii=False) + ";\n")
     return film, scenes
@@ -421,8 +440,8 @@ def backdrop(o, film, sid):
     """The last frame of scene sid's recording (a hook's: the end of the scene it reuses) as film/assets/backdrop-sid.png."""
     f = o / "capture" / "steps.json"
     reuse = ((json.loads(f.read_text(encoding="utf-8")).get("scenes", {}) if f.exists() else {}).get(sid) or {}).get("reuse")
-    src = o / "capture" / f"{reuse or sid}.mp4"
-    if not src.exists():
+    src = next((f for f in (o / "capture" / f"{sid}-timed.mp4", o / "capture" / f"{reuse or sid}.mp4") if f.exists()), None)
+    if not src:
         return None
     (film / "assets").mkdir(exist_ok=True)
     dst = film / "assets" / f"backdrop-{sid}.png"
@@ -443,13 +462,15 @@ DESIGN_CHECK_JS = r"""() => {
   const sc = [...document.querySelectorAll('#stage .scene')].find(s => s.style.visibility !== 'hidden');
   const issues = [], warnings = [];
   if (!sc) return {issues, warnings};
+  const cam = sc.querySelector(':scope > .cam'), moved = cam ? cam.style.transform : '';
+  if (cam) cam.style.transform = '';  // judge the layout, not the camera's push
   const W = 1920, H = 1080, tol = 0.02;
   const lum = c => { const m = c.match(/[\d.]+/g); if (!m) return null; const f = v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; };
                      return {L: .2126 * f(+m[0]) + .7152 * f(+m[1]) + .0722 * f(+m[2]), a: m.length > 3 ? +m[3] : 1}; };
   const shown = el => { for (let e = el; e && e !== sc; e = e.parentElement) { const cs = getComputedStyle(e); if (cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity < 0.05) return false; } return true; };
   const label = el => (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : el.tagName.toLowerCase()) + ' "' + el.textContent.trim().slice(0, 40) + '"';
   for (const el of sc.querySelectorAll('*')) {
-    if (el.classList.contains('w') || el.classList.contains('mask') || el.closest('svg')) continue;
+    if (el.classList.contains('w') || el.classList.contains('mask') || el.closest('svg') || el.closest('[data-clip]')) continue;  // data-clip: meant to be cut off (an odometer's hidden digits)
     const ownText = [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()) || el.querySelector(':scope > .mask');  // word-animated text
     if (!ownText || !shown(el)) continue;
     const r = el.getBoundingClientRect();
@@ -477,6 +498,15 @@ DESIGN_CHECK_JS = r"""() => {
   }
   const blocks = [...sc.querySelectorAll('.block, .card, .chip')].filter(shown).length;
   if (blocks > 9) warnings.push({what: 'scene', issue: `${blocks} boxes on screen at once: crowded, cut some`});
+  // too empty (docs/16 D1, Q6): how much of a 48x27 grid over the frame holds text, a picture or a card
+  const cells = new Set(), mark = r => { for (let x = Math.max(0, Math.floor(r.left / 40)); x <= Math.min(47, Math.floor((r.right - 1) / 40)); x++)
+    for (let y = Math.max(0, Math.floor(r.top / 40)); y <= Math.min(26, Math.floor((r.bottom - 1) / 40)); y++) cells.add(x + ',' + y); };
+  for (const el of sc.querySelectorAll('.card, .chip, img, svg, canvas, .ico')) if (shown(el)) { const r = el.getBoundingClientRect(); if (r.width > 8 && r.height > 8) mark(r); }
+  const tw = document.createTreeWalker(sc, NodeFilter.SHOW_TEXT);
+  for (let n; (n = tw.nextNode());) if (n.data.trim() && shown(n.parentElement)) { const rg = document.createRange(); rg.selectNodeContents(n); for (const r of rg.getClientRects()) mark(r); }
+  const filled = cells.size / (48 * 27);
+  if (filled < 0.3 && sc.dataset.template !== 'kinetic') warnings.push({what: 'scene', issue: `only ${Math.round(filled * 100)}% of the frame has anything in it: too empty; use bigger type or a layout that fills the canvas (centered-hero, full-type, bento)`});
+  if (cam) cam.style.transform = moved;
   return {issues, warnings};
 }"""
 
@@ -687,6 +717,10 @@ def stills_cmd(out, at=None, every=False):
     last = (looks.history() or [{}])[-1].get("look")
     if look and look == last:
         warnings.append({"scene": "*", "kind": "repeat", "detail": f"the last video used the '{look}' look too; pick another (looks.candidates)"})
+    motion = (json.loads((film / "design.json").read_text(encoding="utf-8")) if (film / "design.json").exists() else {}).get("motion_style")
+    if motion and motion == (looks.history() or [{}])[-1].get("motion_style"):
+        warnings.append({"scene": "*", "kind": "repeat", "detail": f"the last video moved the same way ('{motion}'); set another motion_style "
+                         f"in design.json ({', '.join(looks.MOTION_STYLES)})"})
     import stitch
     cap_steps = json.loads((o / "capture" / "steps.json").read_text(encoding="utf-8")).get("scenes", {}) if (o / "capture" / "steps.json").exists() else {}
     cap_ids = [x["id"] for x in scenes if x["visual"] == "capture"]
@@ -722,12 +756,15 @@ def stills_cmd(out, at=None, every=False):
                                                               band=burned, design=design),
                                         o / "render" / "frames")
             files.append((f, f"{s['id']} · {s['template'] if s['visual'] == 'anim' else s['visual']} · {t:.1f} s"))
-    cols, w, h = 3, 640, 360
+    cols, w, h, top = 3, 640, 360, 56
     rows = max(1, -(-len(files) // cols))
-    sheet = Image.new("RGB", (cols * w, rows * (h + 44)), "white")
+    sheet = Image.new("RGB", (cols * w, top + rows * (h + 44)), "white")
     draw = ImageDraw.Draw(sheet)
+    used = {**looks.defaults(look, hist=[]), **design} if look else design  # what this video uses, as the film page saw it
+    draw.text((10, 14), f"look: {look or 'none'} · motion: {used.get('motion_style', 'glide')} · layouts: {used.get('layout_family', 'editorial')}",
+              fill="#111", font=ImageFont.load_default(size=26))
     for i, (f, label) in enumerate(files):
-        x, y = (i % cols) * w, (i // cols) * (h + 44)
+        x, y = (i % cols) * w, top + (i // cols) * (h + 44)
         sheet.paste(Image.open(f).convert("RGB").resize((w - 8, h - 8)), (x + 4, y + 4))
         draw.text((x + 8, y + h + 8), label, fill="#111", font=ImageFont.load_default(size=22))
     sheet.save(d / "sheet.png")

@@ -61,6 +61,9 @@ def frame_assets(frame, w, h, folder):
         ih = even(min(h * 0.86, room - 2 * pad)); iw = even(ih * 430 / 932); extra = 2 * pad
     elif kind == "split":
         iw = even(min(w * 0.60, room * 16 / 9)); ih = even(iw * 9 / 16); extra = 0
+    elif kind == "device":  # a thin bezel on a soft gradient, as Screen Studio exports look (docs/16 D4)
+        pad, r = round(12 * k), round(20 * k)
+        iw = even(min(w * 0.80, (room - 2 * pad) * 16 / 9)); ih = even(iw * 9 / 16); extra = 2 * pad
     elif kind == "full":  # edge to edge, shrunk just enough to keep the caption band free (docs/16 CA2)
         ih = even(h - round(frame.get("band", 0) * k)); iw = even(min(w, ih * 16 / 9)); ih = even(iw * 9 / 16); r = 0; extra = 0
     else:  # float, tilt
@@ -70,13 +73,20 @@ def frame_assets(frame, w, h, folder):
     y = top + (bar if kind == "window" else pad)
     if not bg_png.exists():
         img = Image.new("RGB", (w, h), frame["bg"])
+        if kind == "device":  # the ground runs from the look's background into a hint of its accent
+            top_c, bot_c = Image.new("RGB", (1, 1), frame["bg"]).getpixel((0, 0)), Image.new("RGB", (1, 1), frame["accent"]).getpixel((0, 0))
+            grad = Image.new("RGB", (1, h))
+            for yy in range(h):
+                f = 0.22 * yy / h
+                grad.putpixel((0, yy), tuple(round(a + (b - a) * f) for a, b in zip(top_c, bot_c)))
+            img = grad.resize((w, h))
         shadow = Image.new("L", (w, h), 0)
         sd = ImageDraw.Draw(shadow)
         if kind == "full":
             pass
         elif kind == "laptop":
             sd.rounded_rectangle((x - pad, y - pad + round(18 * k), x + iw + pad, y + ih + pad + base + round(18 * k)), round(24 * k), fill=60)
-        elif kind == "phone":
+        elif kind in ("phone", "device"):
             sd.rounded_rectangle((x - pad, y - pad + round(16 * k), x + iw + pad, y + ih + pad + round(16 * k)), r + pad, fill=70)
         else:
             sd.rounded_rectangle((x, y - bar + round(14 * k), x + iw, y + ih + round(14 * k)), r, fill=70)
@@ -109,7 +119,7 @@ def frame_assets(frame, w, h, folder):
             d.rounded_rectangle(((w - bw) // 2, y + ih + pad, (w + bw) // 2, y + ih + pad + base), round(12 * k), fill="#cfccc4")
             d.rounded_rectangle((w // 2 - round(90 * k), y + ih + pad, w // 2 + round(90 * k), y + ih + pad + round(9 * k)),
                                 round(5 * k), fill="#b5b2aa")
-        elif kind == "phone":
+        elif kind in ("phone", "device"):
             d.rounded_rectangle((x - pad, y - pad, x + iw + pad, y + ih + pad), r + pad, fill="#141416")
         elif kind == "split":
             fonts = Path(__file__).resolve().parents[1] / "templates" / "film" / "fonts" / "geist-semibold.ttf"
@@ -270,10 +280,31 @@ def retime_plan(raw_s, anchors, dur, max_speed=2.5, keep_until=None, idle=(), sl
     return segs
 
 
+def map_time(r, segs):
+    """Where raw take time r lands in the retimed scene (None if it was cut out)."""
+    out = 0.0
+    for a, b, speed, hold in segs:
+        if r < a:
+            return None if out > 0 else 0.0
+        if r <= b:
+            return out + (r - a) / speed
+        out += (b - a) / speed + hold
+    return None
+
+
+def write_clicks(o, sid, take, segs=None):
+    """capture/sNN-clicks.json: when each click lands in the scene (the cursor arrives, then clicks), for score.py's ticks."""
+    import capture
+    raw = [a["at_s"] + capture.GLIDE_MS / 1000 for a in (take or {}).get("actions", []) if a.get("do") in ("click", "submit", "select")]
+    times = [r for r in (map_time(x, segs) if segs else x for x in raw) if r is not None]
+    (o / "capture" / f"{sid}-clicks.json").write_text(json.dumps([round(t, 3) for t in times]))
+
+
 def retime(o, sid, src, scene):
     """The take's recording of one scene, its actions moved onto their voice words (capture/sNN-timed.mp4)."""
     import capture
     take = capture.read_take(o).get(sid)
+    write_clicks(o, sid, take)
     if not take or not take.get("actions") or not (o / "capture" / "steps.json").exists():
         return src
     steps = (json.loads((o / "capture" / "steps.json").read_text(encoding="utf-8")).get("scenes", {}).get(sid) or {}).get("steps", [])
@@ -284,6 +315,7 @@ def retime(o, sid, src, scene):
     slow = [(a["at_s"], a.get("end_s", a["at_s"] + capture.GLIDE_MS / 1000)) for a in take["actions"] if a.get("do") in capture.FOCUS_DO]
     idle = [(x, y) for x, y in take.get("idle", []) if not any(x < b and a < y for a, b in slow)]
     segs = retime_plan(duration(src), anchors, scene["dur_s"], capture.MAX_SPEED, keep, idle, slow)
+    write_clicks(o, sid, take, segs)
     if len(segs) == 1 and segs[0][2] == 1.0 and segs[0][3] == 0:
         return src
     parts = [f"[0:v]split={len(segs)}" + "".join(f"[i{k}]" for k in range(len(segs)))]
@@ -414,6 +446,43 @@ def ingest(o, placeholders):
          message=f"fitted {len(made)} recorded scene(s)" + (f"; placeholder cards for {missing_ids}" if missing_ids else ""))
 
 
+def film_accent(o):
+    import capture
+    return capture.film_style(o)[0] or "#4f46e5"
+
+
+def yuv(hex_):
+    """An sRGB colour as limited-range BT.709 Y, U, V (what the yuv420p frames hold)."""
+    r, g, b = (int(hex_.lstrip("#")[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    return round(16 + 219 * y), round(128 + 224 * (b - y) / 1.8556), round(128 + 224 * (r - y) / 1.5748)
+
+
+def xfade(cut, offset, accent):
+    """The xfade filter for one cut. The drawn ones (looks.DRAWN) are custom per-pixel expressions; in them P runs 1 -> 0,
+    so q = 1 - P is the progress, and the accent colour is given per plane."""
+    kind, dur = cut["type"], cut["dur"]
+    head = f"xfade=duration={dur:.3f}:offset={offset:.4f}:transition="
+    if kind not in ("accent-wipe", "card", "dip-accent", "flash"):
+        return head + kind
+    Y, U, V = yuv(accent)
+    acc = f"if(eq(PLANE,0),{Y},if(eq(PLANE,1),{U},{V}))"
+    q = "(1-P)"
+    if kind == "accent-wipe":  # a bar of the accent sweeps left to right; the next scene is underneath it
+        e = f"if(lt(X,W*({q}*1.35-0.35)),B,if(lt(X,W*({q}*1.35)),{acc},A))"
+    elif kind == "dip-accent":  # out through the accent colour and back in
+        e = f"if(lt({q},0.5),A+({acc}-A)*{q}*2,{acc}+(B-{acc})*({q}-0.5)*2)"
+    elif kind == "flash":
+        e = f"if(lt({q},0.34),A,if(lt({q},0.67),{acc},B))"
+    else:  # card: the next scene grows out of a card in the middle, as product-intro's screenshot does
+        k = f"(0.45+0.55*{q}*{q}*(3-2*{q}))"
+        sx, sy = f"(W/2+(X-W/2)/{k})", f"(H/2+(Y-H/2)/{k})"
+        pick = f"if(eq(PLANE,0),b0({sx},{sy}),if(eq(PLANE,1),b1({sx},{sy}),b2({sx},{sy})))"
+        dim = f"if(eq(PLANE,0),A*(1-0.35*{q}),128+(A-128)*(1-0.35*{q}))"  # darker, not tinted: chroma centres on 128
+        e = f"if(lt(abs(X-W/2),W*{k}/2)*lt(abs(Y-H/2),H*{k}/2),{pick},{dim})"
+    return head + f"custom:expr='{e}'"
+
+
 def burn_filter(o, w):
     """subtitles=… for the final video when brief.captions is 'burned' (the default); regenerates the captions first."""
     brief = json.loads((o / "brief.json").read_text(encoding="utf-8"))
@@ -424,7 +493,7 @@ def burn_filter(o, w):
     if not captions.build(o) or mode != "burned":  # "srt": the file only
         return ""
     esc = lambda p: str(Path(p).resolve()).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
-    return f",subtitles=filename='{esc(o / 'captions.ass')}':fontsdir='{esc(captions.FONTS)}'"
+    return f",subtitles=filename='{esc(o / 'captions.ass')}':fontsdir='{esc(o / 'captions-fonts')}'"  # the look's caption font
 
 
 def concat(o, folder, audio, dst, w, h):
@@ -439,6 +508,7 @@ def concat(o, folder, audio, dst, w, h):
     import looks
     cuts, handle = looks.plan_for(o)
     scenes = tl["scenes"]
+    accent = film_accent(o)
     # each segment is cut (or held) to exactly its scene plus its handle, then the chain blends at the scene starts:
     # the next scene starts on time and fades in over the previous one's handle, so the voice stays in sync
     parts = [f"[{i}:v]fps=30,scale={w}:{h},setsar=1,format=yuv420p,"
@@ -448,7 +518,7 @@ def concat(o, folder, audio, dst, w, h):
     for i, c in enumerate(cuts, 1):
         nxt = f"x{i}"
         if c["dur"] > 0:
-            parts.append(f"[{acc}][v{i}]xfade=transition={c['type']}:duration={c['dur']:.3f}:offset={start:.4f}[{nxt}]")
+            parts.append(f"[{acc}][v{i}]{xfade(c, start, accent)}[{nxt}]")
         else:
             parts.append(f"[{acc}][v{i}]concat=n=2:v=1:a=0,settb=1/30,fps=30[{nxt}]")
         acc, start = nxt, start + scenes[i]["dur_s"]

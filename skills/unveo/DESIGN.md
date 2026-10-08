@@ -21,23 +21,35 @@ A **look** is a whole visual language. Ten exist (`scripts/looks.py`, `templates
 
 - **What a look sets:** the font, colour and framing defaults. `design.json` can still override any field.
 - **Choosing:** `render.py looks` offers the 3 that **fit the project's field best** (civic projects get civic or editorial, developer tools terminal or blueprint, health soft…). History only nudges: the last video's look drops a few places but is never banned. `~/.unveo/history.json` is written when QA passes.
-- **Repeats:** `render.py stills` warns when this video's look repeats the last one.
+- **Repeats:** `render.py stills` warns when this video's look or motion repeats the last one, and QA's `repetition` report flags a video whose look, motion, story and music share two or more with the last.
 - **Matching the audience:** a civic dashboard suits editorial or swiss, a developer tool terminal, a student or community app notebook or poster, and a polished SaaS product.
+
+### Motion languages: why two unveo videos never move alike
+
+The look sets how a video looks; the **motion language** sets how it moves. Every entrance, every line of text, the scene's one emphasis, the camera, the cuts and the music follow it. One per video, saved in design.json as `"motion_style"`: render.py picks the look's first choice that the last video didn't use. Set it yourself to change it.
+
+| Motion | Entrances | Text | Emphasis (`**word**`) | Camera | Cut into a recording | Music | Looks it suits |
+|---|---|---|---|---|---|---|---|
+| `glide` | fade and rise | words rise out of a mask | an underline draws in | slow push to 1.03 | the recording grows out of a card | soft pad, 96 BPM | editorial, civic |
+| `snap` | spring pop | words pop | an accent pill | still | an accent bar wipes across | plucked arp, 116 BPM | swiss, neo-brutal |
+| `cinematic` | out of a blur | the line sharpens, tracking tightens | everything else dims | push to 1.05 and a slow pan | through the accent colour | slow swell, sub bass, 80 BPM | product, civic, soft |
+| `typewriter` | appears line by line | typed, with a block cursor | a box around it | none | a hard cut with one accent frame | tick pulse, 120 BPM | terminal, devtools, APIs |
+| `draw` | wipes in left to right | written in | a hand-drawn ring | drifts like paper | page-turn slide | broken-chord keys, 90 BPM | notebook, education |
+| `blueprint` | built top down | labels fade in | a dashed underline | slow pan | a wipe | gated pulse, 100 BPM | blueprint, hardware |
+| `stack` | cards slide in from the right | phrases rise together | lifts in the accent | tracks right | slide | plucked arp, 112 BPM | product, soft, SaaS |
+| `kinetic` | scale in fast | words cut in | inverted | quick push | an accent bar wipes across | driving arp, 124 BPM | poster, events, hooks |
+
+Guard rails: one motion language per video, one emphasis per scene, the camera never moves more than 5% (except an explainer's last zoom into its answer), and nothing moves a recording but its own camera (CAPTURE.md).
 
 ### Transitions
 
-Every cut blends: the next scene starts on time and fades or wipes in over the previous scene's last 0.45 s, so nothing jumps and the voice stays in sync. The look picks the kind:
+Every cut blends: the next scene starts on time and comes in over the previous scene's last 0.45 s, so nothing jumps and the voice stays in sync. The motion language picks the kind (table above); between two animations glide, cinematic and blueprint fade, draw dissolves, stack slides, and snap, typewriter and kinetic hard cut. The accent wipe, the card, the dip through the accent and the one-frame flash are drawn in the look's accent colour.
 
-| Look | Into or out of a recording | Between two animations |
-|---|---|---|
-| editorial | fade | dissolve |
-| swiss | wipe | hard cut |
-| terminal | fade through black | fade |
-| notebook | fade | dissolve |
-| poster | slide | slide |
-| product | smooth slide | fade |
+The title and close always fade, and so does a recording into an explainer (the explainer draws over that recording's last frame). Two recordings in a row always hard cut: the app carries on, and a blend would ghost it. Override with `"transition": {"type": "<xfade or drawn name>", "dur": 0.6}` in design.json; `"dur": 0` gives hard cuts.
 
-The title and close always fade. Two recordings in a row always hard cut: the app carries on, and a blend would ghost it. Override with `"transition": {"type": "<xfade name>", "dur": 0.6}` in design.json; `"dur": 0` gives hard cuts.
+### Captions match the look
+
+Burned-in captions use the look's typeface and colours: serif italic on paper for editorial and notebook, mono with a `>` for terminal, heavy capitals on the accent for poster, white boxes for product and soft, and so on (the font is fetched once as TrueType; Geist when offline). Contrast is always at least 4.5:1. `"caption_words": true` in brief.json lights each word as it's spoken, karaoke style.
 
 ### Motifs: the project's own world, not generic shapes
 
@@ -69,8 +81,21 @@ Use a logo only for a tool the project really uses or names (cite it like any cl
 
 ### More pieces for story scenes
 
-- **Blocks:** `icon`, `icon-row` (`size` for big logos), `stat` (number, icon and label), `timeline`, `compare` (before and after), `callout` (a screenshot with numbered pins), `device` (a screenshot in a laptop or phone) and `badge-cloud` join the earlier blocks.
-- **Layouts:** `hero-icon`, `three-col`, `asymmetric` and `full-bleed-shot`.
+- **Blocks:** `icon`, `icon-row` (`size` for big logos), `stat` (number, icon and label), `timeline`, `compare` (before and after), `callout` (a screenshot with numbered pins), `device` (a screenshot in a laptop or phone) and `badge-cloud` join the earlier blocks. Newer ones, for what current launch videos show:
+
+  | Block | Props | For |
+  |---|---|---|
+  | `logo-wall` | `{items: [logo or {icon, label}], size}` (≤12) | the tools a project uses, assembling in a grid |
+  | `ticker` | `{items: [{value, label, source}]}` (≤4) | sourced numbers rolling in like an odometer |
+  | `chat` | `{messages: [{from: "user"\|"bot", text}]}` (≤5) | AI and chat products: the bot types, then answers. Real replies, or tag the scene `example_data` |
+  | `code` | `{code, start, highlight: [line numbers], source: "file:12-18"}` | a few real lines from the repo, revealed line by line, the key line marked. Cite it |
+  | `map-pins` | `{pins: [{x, y, label}], src?}` | location data: pins drop onto a map (a dotted ground without `src`) |
+  | `line-chart` | `{points: [numbers], labels: [first, last], unit, source}` | a trend that draws in |
+  | `donut` | `{items: [{label, value}], center}` (≤5) | shares of a whole |
+  | `phone-stack` | `{srcs: [2–3 screenshots]}` | mobile apps |
+  | `terminal` | `{command, output: [lines], prompt, title}` | CLIs: the real command typed, then its real output |
+
+- **Layouts:** `hero-icon`, `three-col`, `asymmetric` and `full-bleed-shot`, plus layouts that use the whole canvas: `centered-hero` (main, below), `full-type` (main: one sentence filling the frame), `left-heavy` (main, side), `diagonal` (a, b) and `bento` (a, b, c, d; the launch-page grid).
 - **Scenes:**
 
   | Scene | Data |
@@ -79,20 +104,25 @@ Use a logo only for a tool the project really uses or names (cite it like any cl
   | `anim:stat-hero` | `{value, label, icon, source}` |
   | `anim:before-after` | `{title, before: {title, items}, after: {title, items}}` |
   | `anim:annotated-shot` | `{title, src, pins: [{x, y, label}]}`, for a beat the recording can't show |
+  | `anim:kinetic` | `{text}`: a 2–3 s punch line in huge type, cut on the spoken words |
+  | `anim:built-with` | `{logos, line}`: the stack and the hardest part, cited |
 
 ## 1. Write a design brief: `OUT/film/design.json`
 
 ```json
 {"look": "editorial", "motifs": ["lucide:landmark", "mdi:rupee"], "concept": "quiet editorial, like a research report",
- "display_font": "IBM Plex Sans", "body_font": "IBM Plex Sans",
+ "display_font": "IBM Plex Sans", "body_font": "IBM Plex Sans", "motion_style": "cinematic",
  "motion": "calm", "background": "plain", "layout_family": "editorial", "accent_use": "sparing"}
 ```
 
 - **`concept`:** one line, chosen for *this* project. A civic dashboard might be "quiet report", a dev tool "clean terminal", a student app "notebook". Let the project's own UI and audience decide.
 - **Fonts:** the look's pair by default (`product` uses the app's own font, the first entry in `repo_scan.json` → `fonts`). render.py fetches Google Fonts once (free) and falls back to Geist.
-- **`motion`:** `calm` (default) or `lively` (25% faster entrances, for consumer and playful products).
-- **`background`:** `plain` (default), `paper` (faint grain), or `app-shot` (the app's own screenshot, heavily blurred and faint).
-- **`layout_family`:** `editorial`, `grid` or `centered`. Use the same family for most scenes, so the video feels like one piece.
+- **`motion_style`:** the motion language (above). render.py fills it in the first time; change it to taste.
+- **`motion`:** `calm` (default) or `lively` (25% faster again, for consumer and playful products).
+- **`background`:** `plain`, `paper` (faint grain), `app-shot` (the app's own screenshot, heavily blurred and faint), `radial` (a soft accent glow that drifts very slowly; product and soft by default) or `dots` (a dot grid that pans; swiss by default).
+- **`layout_family`:** `editorial`, `grid` or `centered`, from the look. A compose scene without a `layout` takes the family's (`left-heavy`, `bento`, `centered-hero`). Use the same family for most scenes, so the video feels like one piece.
+- **`type_scale`:** how big headlines run, from the look (editorial 1.15 up to poster 1.6). Text in compose areas also grows into empty room (up to 1.6×) and shrinks to fit.
+- **`display`:** the recordings' frame (CAPTURE.md): `window`, `laptop`, `float`, `tilt`, `split`, `full` or `device` (a thin bezel on a soft gradient).
 - **`accent_use`:** `sparing` (default; accent only on the one thing that matters) or `bold`.
 
 ## 2. Compose scenes for the story
@@ -134,6 +164,7 @@ Then, in Guided mode, ask the user at Checkpoint C: **"Does anything look automa
 
 `render.py stills` reports:
 - **`design_issues`** (it exits 2 until they're fixed): text that runs out of the frame or out of its box.
-- **`design_warnings`:** low contrast, and more than 9 boxes in a scene.
+- **`design_warnings`:** low contrast, more than 9 boxes in a scene, a frame less than 30% filled (too empty: bigger type, or `centered-hero`, `full-type`, `bento`), and a look or motion that repeats the last video.
+- The sheet's header names the look, the motion language and the layout family.
 
 Fix every issue: shorten the text, or move the beat to `compose`, which auto-fits.
