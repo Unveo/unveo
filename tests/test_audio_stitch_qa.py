@@ -135,6 +135,9 @@ class StitchQaTest(unittest.TestCase):
         self.assertAlmostEqual(d, total, delta=0.1)
         self.assertIn("Audio: aac", err)
         self.assertIn("2560x1440", err)  # 2K by default
+        d2, err2 = info(o / "final-clean.mp4")  # the same film without burned captions, for the submission kit
+        self.assertAlmostEqual(d2, total, delta=0.1)
+        self.assertIn("1920x1080", err2)
         code, res = run("qa.py", o)
         self.assertEqual(code, 0, res)
         self.assertTrue((o / "qa.md").read_text().startswith("PASS"))
@@ -165,7 +168,8 @@ class StitchQaTest(unittest.TestCase):
         self.assertEqual(code, 0, res)
         top = {f.name for f in root.iterdir()}
         self.assertEqual(top - {"preview.png"}, {".work", ".gitignore", "your-clips", "demo-video.mp4", "subtitles.srt",
-                                                  "quality-check.md", "script.md", "scenes"})
+                                                  "quality-check.md", "script.md", "scenes", "images", "vertical.mp4"})
+        # 11.5 s is too short for YouTube chapters, and no writeup.md was written, so neither is published
         self.assertEqual(len(list((root / "scenes").glob("s*.mp4"))), len(json.loads((work / "timeline.json").read_text())["scenes"]))
         self.assertEqual((root / "demo-video.mp4").stat().st_size, (work / "final.mp4").stat().st_size)
         self.assertNotIn("[", (root / "script.md").read_text())  # a clean read: no source tags

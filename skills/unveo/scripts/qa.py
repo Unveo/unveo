@@ -3,13 +3,14 @@
   qa.py [--out unveo-out/.work]
 
 When every blocking gate passes, copies the video, subtitles, a clean script, this report, the preview sheet
-and each scene on its own (unveo-out/scenes/sNN-<template>.mp4) to unveo-out/. A failing run publishes nothing.
+and each scene on its own (unveo-out/scenes/sNN-<template>.mp4) to unveo-out/, with the submission kit (kit.py:
+chapters.txt, images/, vertical.mp4, devpost.md). A failing run publishes nothing.
 """
 import argparse, json, os, re, subprocess, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import emit, ffmpeg_exe, file_sha1, out_dir, out_size, public_dir, read_json, streams  # noqa: E402
+from common import emit, ffmpeg_exe, file_sha1, log, out_dir, out_size, public_dir, read_json, streams  # noqa: E402
 
 FIX = {
     "duration": "Over the limit: shorten the narration (PITCH.md), re-voice, and re-run from plan_timeline.py. Video and audio "
@@ -146,7 +147,14 @@ def publish(o, brief, tl):
         subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-ss", f"{sc['start_s']:.3f}", "-i", str(o / "final.mp4"),
                         "-t", f"{sc['dur_s']:.3f}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", str(dst)], check=True)
     done.append(str(scenes))
-    return done
+    import kit  # the submission kit: chapters, images, a vertical cut, the Devpost draft (docs/16 OUT1–OUT4)
+    try:
+        kit_done, kit_notes = kit.publish(o, brief, tl, root)
+    except (OSError, subprocess.CalledProcessError, ValueError, KeyError) as e:  # extras: the video is still handed over
+        kit_done, kit_notes = [], [f"the submission kit failed ({type(e).__name__}: {str(e)[:160]}); the video is published without it"]
+    for n in kit_notes:
+        log(n)
+    return done + kit_done
 
 
 def voice_spans(tl):
@@ -322,7 +330,7 @@ def main():
          "with \"viewport\": {\"zoom\": 1.25}" if small else "the app's text reads at 18 px or more", blocking=False)
     flashes = []
     for i, c in enumerate(cuts, 1):
-        if c["dur"] > 0 and i < len(tl["scenes"]) and c["type"] not in looks.DRAWN - {"card"}:  # those show the accent on purpose
+        if c["dur"] > 0 and i < len(tl["scenes"]) and c["type"] not in looks.DRAWN - {"card", "match"}:  # those show the accent on purpose
             t = tl["scenes"][i]["start_s"]
             mid, before, after = (frame_rgb(final, x) for x in (t + c["dur"] / 2, t - 0.1, t + c["dur"] + 0.1))
             if all(f is not None for f in (mid, before, after)) and flash_in(mid, before, after):

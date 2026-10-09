@@ -49,11 +49,13 @@ unveo/
 │   │   ├── score.py              synthesised music → audio/score.wav
 │   │   ├── mix.py                voice + score → audio/mix.wav (ducking, −14 LUFS)
 │   │   ├── stitch.py             ingest · draft · final → final.mp4
-│   │   ├── qa.py                 quality gates → qa.md
+│   │   ├── qa.py                 quality gates → qa.md, then publishes unveo-out/
+│   │   ├── kit.py                the submission kit: images, chapters, vertical cut, devpost.md
 │   │   ├── brief.py              validate brief.json
 │   │   ├── captions.py           captions.srt + captions.ass from the voice timings
 │   │   ├── studio.py             optional own-voice teleprompter page
-│   │   ├── setup_app.py          plan, install, start and stop a local app
+│   │   ├── setup_app.py          plan, install, start, seed and stop a local app (Docker, Expo/Flutter web)
+│   │   ├── outputs.py            real terminal and notebook output for CLIs, APIs and notebooks
 │   │   ├── state.py              state.json bookkeeping
 │   │   ├── common.py             shared helpers: paths, ffmpeg exe, JSON out, hashing
 │   │   └── engine/               vendored from howseen-ai/claude-motion-design

@@ -14,6 +14,8 @@ Animated scenes are one HTML page (`OUT/film/index.html`). render.py copies the 
 | `close` | `{"title", "impact_line", "links": [{"label","url"}], "extra_line", "credits"?, "built_with"?}` | `impact_line` and `links` **copied exactly** from brief.close; QA compares them. `credits` defaults to brief.header.team |
 | `kinetic` | `{"text"}` | One short line in huge type, one or two words at a time, cut on the spoken words. For 2–3 s punch scenes and hooks. `**word**` marks the one emphasis |
 | `built-with` | `{"logos": [logo ids], "line", "kicker"?}` | The stack's real logos and one cited sentence on the hardest part (PITCH.md §1) |
+| `terminal` | `{"run", "key"?, "lines"?: [from, to], "heading"?, "title"?}` | A CLI or API step: the real command typed, then its real output from `outputs.py run` (CAPTURE.md). `key` marks the result line; `lines` picks 14 at most. Without `run` the render stops |
+| `notebook` | `{"notebook", "cells"?: [index…], "heading"?}` | Notebook cells and their real outputs from `outputs.py notebook`, run one after another. One cell with a chart, or two with text; default: the first two with output |
 | `placeholder` | `{"shot_id", "what_to_record"}` | Used automatically for missing clips |
 | `compose` | `{"layout", "blocks": [...]}` | Your own scene from building blocks; see DESIGN.md. Prefer it whenever a template doesn't fit the story |
 
@@ -22,7 +24,7 @@ On-screen text summarises; the voice explains. Don't put the narration sentence 
 Every scene, any template:
 - **One emphasis:** wrap the key word or words in `**…**` in a headline, heading or text (only the first pair counts). The motion language draws it (an underline, a pill, a ring…) as one shape per line; a box, pill or ring only on 3 words or fewer, a longer phrase gets the underline. It lands at `"emphasis_at"` (seconds or `"word:<word>"`), by default about 40% in.
 - **The camera** moves every animated scene a little, by the motion language. `"camera": false` in a scene's data keeps it still.
-- **Explainers** end with a short zoom into their answer, and one that follows a recording draws over that recording's frozen, blurred last frame. `"backdrop": false` turns that off.
+- **Explainers** end with a short zoom into their answer, and the recording after them grows out of that answer's box (the match cut). One that follows a recording draws over that recording's frozen, blurred last frame. `"backdrop": false` turns that off.
 
 ## Commands
 

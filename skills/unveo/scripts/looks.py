@@ -99,17 +99,19 @@ TRANSITIONS = {
     "stack": {"rec": "slideleft", "anim": "slideleft"},
     "kinetic": {"rec": "accent-wipe", "anim": None},
 }
-DRAWN = {"accent-wipe", "card", "dip-accent", "flash"}
+DRAWN = {"accent-wipe", "card", "dip-accent", "flash", "match"}
 
 
 def motion_of(look, design=None):
     return (design or {}).get("motion_style") or ((STYLE.get(look) or {}).get("motion") or ["glide"])[0]
 
 
-def cuts(scenes, look, design=None):
+def cuts(scenes, look, design=None, focus=None):
     """One transition per boundary between scene i and i+1: {"type": xfade or drawn name, "dur": seconds (0 = hard cut)}.
     Into or out of the title and the close is always a soft fade, and so is a recording into an explainer drawn over
-    its last frame (it's about that screen). design["transition"] = {"type", "dur"} overrides."""
+    its last frame (it's about that screen). An explainer into a recording is a match cut (docs/16 MO2): the recording
+    grows out of the box the explainer ended on (focus: scene id -> [x, y, w, h] at 1920x1080, from render.py).
+    design["transition"] = {"type", "dur"} overrides."""
     rule = TRANSITIONS.get(motion_of(look, design)) or TRANSITIONS["glide"]
     over = (design or {}).get("transition") or {}
     out = []
@@ -122,12 +124,18 @@ def cuts(scenes, look, design=None):
             kind = None  # the app just carries on from one step to the next: a blend would only ghost it
         elif a.get("visual") == "capture" and str(b.get("template") or "").startswith("explainer-"):
             kind = "fade"
+        elif (focus or {}).get(a.get("id")) and b.get("visual") in ("capture", "clip"):
+            kind = "match"
         else:
             kind = rule["rec"]
         kind = over.get("type", kind)
         dur = float(over.get("dur", T_DEFAULT)) if kind and kind != "flash" else 0.0
         dur = max(T_MIN, round(dur * 30) / 30) if dur > 0 else 0.0
-        out.append({"type": kind or "fade", "dur": dur, "at": b.get("start_s")})
+        cut = {"type": kind or "fade", "dur": dur, "at": b.get("start_s")}
+        if kind == "match":
+            x, y, w, h = focus[a["id"]]
+            cut["box"] = [round(x / 1920, 4), round(y / 1080, 4), round(w / 1920, 4), round(h / 1080, 4)]
+        out.append(cut)
     return out
 
 
@@ -142,7 +150,8 @@ def plan_for(o):
     tl = json.loads((Path(o) / "timeline.json").read_text(encoding="utf-8"))
     f = Path(o) / "film" / "design.json"
     design = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
-    return cuts(tl["scenes"], design.get("look"), design), handles(tl["scenes"], design.get("look"), design)
+    focus = {f.stem[6:]: json.loads(f.read_text()) for f in (Path(o) / "film").glob("focus-*.json")}
+    return cuts(tl["scenes"], design.get("look"), design, focus), handles(tl["scenes"], design.get("look"), design)
 
 
 def home(h=None):

@@ -22,6 +22,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: semv
   - Captions burned in plus captions.srt.
   - Per-video design brief (the app's font, motion, background), building blocks and compose scenes, overflow, contrast and crowding checks, QA feel report.
   - setup_app.py: plan, install --yes, start --yes, stop for local Node and Python apps.
+- Round 11: the match cut (docs/16 MO2): an explainer ends zoomed on its answer and the next recording grows out of that box. Doc 16 drops CO4, CO6, CO7 and OUT5 (not planned) and lists four limits found in the SentinelOS run.
+- Round 10, the quality audit's Rounds C and D (docs/16):
+  - Projects that aren't web apps: CLIs and APIs get `anim:terminal` scenes and notebooks `anim:notebook` scenes, filled only from real runs (outputs.py: the command run in the project, colours stripped, JSON pretty-printed, emails, phones and keys masked; dangerous commands refused, data changes need approval). analyze_repo.py finds `cli` and `api` projects, the CLI's commands and README examples, and notebooks (it missed them before).
+  - setup_app.py: Docker Compose services when Docker is running (or the whole app, when it's built there), down again at stop; the project's seed commands (`seed --yes`); the web build of an Expo or Flutter app, recorded in a phone.
+  - The submission kit, published with the video: a thumbnail and 3:2 gallery images, YouTube chapters, a 9:16 cut of about 40 s, and a Devpost draft (writeup.md, checked by `script.py writeup`: every fact cited, prompts where only the team knows).
 - Round 8, the quality audit's Round B (docs/16):
   - Eight motion languages: entrances, text, one emphasis per scene and a moving camera follow the video's motion style, chosen per look and never the same as the last video.
   - Cuts drawn in the accent colour, explainers over the recording they explain, explainers that keep moving and end on their answer.

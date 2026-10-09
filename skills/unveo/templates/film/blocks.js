@@ -11,6 +11,8 @@
   const icon = (name, size, color) => window.ICONS && window.ICONS[name]
     ? `<span class="ico${String(name).startsWith("logos:") ? " brand" : ""}" style="width:${size}px;height:${size}px;${color ? `color:${color}` : ""}">${window.ICONS[name]}</span>` : "";
   window.ICON = icon;
+  const hl = line => esc(line).replace(/(&quot;.*?&quot;|'[^']*'|`[^`]*`)|(\/\/.*$|#.*$|--.*$)|(\b\d+(?:\.\d+)?\b)|\b(def|return|if|else|elif|for|while|import|from|const|let|var|function|async|await|class|new|try|catch|except|with|as|in|of|export|SELECT|FROM|WHERE|INSERT|BEGIN|COMMIT)\b/g,
+          (m, str, com, n, k) => str ? `<span style="color:var(--accent2)">${m}</span>` : com ? `<span style="color:var(--muted)">${m}</span>` : n ? `<span style="color:var(--accent2)">${m}</span>` : `<span style="color:var(--accent);font-weight:600">${m}</span>`);  // light syntax colours for real code (code, notebook)
   const B = {
     kicker: { build: pr => T("div", "eyebrow", esc(pr.text)) },
     // the look's type scale (design.css --type-scale) sizes headings; auto-fit still shrinks or grows them to the area
@@ -193,8 +195,6 @@
     },
     code: {  // { code: "real lines", start: 12, highlight: [14], source: "file.py:12-18" } — revealed line by line, key line marked
       build: pr => {
-        const hl = line => esc(line).replace(/(&quot;.*?&quot;|'[^']*'|`[^`]*`)|(\/\/.*$|#.*$|--.*$)|(\b\d+(?:\.\d+)?\b)|\b(def|return|if|else|elif|for|while|import|from|const|let|var|function|async|await|class|new|try|catch|except|with|as|in|of|export|SELECT|FROM|WHERE|INSERT|BEGIN|COMMIT)\b/g,
-          (m, str, com, n, k) => str ? `<span style="color:var(--accent2)">${m}</span>` : com ? `<span style="color:var(--muted)">${m}</span>` : n ? `<span style="color:var(--accent2)">${m}</span>` : `<span style="color:var(--accent);font-weight:600">${m}</span>`);
         const lines = String(pr.code || "").split("\n").slice(0, 14), start = pr.start || 1, mark = new Set(pr.highlight || []);
         return T("div", "card", `<div class="mono" style="font:500 20px 'Geist Mono';color:var(--muted);margin-bottom:16px">${esc(pr.source || "")}</div>` +
           lines.map((l, i) => `<div class="ln${mark.has(start + i) ? " key" : ""}" style="display:flex;gap:26px;padding:3px 12px;border-radius:8px;font:450 26px/1.5 'Geist Mono';white-space:pre">
@@ -266,14 +266,34 @@
         ph.style.opacity = clamp(q * 2); ph.style.transform = `translateX(${Number(ph.dataset.x) * q}px) rotate(${Number(ph.dataset.r) * q}deg) translateY(${(1 - q) * 60}px)`;
       }),
     },
-    terminal: {  // { command, output: [lines] or "text", prompt?: "$", title? } — the real command typed, then its real output
+    notebook: {  // { cells: [{n, source, outputs: [{text} | {img}]}], path? } — notebook cells run one after another, real outputs (docs/16 CO5)
+      build: pr => T("div", null, (pr.path ? `<div class="mono" style="font:500 22px 'Geist Mono';color:var(--muted)">${esc(pr.path)}</div>` : "") +
+        (pr.cells || []).slice(0, 3).map(c => {
+          const gut = (w, n) => `<div class="mono" style="flex:none;width:150px;padding-top:12px;font:500 24px 'Geist Mono';color:${w === "In" ? "var(--accent)" : "var(--muted)"}">${w} [${n == null ? " " : n}]:</div>`;
+          const code = String(c.source || "").split("\n").slice(0, 8).map(l => `<div style="white-space:pre">${hl(l) || "&nbsp;"}</div>`).join("");
+          const outs = (c.outputs || []).slice(0, 2).map(x => x.img
+            ? `<img src="${esc(x.img)}" style="display:block;max-width:100%;min-height:0;flex:1 1 0;object-fit:contain;object-position:left top;background:#fff;border-radius:8px">`
+            : `<pre style="margin:0;font:450 27px/1.45 'Geist Mono';white-space:pre;overflow:hidden">${esc(String(x.text).split("\n").slice(0, 10).join("\n"))}</pre>`).join("");
+          const img = (c.outputs || []).some(x => x.img);
+          return `<div class="cell" style="display:flex;flex-direction:column;gap:10px;min-height:0;flex:${img ? "1 1 0" : "none"}">
+            <div style="display:flex">${gut("In", c.n)}<div style="flex:1;padding:12px 18px;border-radius:10px;background:var(--surface);border:1px solid color-mix(in srgb, var(--muted) 30%, transparent);font:450 29px/1.5 'Geist Mono';overflow:hidden">${code}</div></div>
+            ${outs ? `<div class="o" style="display:flex;min-height:0;flex:${img ? "1 1 0" : "none"}">${gut("Out", c.n)}<div style="flex:1;display:flex;flex-direction:column;min-height:0;padding:6px 18px">${outs}</div></div>` : ""}</div>`;
+        }).join(""), "display:flex;flex-direction:column;gap:22px;height:100%"),
+      fit: true, timed: true,
+      draw: (el, k, pr, s) => [...el.querySelectorAll(".cell")].forEach((c, i) => {
+        const t = s - i * 1.6, o = c.querySelector(".o");
+        c.style.opacity = clamp(t / 0.25); c.style.transform = `translateY(${(1 - E.outC(clamp(t / 0.35))) * 18}px)`;
+        if (o) { const q = clamp((t - 0.7) / 0.35); o.style.opacity = q; o.style.transform = `translateY(${(1 - E.outC(q)) * 14}px)`; }
+      }),
+    },
+    terminal: {  // { command, output: [lines] or "text", prompt?: "$", title?, key?, size?: px } — the real command typed, then its real output; the line holding key is marked
       build: pr => {
         const out = Array.isArray(pr.output) ? pr.output : String(pr.output || "").split("\n");
         return T("div", null, `<div style="display:flex;gap:9px;padding:16px 20px;background:color-mix(in srgb, #fff 8%, #111214)">${["#ff5f57", "#febc2e", "#28c840"].map(c => `<i style="width:13px;height:13px;border-radius:50%;background:${c}"></i>`).join("")}
             <span class="mono" style="margin-left:14px;font:500 18px 'Geist Mono';color:#8b8f98">${esc(pr.title || "terminal")}</span></div>
-          <div style="padding:26px 30px;font:450 25px/1.55 'Geist Mono';color:#e6e6e3;overflow-wrap:anywhere">` +
+          <div style="padding:26px 30px;font:450 ${pr.size || 25}px/1.55 'Geist Mono';color:#e6e6e3;overflow-wrap:anywhere">` +
           `<div><span style="color:#7cdb8a">${esc(pr.prompt || "$")}</span> <span class="cmd" data-full="${esc(pr.command || "")}"></span><span class="cur" style="display:inline-block;width:.55em;height:1.1em;vertical-align:-.15em;background:#e6e6e3"></span></div>` +
-          out.slice(0, 14).map(l => `<div class="out" style="opacity:0;white-space:pre-wrap">${esc(l) || "&nbsp;"}</div>`).join("") + `</div>`,
+          out.slice(0, 14).map(l => `<div class="out${pr.key && String(l).includes(pr.key) ? " key" : ""}" style="opacity:0;white-space:pre-wrap;margin:0 -10px;padding:0 10px;border-radius:6px">${esc(l) || "&nbsp;"}</div>`).join("") + `</div>`,
           "border-radius:16px;overflow:hidden;background:#111214;box-shadow:0 24px 60px rgba(0,0,0,.18)");
       },
       fit: true, timed: true,
@@ -281,7 +301,9 @@
         const c = el.querySelector(".cmd"), full = c.dataset.full, typed = Math.floor(Math.max(0, s) * 24);
         c.textContent = full.slice(0, typed);
         const done = full.length / 24 + 0.35, cur = el.querySelector(".cur");
-        el.querySelectorAll(".out").forEach((o, i) => { o.style.opacity = s > done + i * 0.07 ? 1 : 0; });
+        const outs = el.querySelectorAll(".out"), landed = done + outs.length * 0.07 + 0.3;
+        outs.forEach((o, i) => { o.style.opacity = s > done + i * 0.07 ? 1 : 0; });
+        el.querySelectorAll(".out.key").forEach(o => { o.style.background = `color-mix(in srgb, var(--accent) ${Math.round(34 * clamp((s - landed) / 0.4))}%, transparent)`; });
         cur.style.opacity = 0;  // shown while typing and 0.4 s after; the one cursor on screen (core.js cursor)
         if (s >= 0 && s < done + 0.4) CORE.cursor.claim(at || 0, () => { cur.style.opacity = 1; }, () => { cur.style.opacity = 0; });
       },

@@ -17,6 +17,7 @@ Never open `.env` files. `env_keys` already lists the variable names.
 
 - **3 to 6 steps**, in the order a first-time user would take them. End on the step that shows the product's main value: a result, a score, a map or a report.
 - Each step: `<action> → <what appears>   [route: /path, element: "<visible text>"]`. Take the element text from `ui_labels` or `forms`, so the recorder can find it on the page. If those miss it (text built with `t('…')` or from a strings file), read the JSX and the strings file directly and use the English text a user sees. For a dropdown, name the option to pick, for example `element: "Severity" → option "High"`.
+- **Not a web app** (`app_kind` cli, api or notebook): each step is something you run, and the voice describes what it prints. Write `<what you run> → <what it shows>   [command: "mytool scan ./samples"]` (an API: `[request: GET /items]`; a notebook: `[cell: 7]`). Take commands from `cli.examples`, routes from `routes`, cells from the notebooks themselves. For a `mobile` app, the steps are its screens, as for the web.
 - **Prefer read-only paths:** browsing, filtering, opening a detail page, running a search, submitting a demo input. Leave out anything that creates, deletes, pays or sends. Signing in is fine when the app requires it.
 - **Form input:** use realistic values from seed data, fixtures or README examples. If there are none, write `(sample input)` after the value.
 - **Key features:** at most 4, each tied to a journey step.
@@ -72,4 +73,4 @@ App URL:  <url> (<loads ✓ | failed: reason>, <no login | login needed>)
 - <every file you read>
 ```
 
-Pre-tick as many as the focus allows (`[x]`): balanced 2 (1 at 60 s), product 1 (0 at 60 s), explain 3 (2 at 60 s). When the app isn't a web app, or has no reachable URL, the journey is still written: those steps become clips the user records later.
+Pre-tick as many as the focus allows (`[x]`): balanced 2 (1 at 60 s), product 1 (0 at 60 s), explain 3 (2 at 60 s). When the app isn't a web app, the journey is still written: a CLI, an API or a notebook gets terminal and notebook scenes from real runs (CAPTURE.md), and anything that can't run becomes a clip the user records later.

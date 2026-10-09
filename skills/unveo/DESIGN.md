@@ -45,7 +45,7 @@ Guard rails: one motion language per video, one emphasis per scene, the camera n
 
 Every cut blends: the next scene starts on time and comes in over the previous scene's last 14 frames (0.47 s; never under 0.3 s), so nothing jumps and the voice stays in sync. The motion language picks the kind (table above); between two animations glide, cinematic and blueprint fade, draw dissolves, stack slides, and snap, typewriter and kinetic hard cut. The accent wipe, the card, the dip through the accent and the flash (a hard cut with the accent over two frames) are drawn in the look's accent colour.
 
-The title and close always fade, and so does a recording into an explainer (the explainer draws over that recording's last frame). Two recordings in a row always hard cut: the app carries on, and a blend would ghost it. Override with `"transition": {"type": "<xfade or drawn name>", "dur": 0.6}` in design.json; `"dur": 0` gives hard cuts.
+The title and close always fade, and so does a recording into an explainer (the explainer draws over that recording's last frame). An explainer into a recording is a **match cut**: the explainer ends zoomed on its answer, and the next recording grows out of that very box to fill the frame, so the judge sees the answer turn into the app. Two recordings in a row always hard cut: the app carries on, and a blend would ghost it. Override with `"transition": {"type": "<xfade or drawn name>", "dur": 0.6}` in design.json; `"dur": 0` gives hard cuts.
 
 ### Captions
 

@@ -116,6 +116,42 @@ class OtherKindsTest(unittest.TestCase):
         self.assertEqual(s["hidden_logic_candidates"], [])
 
 
+class KindsTest(unittest.TestCase):  # docs/16 CO1, CO3, CO5: projects that aren't web apps
+    def repo(self, files):
+        d = Path(tempfile.mkdtemp())
+        for name, text in files.items():
+            (d / name).parent.mkdir(parents=True, exist_ok=True)
+            (d / name).write_text(text) if isinstance(text, str) else (d / name).write_bytes(text)
+        return d
+
+    def test_a_declared_command_is_a_cli_with_the_readme_examples(self):
+        d = self.repo({"pyproject.toml": '[project]\nname = "mytool"\n[project.scripts]\nmytool = "mytool.cli:main"\n',
+                       "README.md": "# mytool\n\n```bash\npip install mytool\nmytool scan ./samples --top 3\n```\n\nOr `mytool --version`.\n",
+                       "src/mytool/cli.py": "import click\n"})
+        _, _, s = scan(d)
+        self.assertEqual(s["app_kind"], "cli")
+        self.assertEqual(s["cli"]["commands"], ["mytool"])
+        self.assertEqual([e["cmd"] for e in s["cli"]["examples"]], ["mytool scan ./samples --top 3", "mytool --version"])
+
+    def test_node_bin_and_argparse_scripts_are_clis(self):
+        _, _, s = scan(self.repo({"package.json": '{"name": "@acme/lint-it", "bin": "cli.js"}', "cli.js": "console.log(1)"}))
+        self.assertEqual((s["app_kind"], s["cli"]["commands"]), ("cli", ["lint-it"]))
+        _, _, s = scan(self.repo({"run.py": "import argparse\nif __name__ == '__main__':\n    pass\n", "README.md": "    python run.py --n 3\n"}))
+        self.assertEqual((s["app_kind"], s["cli"]["scripts"]), ("cli", ["run.py"]))
+        self.assertEqual(s["cli"]["examples"][0]["cmd"], "python run.py --n 3")
+
+    def test_a_backend_with_no_pages_is_an_api(self):
+        _, _, s = scan(self.repo({"requirements.txt": "fastapi\n", "main.py": "@app.get('/health')\ndef h(): pass\n"}))
+        self.assertEqual(s["app_kind"], "api")
+        _, _, s = scan(FIX / "fastapi-ml")  # the same backend with its own pages stays web
+        self.assertEqual(s["app_kind"], "web")
+
+    def test_notebooks_are_found_even_when_their_saved_images_make_them_big(self):
+        big = b'{"cells": [], "metadata": {"pad": "' + b"x" * 1_200_000 + b'"}, "nbformat": 4, "nbformat_minor": 5}'
+        _, _, s = scan(self.repo({"analysis.ipynb": big, "requirements.txt": "pandas\n"}))
+        self.assertEqual((s["app_kind"], s["notebooks"]), ("notebook", ["analysis.ipynb"]))
+
+
 class WalkTest(unittest.TestCase):
     def test_skips_node_modules(self):
         with tempfile.TemporaryDirectory() as d:

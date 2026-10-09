@@ -19,7 +19,8 @@ def emit(step, ok=True, user_action=False, **fields):
 
 
 OUT = "unveo-out/.work"  # unveo's working files; the person's folder (unveo-out/) only holds what they want to see
-PUBLIC_FILES = ("demo-video.mp4", "subtitles.srt", "script.md", "quality-check.md", "preview.png")
+PUBLIC_FILES = ("demo-video.mp4", "subtitles.srt", "script.md", "quality-check.md", "preview.png",
+                "chapters.txt", "vertical.mp4", "devpost.md")  # + scenes/ and images/
 
 
 SIZES = {"2k": (2560, 1440), "1080p": (1920, 1080)}

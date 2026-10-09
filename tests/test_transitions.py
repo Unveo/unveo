@@ -99,6 +99,29 @@ class StitchTransitionTest(unittest.TestCase):
         self.assertLess(np.abs(rgb_at(o / "final.mp4", 2.55) - gray).sum(), 12)
 
 
+class MatchCutTest(unittest.TestCase):
+    """docs/16 MO2: an explainer hands off to the next recording through the box it ended on."""
+    def test_an_explainer_into_a_recording_is_a_match_cut_from_its_answer_box(self):
+        scenes = [{"id": "s05", "visual": "anim", "template": "explainer-formula-breakdown"}, {"id": "s06", "visual": "capture", "template": None}]
+        c = looks.cuts(scenes, "editorial", {}, {"s05": [1152, 540, 384, 216]})[0]
+        self.assertEqual((c["type"], c["box"]), ("match", [0.6, 0.5, 0.2, 0.2]))
+        self.assertNotEqual(looks.cuts(scenes, "editorial", {})[0]["type"], "match")  # no box measured: the look's own cut
+        self.assertEqual(looks.cuts(scenes, "editorial", {"transition": {"type": "fade"}}, {"s05": [0, 0, 10, 10]})[0]["type"], "fade")
+
+    def test_the_next_scene_grows_out_of_the_box(self):
+        import stitch, tempfile
+        d = Path(tempfile.mkdtemp())
+        f = stitch.xfade({"type": "match", "dur": 1.0, "box": [0.6, 0.5, 0.2, 0.2]}, 0.5, "#e8590c")
+        subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=navy:s=320x180:r=30:d=2", "-f", "lavfi",
+                        "-i", "color=c=yellow:s=320x180:r=30:d=2", "-filter_complex", f"[0]format=yuv420p[a];[1]format=yuv420p[b];[a][b]{f},format=yuv420p",
+                        str(d / "m.mp4")], check=True)
+        raw = subprocess.run([ffmpeg_exe(), "-v", "quiet", "-ss", "0.6", "-i", str(d / "m.mp4"), "-frames:v", "1", "-f", "rawvideo",
+                              "-pix_fmt", "rgb24", "-"], capture_output=True, check=True).stdout
+        img = np.frombuffer(raw, np.uint8).reshape(180, 320, 3).astype(int)
+        self.assertGreater(img[110, 220].sum(), 450)  # inside the box (60-80% across, 50-70% down): the yellow next scene
+        self.assertLess(img[20, 20].sum(), 250)       # outside it, early on: still the navy explainer
+
+
 class BeatTest(unittest.TestCase):
     def test_segment_changes_snap_to_the_beat_only_where_there_is_room(self):
         scenes = [{"id": f"s0{i}", "segment": seg, "visual": "anim", "template": "compose", "narration": "x"}

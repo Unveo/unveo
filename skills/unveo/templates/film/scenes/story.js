@@ -1,4 +1,4 @@
-/* story scenes built from blocks (round 4): chapter, stat-hero, before-after, annotated-shot.
+/* story scenes built from blocks (round 4): chapter, stat-hero, before-after, annotated-shot; terminal and notebook (audit round C).
    Each maps its data onto a compose layout, so they inherit auto-fit, the look and the entrances. */
 (function () {
   const compose = () => window.__unveoScenes.compose;
@@ -23,6 +23,13 @@
     { type: "kicker", area: "main", props: { text: d.kicker || "Built with" } },
     { type: "logo-wall", area: "main", props: { items: d.logos || [], size: 104 }, at: 0.25 },
     ...(d.line ? [{ type: "text", area: "below", props: { text: d.line }, at: 1.0 }] : [])] })));
+  // terminal and notebook (docs/16 CO1, CO3, CO5): render.py fills in the real run from outputs.py; nothing is typed by hand
+  const titled = (d, block, layout, side) => ({ layout: d.heading ? layout : "full-type", blocks: [
+    ...(d.heading ? [{ type: "heading", area: side, props: { text: d.heading } }] : []),
+    { ...block, area: "main", at: d.heading ? 0.3 : 0 }] });
+  UNVEO.scene("terminal", via(d => titled(d, { type: "terminal",  // big type; auto-fit shrinks a long output
+    props: { command: d.command, output: d.output, title: d.title, key: d.key, size: d.heading ? 32 : 46 } }, "hero", "title")));
+  UNVEO.scene("notebook", via(d => titled(d, { type: "notebook", props: { cells: d.cells, path: d.path } }, "left-heavy", "side")));
   UNVEO.scene("annotated-shot", via(d => ({ layout: "full-bleed-shot", blocks: [
     { type: "callout", area: "shot", props: { src: d.src || "assets/probe.png", pins: d.pins || [] }, at: 0.1 },
     { type: "heading", area: "caption", props: { text: d.title || "" }, at: 0.4 }] })));

@@ -480,7 +480,7 @@ def xfade(cut, offset, accent):
     so q = 1 - P is the progress, and the accent colour is given per plane."""
     kind, dur = cut["type"], cut["dur"]
     head = f"xfade=duration={dur:.3f}:offset={offset:.4f}:transition="
-    if kind not in ("accent-wipe", "card", "dip-accent"):
+    if kind not in ("accent-wipe", "card", "dip-accent", "match"):
         return head + kind
     Y, U, V = yuv(accent)
     acc = f"if(eq(PLANE,0),{Y},if(eq(PLANE,1),{U},{V}))"
@@ -489,6 +489,16 @@ def xfade(cut, offset, accent):
         e = f"if(lt(X,W*({q}*1.35-0.35)),B,if(lt(X,W*({q}*1.35)),{acc},A))"
     elif kind == "dip-accent":  # out through the accent colour and back in
         e = f"if(lt({q},0.5),A+({acc}-A)*{q}*2,{acc}+(B-{acc})*({q}-0.5)*2)"
+    elif kind == "match":  # the next scene grows out of the box the explainer ended on, to the full frame (MO2)
+        fx, fy, fw, fh = cut.get("box") or (0.3, 0.3, 0.4, 0.4)
+        k = f"({q}*{q}*(3-2*{q}))"
+        L, T = f"(W*{fx}*(1-{k}))", f"(H*{fy}*(1-{k}))"
+        RW, RH = f"(W*({fw}+{1 - fw}*{k}))", f"(H*({fh}+{1 - fh}*{k}))"
+        s = f"max({RW}/W,{RH}/H)"  # the next scene covers the box (cropped, never stretched)
+        sx, sy = f"(W/2+(X-{L}-{RW}/2)/{s})", f"(H/2+(Y-{T}-{RH}/2)/{s})"
+        pick = f"if(eq(PLANE,0),b0({sx},{sy}),if(eq(PLANE,1),b1({sx},{sy}),b2({sx},{sy})))"
+        dim = f"if(eq(PLANE,0),A*(1-0.4*{k}),128+(A-128)*(1-0.4*{k}))"
+        e = f"if(gte(X,{L})*lt(X,{L}+{RW})*gte(Y,{T})*lt(Y,{T}+{RH}),{pick},{dim})"
     else:  # card: the next scene grows out of a card in the middle, as product-intro's screenshot does
         k = f"(0.45+0.55*{q}*{q}*(3-2*{q}))"
         sx, sy = f"(W/2+(X-W/2)/{k})", f"(H/2+(Y-H/2)/{k})"
@@ -577,10 +587,15 @@ def concat(o, folder, audio, dst, w, h):
     cmd = [ffmpeg_exe(), "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(tmp / "list.txt")]
     if audio.exists():
         cmd += ["-i", str(audio)]
-    cmd += ["-filter_complex", "[0:v]null" + burn_filter(o, w) + "[out]", "-map", "[out]"]  # video first, then the audio
-    if audio.exists():
-        cmd += ["-map", "1:a", "-c:a", "aac", "-b:a", "192k", "-ar", "48000"]
-    subprocess.run(cmd + [*enc, "-movflags", "+faststart", str(dst)], check=True)
+    burn = burn_filter(o, w)
+    clean = o / "final-clean.mp4"  # the same film without burned captions, at 1080p: the submission kit's source (docs/16 OUT)
+    clean.unlink(missing_ok=True)
+    fc = f"[0:v]split[a][b];[a]null{burn}[out];[b]scale=1920:1080[clean]" if burn and final else "[0:v]null" + burn + "[out]"
+    aud = ["-map", "1:a", "-c:a", "aac", "-b:a", "192k", "-ar", "48000"] if audio.exists() else []
+    cmd += ["-filter_complex", fc, "-map", "[out]", *aud, *enc, "-movflags", "+faststart", str(dst)]  # video first, then the audio
+    if burn and final:
+        cmd += ["-map", "[clean]", *aud, *ENC[:2], "-preset", "veryfast", "-crf", "18", *ENC[6:], "-movflags", "+faststart", str(clean)]
+    subprocess.run(cmd, check=True)
     shutil.rmtree(tmp, ignore_errors=True)
     got, total = streams(dst), sum(d)
     if abs(got["frames"] - total) > 1 or (audio.exists() and abs((got["audio_s"] or 0) - got["video_s"]) > 0.05):

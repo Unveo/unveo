@@ -2,6 +2,7 @@
 
   script.py check [--out unveo-out/.work]    word budget, source tags, headings, pitch order, explainers, shots
   script.py budget --limit 120         just the word budget
+  script.py writeup                    writeup.md, the Devpost draft (docs/16 OUT3): its sections, every fact tagged
 
 Exit 2 lists every error so the agent can fix the script and check again.
 """
@@ -46,7 +47,8 @@ def explainer_bounds(focus, limit_s):
     return lo, hi
 PATTERNS = ["pipeline-flow", "formula-breakdown", "model-io", "raw-vs-processed", "system-map"]
 TEMPLATES = {"title", "context", "problem", "product-intro", "close", "compose", "chapter", "stat-hero", "before-after", "annotated-shot",
-             "kinetic", "built-with"} | {f"explainer-{p}" for p in PATTERNS}
+             "kinetic", "built-with", "terminal", "notebook"} | {f"explainer-{p}" for p in PATTERNS}
+PRODUCT_ANIM = {"product-intro", "terminal", "notebook"}  # the product on screen when it isn't a web app (docs/16 CO1, CO5)
 HEADING = re.compile(r"^## (s\d{2}) · (\w+) · (anim:[\w-]+|capture|clip) · (?:target )?(\d+(?:\.\d+)?) s"
                      r"(?: · steps: (s\d{2}))?(?: · logic: (H\d+))?\s*$")
 TAG = re.compile(r"\[(src|brief|understanding):\s*((?:[^\[\]]|\[[^\]]*\])*)\]")  # paths may hold [state]
@@ -242,7 +244,7 @@ def telling_errors(scenes):
         e.append(f"{len(asks)} rhetorical questions ({'; '.join(asks[:3])}): keep one at most, say the answer instead")
     total, t = sum(x["target_s"] for x in scenes), 0.0
     for x in scenes:
-        if x["visual"] in ("capture", "clip") or x["template"] == "product-intro":
+        if x["visual"] in ("capture", "clip") or x["template"] in PRODUCT_ANIM:
             if t > 0.25 * total:
                 e.append(f"the product first shows at about {t:.0f} s of {total:.0f} s ({x['id']}): show it within the first quarter "
                          "(a hook, or a shorter context and problem)")
@@ -292,8 +294,8 @@ def check(out):
     if len(hooks) > 1:
         errors.append("one hook scene at most: the single most impressive moment")
     for s in hooks:
-        if s["visual"] not in ("capture", "clip") or s["target_s"] > 5:
-            errors.append(f"{s['id']}: the hook is the app itself (capture or clip), 5 s at most")
+        if (s["visual"] not in ("capture", "clip") and s["template"] not in ("terminal", "notebook")) or s["target_s"] > 5:
+            errors.append(f"{s['id']}: the hook is the product itself (capture, clip, anim:terminal or anim:notebook), 5 s at most")
     if not opening or opening[0]["template"] != "title":
         errors.append("the first scene must be anim:title (after the hook, if there is one)")
     if not scenes or scenes[-1]["template"] != "close":
@@ -364,9 +366,60 @@ def check(out):
             "words": total, "budget": budget, "errors": errors, "warnings": warnings}
 
 
+WRITEUP = ["Inspiration", "What it does", "How we built it", "Challenges we ran into", "Accomplishments that we're proud of",
+           "What we learned", "What's next"]  # Devpost's own story sections, in its order
+FACTS = {"What it does", "How we built it"}    # the repo answers these, so they're always written, every sentence cited
+TEAM_PROMPT = re.compile(r"^_\(.+\)_$")        # the team's own words go here: unveo never invents an inspiration
+
+
+def writeup_sections(text):
+    out, cur = {}, None
+    for line in text.splitlines():
+        m = re.match(r"^##\s+(.+?)\s*$", line)
+        if m:
+            cur = out.setdefault(m.group(1), [])
+        elif cur is not None and line.strip():
+            cur.append(line.strip())
+    return out
+
+
+def writeup_check(out):
+    """writeup.md (the Devpost draft): every heading, every fact cited like script.md, prompts where only the team knows."""
+    o = Path(out)
+    f = o / "writeup.md"
+    if not f.exists():
+        return {"errors": [f"{f} doesn't exist yet: write it from understanding.md and the script (SKILL.md step 22)"], "warnings": []}
+    brief = json.loads((o / "brief.json").read_text(encoding="utf-8"))
+    src = brief.get("project", {}).get("source", {})
+    repo = Path(src.get("path") or src.get("clone_path") or ".")
+    secs, errors, cache = writeup_sections(f.read_text(encoding="utf-8")), [], {}
+    if list(secs) != WRITEUP:
+        errors.append(f"the sections must be exactly, in order: {', '.join(WRITEUP)} (as ## headings); found {', '.join(secs) or 'none'}")
+    for name, lines in secs.items():
+        body = " ".join(re.sub(r"^[-*]\s+", "", ln) for ln in lines)
+        if not lines:
+            errors.append(f"{name}: empty (write it, or leave the team a _(prompt)_)")
+        elif all(TEAM_PROMPT.match(ln) for ln in lines):
+            if name in FACTS:
+                errors.append(f"{name}: the repo answers this one, so write it (every sentence with a source tag)")
+            continue
+        for sent in untagged_sentences(body):
+            errors.append(f"{name}: no source tag after: \"{sent.strip()[:80]}\"")
+        for kind, value in TAG.findall(body):
+            for v in (value.split(",") if kind == "src" else []):
+                msg = check_source(v, repo, cache)
+                if msg:
+                    errors.append(f"{name}: {msg}")
+            if kind == "brief" and not has_field(brief, value.strip()):
+                errors.append(f"{name}: brief.json has no field {value.strip()}")
+        if re.search(r"[–—]", body):
+            errors.append(f"{name}: no en or em dashes")
+    return {"errors": errors, "warnings": [], "sections": list(secs)}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["check", "budget"])
+    ap.add_argument("cmd", choices=["check", "budget", "writeup"])
     ap.add_argument("--out", default="unveo-out/.work")
     ap.add_argument("--limit", type=int, default=120)
     ap.add_argument("--lang", default="en")
@@ -374,6 +427,11 @@ def main():
     a = ap.parse_args()
     if a.cmd == "budget":
         emit("script", budget=budget_words(a.limit, a.lang, a.rate))
+    if a.cmd == "writeup":
+        res = writeup_check(a.out)
+        if res["errors"]:
+            emit("script", ok=False, user_action=True, message=f"{len(res['errors'])} problems in writeup.md", **res)
+        emit("script", message="writeup.md OK", **res)
     try:
         res = check(a.out)
     except (OSError, ValueError) as e:

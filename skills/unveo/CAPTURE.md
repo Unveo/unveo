@@ -154,6 +154,44 @@ Use the visible English text from `repo_scan.json` (`ui_labels`, `forms`) or the
 4. **At most 3 fix rounds per scene.** A scene that still fails becomes `clip` in script.md (`## sNN · product · clip · …`, without `· steps:`), loses its steps.json entry, and gets a shots.md entry with "Why this is a clip: failed while recording".
 5. If `record` or `dry-run` exits 2 with `missing_env`, ask the user to set those variables in the terminal they started from, then run again. Never ask for the values.
 
-## When there's no reachable app
+## Projects that aren't web apps
 
-If `capture_enabled` is false, every journey scene is `clip`. Write no steps.json. Write shots.md from the journey.
+`repo_scan.json`'s `app_kind` says which kind it is. Each kind still shows the real product, never a mock-up: a terminal or notebook scene shows only what `outputs.py` saved, and `render.py` fills it in.
+
+**CLI tools (`cli`).** Install the project first (`setup_app.py install --yes`, asked like any install). For each journey step, run the command for real:
+
+```
+"<PY>" "<SKILL_DIR>/scripts/outputs.py" run --id r1 -- mytool scan ./samples --top 3
+```
+
+- Take commands from `repo_scan.json` `cli.examples` (the README's own), with the sample files the repo ships. A command must finish on its own: give it its input as arguments, never wait for typing.
+- It runs in the project with its `.venv` and `node_modules/.bin` first. Colours are stripped, progress bars show their last state, a JSON answer is pretty-printed, emails, phone numbers and keys are masked and the home folder shows as `~`.
+- Never: sudo, deleting files, publishing, deploying, `| sh`, kill, or reading `.env`. A command that changes data (delete, send, reset, migrate…) needs the user's yes, then `--approved`; Quick mode never approves one.
+- A non-zero exit is kept (a linter that found problems exits 1): say what it means. Exit 127 (not found) fails: install first.
+- The scene is `anim:terminal` with data `{"run": "r1", "key": "1 critical", "lines": [1, 14], "heading": "…"}`. `key` marks the result line once the output lands (text that appears in it); `lines` picks 14 lines at most when the output is longer; `heading` is optional (one line, the scene's point). Without a heading the terminal fills the frame in big type.
+
+**APIs with no UI (`api`).** Start the server (`setup_app.py start --yes`), then call it with curl, one run per journey step:
+
+```
+"<PY>" "<SKILL_DIR>/scripts/outputs.py" run --id r2 -- curl -s http://127.0.0.1:8000/predict -H 'content-type: application/json' -d '{"text": "refund my order"}'
+```
+
+- Use the routes in `repo_scan.json` `routes`, and request bodies from the README, tests or fixtures. A GET first; a POST only with sample input, never real people's data.
+- curl may only talk to the project's own server (localhost, or the brief's app URL). DELETE, PUT and PATCH need `--approved`.
+- The answer is shown pretty-printed in an `anim:terminal` scene; `key` on the field that matters (`"label": "refund"`).
+
+**Notebooks (`notebook`).** `repo_scan.json` `notebooks` lists them.
+
+```
+"<PY>" "<SKILL_DIR>/scripts/outputs.py" notebook --id n1 --path analysis.ipynb [--execute]
+```
+
+- Without `--execute` it uses the outputs saved in the file (most committed notebooks have them). `--execute` runs it first with the project's own Jupyter (nbconvert, 10 minutes at most) and falls back to the saved outputs when it can't.
+- The result lists every code cell with output: its `index`, its first line, and whether it shows text or an image. Pick the cells that show results: a chart, a table, a score.
+- The scene is `anim:notebook` with data `{"notebook": "n1", "cells": [7], "heading": "…"}`: one cell with a chart, or two with text. Leave out cells that end in an error.
+
+**Mobile apps (`mobile`).** `setup_app.py plan` reports `mobile`: an Expo app with `react-native-web` runs `expo start --web`; a Flutter app gets `flutter build web` at install, served at start. Record every scene with `"display": "phone"` (430×932, inside a phone). A React Native app without a web target, or Flutter not installed, is a blocker: those scenes become clips.
+
+**Databases and Docker.** When the project has a compose file and Docker is running, `plan` reports `docker`, and `start` runs `docker compose up -d` first: just the databases (the app runs as usual, and the user points `DATABASE_URL` at the container), or the whole app when it's built in Compose (its published port is the URL). `stop` runs `docker compose down` and keeps the volumes. `plan` also lists the project's own `seed` commands (`npm run seed`, the Prisma seed, Django's migrate, `seed.py`); `setup_app.py seed --yes` runs them, so the app isn't empty on camera. Ask together with install and start. Quick: seed only a database unveo's Docker started, never one it didn't.
+
+**Nothing can run.** If `capture_enabled` is false and no command, request or notebook works, every journey scene is `clip`. Write no steps.json. Write shots.md from the journey.

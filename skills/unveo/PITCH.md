@@ -7,7 +7,7 @@
 | `hook` (optional) | — | `s01`: the app's result, zoomed, 3–5 s, with one spoken line that names it (the hook recipe below) | `capture` (a `reuse` of a later scene's take, CAPTURE.md) or `clip` |
 | `context` | 10% | the title card (a short spoken line, or 1.4 s silent) + 1 context scene (optional) | `anim:title`, then `anim:compose` (or `anim:context`) |
 | `problem` | 15% | 1–2 problem scenes | `anim:compose` or `anim:problem` |
-| `product` | 65% | 1 `anim:product-intro` (4–6 s), then 1 scene per journey step, with the selected explainers cut in | `capture` (or `clip`) + `anim:explainer-<pattern>` |
+| `product` | 65% | 1 `anim:product-intro` (4–6 s), then 1 scene per journey step, with the selected explainers cut in | `capture` (or `clip`; for a CLI, API or notebook `anim:terminal` / `anim:notebook`) + `anim:explainer-<pattern>` |
 | `close` | 10% | 1 close scene, 4–5 s: the impact line spoken, links and credits held about 1.5 s | `anim:close` |
 
 **Open on the hook when the app has a moment worth showing.** Judges decide in the first 3–5 seconds, and a silent title card wastes them. The hook is the end of a later recording, cut from the same take. Give the title after it `"backdrop": "<hook id>"` in its data, so the title sits over the hook's last frame instead of on a separate card. A hook takes its words from the product share. Skip it only when no screen of the app says much on its own.
@@ -117,7 +117,7 @@ Narration: <impact line> [brief: close.impact_line]
 - **Header:** `Limit`, `Language`, `Budget`, and `Story` when it isn't problem-product.
 - **Heading:** `## sNN · <segment> · <visual> · target <s> s`. Add `· steps: sNN` (its own id) on capture scenes, and `· logic: Hn` on explainers.
   - Visuals: `anim:<template>`, `capture` or `clip`.
-  - Templates: `compose` (a scene designed from blocks, preferred for context, problem and the intro), `title`, `context`, `problem`, `product-intro`, `close`, `explainer-pipeline-flow`, `explainer-formula-breakdown`, `explainer-model-io`, `explainer-raw-vs-processed`, `explainer-system-map`, and the story scenes `chapter`, `stat-hero`, `before-after`, `annotated-shot` (DESIGN.md).
+  - Templates: `compose` (a scene designed from blocks, preferred for context, problem and the intro), `title`, `context`, `problem`, `product-intro`, `close`, `terminal`, `notebook`, `explainer-pipeline-flow`, `explainer-formula-breakdown`, `explainer-model-io`, `explainer-raw-vs-processed`, `explainer-system-map`, and the story scenes `chapter`, `stat-hero`, `before-after`, `annotated-shot` (DESIGN.md).
 - **Every sentence that states something ends with a tag.** Questions (ending in `?`) need none:
   - `[src: path:line]` or `[src: path:start-end]`, with paths from the repo root; several sources are comma-separated
   - `[brief: field.path]`, for the user's answers

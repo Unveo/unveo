@@ -26,6 +26,7 @@ STACK_NAMES = {"next", "react", "vue", "nuxt", "svelte", "@sveltejs/kit", "@angu
                "gradio", "scikit-learn", "torch", "tensorflow", "transformers", "openai", "anthropic", "langchain"}
 WEB_STACK = {"next", "react", "vue", "nuxt", "svelte", "@sveltejs/kit", "@angular/core", "astro", "@remix-run/react",
              "express", "vite", "fastapi", "flask", "django", "streamlit", "gradio"}
+BACKEND = {"express", "fastapi", "flask", "django"}  # with none of the rest of WEB_STACK and no HTML: an API-only project
 
 LOGOS = {  # dependency -> its bundled brand logo (templates/film/icons/brands.json), for "built with" rows and system maps
     "react": "logos:react", "next": "logos:nextjs-icon", "vue": "logos:vue", "nuxt": "logos:nuxt-icon", "svelte": "logos:svelte-icon",
@@ -111,11 +112,12 @@ def walk(root):
         dirs[:] = sorted(x for x in dirs if x not in SKIP_DIRS and not x.startswith("."))
         for n in sorted(names):
             p = Path(d, n)
-            if p.suffix.lower() in TEXT_EXT or n.lower().startswith(("readme", ".env.")) or n in ("CNAME", "Procfile", "pubspec.yaml"):
+            nb = p.suffix.lower() == ".ipynb"  # listed whatever its size (saved images make them big); never read as text
+            if nb or p.suffix.lower() in TEXT_EXT or n.lower().startswith(("readme", ".env.")) or n in ("CNAME", "Procfile", "pubspec.yaml", "go.mod", "setup.cfg"):
                 if len(files) >= MAX_FILES:
                     return files, True
                 try:
-                    if p.stat().st_size <= MAX_BYTES:
+                    if nb or p.stat().st_size <= MAX_BYTES:
                         files.append(p)
                 except OSError:
                     pass
@@ -168,15 +170,83 @@ def stack_and_kind(root, rel):
         stack.append("go")
     if (root / "Cargo.toml").exists():
         stack.append("rust")
+    html = any(f.endswith((".html", ".htm")) for f in files)
+    entries = cli_entries(root, rel)
     if (root / "pubspec.yaml").exists() or names & {"react-native", "expo"} or any(f.endswith("AndroidManifest.xml") for f in files):
         kind = "mobile"
-    elif names & WEB_STACK or any(f.endswith((".html", ".htm")) for f in files):
+    elif names & (WEB_STACK - BACKEND) or html:
         kind = "web"
+    elif names & BACKEND:
+        kind = "api"
+    elif any(not e["script"] for e in entries):  # a declared command (bin, console_scripts, a Cargo or Go binary)
+        kind = "cli"
     elif any(f.endswith(".ipynb") for f in files):
         kind = "notebook"
+    elif entries:  # a script with argparse, click or typer
+        kind = "cli"
     else:
         kind = "unknown"
     return stack, kind
+
+
+ARGV_RE = re.compile(r"^\s*(?:import argparse|from argparse |import click|from click |import typer|from typer |import fire)", re.M)
+
+
+def cli_entries(root, rel):
+    """Commands the project installs, and Python scripts that parse their own arguments (docs/16 CO1)."""
+    out = []
+    add = lambda name, f, script=False: out.append({"name": name, "file": f, "script": script})
+    for f in manifests(rel, "package.json"):
+        try:
+            j = json.loads(read(root / f))
+        except ValueError:
+            continue
+        b = j.get("bin")
+        for name in ([j.get("name", "").split("/")[-1]] if isinstance(b, str) else list(b) if isinstance(b, dict) else []):
+            add(name, f)
+    for f in manifests(rel, "pyproject.toml"):
+        t = read(root / f)
+        for sec in re.findall(r"^\[(?:project\.scripts|tool\.poetry\.scripts)\]\s*\n(.*?)(?=^\[|\Z)", t, re.M | re.S):
+            for name in re.findall(r"^\s*\"?([\w.-]+)\"?\s*=", sec, re.M):
+                add(name, f)
+    for f in manifests(rel, "setup.py") + manifests(rel, "setup.cfg"):
+        for name in re.findall(r"[\"'\n]\s*([\w.-]+)\s*=\s*[\w.]+:\w+", read(root / f)):
+            add(name, f)
+    for f in manifests(rel, "Cargo.toml"):
+        t = read(root / f)
+        bins = re.findall(r"^\[\[bin\]\]\s*\nname\s*=\s*\"([^\"]+)\"", t, re.M)
+        pkg = re.search(r"^\[package\]\s*\n(?:.*\n)*?name\s*=\s*\"([^\"]+)\"", t, re.M)
+        main_rs = (Path(f).parent / "src" / "main.rs").as_posix().lstrip("./")
+        for name in bins or ([pkg.group(1)] if pkg and main_rs in rel else []):
+            add(name, f)
+    for f in manifests(rel, "go.mod"):
+        mod = re.search(r"^module\s+(\S+)", read(root / f), re.M)
+        if mod and any(g.endswith(".go") and re.search(r"^package main\b", read(root / g), re.M) for g in rel):
+            add(mod.group(1).rsplit("/", 1)[-1], f)
+    for f in rel:
+        if f.endswith(".py") and "/test" not in "/" + f and f.count("/") <= 2:
+            t = read(root / f)
+            if ARGV_RE.search(t) and "__main__" in t:
+                add(f, f, script=True)
+    return out
+
+
+def cli_examples(rel, entries, readme):
+    """README lines that run the project's own command: what a terminal scene can run for real."""
+    names = {e["name"] for e in entries if not e["script"]}
+    scripts = {e["file"] for e in entries if e["script"]}
+    out, seen = [], set()
+    for i, line in enumerate(readme.splitlines(), 1):
+        for cmd in [line.strip().lstrip("$> ").strip()] + re.findall(r"`([^`\n]+)`", line):
+            cmd = cmd.strip().lstrip("$> ").strip()
+            first = cmd.split()[0] if cmd.split() else ""
+            hit = (first in names or (first in ("npx", "cargo", "go", "uv", "poetry", "pipx") and len(cmd.split()) > 1 and
+                                      (cmd.split()[1] in names or cmd.split()[1] == "run"))
+                   or re.match(r"python3? -m [\w.]+", cmd) or any(re.match(rf"python3? (?:\./)?{re.escape(s)}\b", cmd) for s in scripts))
+            if hit and not re.search(r"\b(install|clone|pip|venv|activate|serve|uvicorn|runserver)\b", cmd) and cmd not in seen:
+                seen.add(cmd)
+                out.append({"cmd": cmd, "from": f"README:{i}"})
+    return out[:12]
 
 
 def logos(root, rel):
@@ -525,7 +595,7 @@ def main():
              message=f"I couldn't open or clone {a.repo}. If it's a private repo, make sure `git clone {a.repo}` works in your terminal, then try again.")
     files, truncated = walk(root)
     rel = [p.relative_to(root).as_posix() for p in files]
-    texts = {r: read(p) for r, p in zip(rel, files) if not r.lower().startswith(".env")}
+    texts = {r: read(p) for r, p in zip(rel, files) if not r.lower().startswith(".env") and not r.endswith(".ipynb")}
     readme_name = next((r for r in rel if re.fullmatch(r"readme(\.md|\.rst|\.txt)?", r, re.I)), None)
     readme = texts.get(readme_name, "")
     stack, kind = stack_and_kind(root, rel)
@@ -537,7 +607,11 @@ def main():
         "hidden_logic_candidates": hidden_logic(texts, readme),
         "palette_candidates": palette(texts), "fonts": fonts(texts), "readme": readme_info(readme), "env_keys": env_keys(root),
         "logos": logos(root, rel), "mentioned_tools": mentioned_tools(texts, readme_name),
+        "notebooks": [f for f in rel if f.endswith(".ipynb") and ".ipynb_checkpoints" not in f][:20],
     }
+    entries = cli_entries(root, rel)
+    scan["cli"] = {"commands": sorted({e["name"] for e in entries if not e["script"]}),
+                   "scripts": [e["file"] for e in entries if e["script"]][:10], "examples": cli_examples(rel, entries, readme)}
     out = out_dir(a.out) / "repo_scan.json"
     write_json(out, scan)
     emit("analyze", outputs=[str(out)], root=str(root), app_kind=kind, stack=stack,

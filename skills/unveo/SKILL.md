@@ -25,7 +25,7 @@ Four phases: **0 Setup → 1 Understand (Checkpoint A) → 2 Write (Checkpoint B
 - **SKILL_DIR** is the folder containing this SKILL.md. Resolve it once, from the path you loaded this file from, and use absolute paths from then on.
 - **PY** is the `py` value printed by the setup check (the unveo venv's Python).
 - **OUT** is `unveo-out/.work` in the folder where the user started (the repo root when inside a repo; for a GitHub URL, still the user's current folder, not the clone). Every script uses it by default. It's hidden: briefs, JSON, recordings, renders and logs live there.
-- **The user's folder** is `unveo-out/`. It holds only what they want: `demo-video.mp4`, `subtitles.srt`, `script.md` (clean, to read), `quality-check.md`, `preview.png`, `scenes/` (each scene on its own, to review), plus `your-voice/` (studio takes) and `your-clips/` (clips they record, with `what-to-record.md`). `qa.py` publishes the files; never put anything else there.
+- **The user's folder** is `unveo-out/`. It holds only what they want: `demo-video.mp4`, `subtitles.srt`, `script.md` (clean, to read), `quality-check.md`, `preview.png`, `scenes/` (each scene on its own, to review), the submission kit (`images/`, `devpost.md`, `chapters.txt`, `vertical.mp4`), plus `your-voice/` (studio takes) and `your-clips/` (clips they record, with `what-to-record.md`). `qa.py` publishes the files; never put anything else there.
 - Run every command from that folder. Every script prints progress to stderr. Its **last stdout line is JSON**, and its exit code means: `0` ok · `1` error · `2` the user must act (read `message`, `errors` or `fix`).
 - Record progress with `"<PY>" "<SKILL_DIR>/scripts/state.py" set <step> <pending|done|approved|failed>` after each numbered step that names a state step.
 
@@ -92,7 +92,7 @@ At 60 s add "60 s fits about 3 screens, or 2 screens and 1 explanation." Save `v
 
 **5. Understand the project.** Read `<SKILL_DIR>/ANALYSIS.md` now and follow it. Write `OUT/understanding.md` with `Confirmed: no`.
 
-**6. App URL.** Probe each URL you have, in this order: `--url`, then up to 3 `url_candidates`: `"<PY>" "<SKILL_DIR>/scripts/capture.py" probe --url <url>`.
+**6. App URL.** A `cli`, `api` or `notebook` project (`app_kind` in repo_scan.json) has no pages to record: set `capture_enabled` to false and plan its terminal and notebook scenes instead (CAPTURE.md, "Projects that aren't web apps"). An `api` still gets "Set it up and run it for me" below, to call it with curl. Otherwise, probe each URL you have, in this order: `--url`, then up to 3 `url_candidates`: `"<PY>" "<SKILL_DIR>/scripts/capture.py" probe --url <url>`.
 - **No URL works:** ask (this one can't wait for a round):
   > **I couldn't find a live link to your app. Where is it running?**
   > Set it up and run it for me (Recommended when the code is here) · Paste a URL · It runs locally (I'll paste the localhost URL) · It's not a web app, I'll record clips myself
@@ -100,9 +100,9 @@ At 60 s add "60 s fits about 3 screens, or 2 screens and 1 explanation." Save `v
   **Quick:** set it up and run it when the code is here, otherwise make those scenes clips.
 - **Set it up and run it for me:**
   1. Run `"<PY>" "<SKILL_DIR>/scripts/setup_app.py" plan --repo <root>`. It reports `where`, the Node and Python parts, what's installed, run commands, missing env **names**, and `blockers`.
-  2. **Blockers** (a database, Docker services, an unsupported stack): explain in one line and fall back to "Paste a URL" or clips.
+  2. **Blockers** (a database with Docker not running, a mobile app with no web target, an unsupported stack): explain in one line and fall back to "Paste a URL" or clips. When `docker` is set, start runs those services in Docker; when `mobile` is set, the app's web build is recorded in a phone (CAPTURE.md).
   3. **Missing env names:** ask the user to add them to the project's `.env` themselves. Never ask for the values in chat. **Quick:** name them in one line and record those scenes as clips; the Review lets them re-record once the `.env` is filled.
-  4. Show what will be installed and run, then ask once: **"Install these inside the project folder and start it?"** *Yes (Recommended)* · *No*. **Quick:** yes, and list what you installed in one line. On *Yes*: `setup_app.py install --yes` (skip if nothing to install), then `setup_app.py start --yes`; probe the first URL it reports. Stop it at the Review.
+  4. Show what will be installed and run (and the Docker services and `seed` commands, if any), then ask once: **"Install these inside the project folder and start it?"** *Yes (Recommended)* · *No*. **Quick:** yes, and list what you installed in one line. On *Yes*: `setup_app.py install --yes` (skip if nothing to install), then `setup_app.py start --yes`, then `setup_app.py seed --yes` when there are seed commands (Quick: only for a database Docker just started); probe the first URL it reports. Stop it at the Review.
 - **A pasted URL that fails:** say what failed and ask once more. After a second failure, or clips, set `capture_enabled` to false.
 - **Login:** if `login_wall` is true, or the code shows a sign-in unveo can't type into (Google or GitHub sign-in, OTP, CAPTCHA), the login question goes in the start round (step 3).
 - Put the result on the `App URL:` line of understanding.md, e.g. `https://x.vercel.app (loads ✓, no login)`.
@@ -149,13 +149,13 @@ At 60 s add "60 s fits about 3 screens, or 2 screens and 1 explanation." Save `v
 
 **9. Script.** Read `<SKILL_DIR>/PITCH.md` now. Write `OUT/script.md` in its exact format:
 - a hook first when a screen of the app says a lot on its own (PITCH.md §1, the hook recipe): its result, zoomed, 3–5 s, with a line under 12 words that names it, then the title over it
-- one capture scene per journey step (or `clip` when `capture_enabled` is false)
+- one capture scene per journey step; for a CLI, an API or a notebook an `anim:terminal` or `anim:notebook` scene per step instead (CAPTURE.md), and `clip` for anything that can't run
 - the selected explainers cut in after their `shown_at_step`
 - the impact line in the close scene
 
 Run `"<PY>" "<SKILL_DIR>/scripts/script.py" check` and fix every listed error until it exits 0. Mention any `warnings` in one line each.
 
-**10. Record the app, in one take** (skip when `capture_enabled` is false). Read `<SKILL_DIR>/CAPTURE.md` now. Write `OUT/capture/steps.json` with one entry per capture scene (the hook is a `reuse` of a later scene). If the backend sleeps on a free tier, list its address in `warm`. Then:
+**10. Record the app, in one take** (skip when `capture_enabled` is false). **A CLI, an API or a notebook:** instead, run each step with `outputs.py run` or `outputs.py notebook` (CAPTURE.md, "Projects that aren't web apps"), fix any command it refuses or that fails, write each scene's data with its `run` or `notebook` id at step 15, and run `state.py set capture done`. Read `<SKILL_DIR>/CAPTURE.md` now. Write `OUT/capture/steps.json` with one entry per capture scene (the hook is a `reuse` of a later scene). If the backend sleeps on a free tier, list its address in `warm`. Then:
 - Run `"<PY>" "<SKILL_DIR>/scripts/capture.py" check` and fix every error.
 - Run `"<PY>" "<SKILL_DIR>/scripts/capture.py" record`. It needs no voice: every scene runs in order in one browser session, under one continuous recording, at a natural pace, and comes out as `capture/sNN.mp4` at its own length. Later, `stitch.py ingest` cuts and retimes each one so its clicks land on their words. It logs in once, and runs in the background (no window) unless the user logs in by hand.
 - **A failure** stops the take at that scene (the ones after it depend on its page). Fix it from `closest` and the screenshot, then run `record` again; it's quick, because nothing waits for a voice. That's at most 3 rounds; a scene that still fails becomes a clip (CAPTURE.md, step 4), and the take is recorded again without it.
@@ -246,14 +246,19 @@ For placeholders, run it with `--placeholders`. **Quick:** placeholders; the Rev
 
 Captions show the real words even where `say_as` changes the pronunciation, in the look's own typeface and colours. `brief.captions` is `burned` (the default), `srt` (the file only) or `off`; `"caption_words": true` lights each word as it's spoken.
 
-**22. QA.** Read `<SKILL_DIR>/QA.md`. Run `"<PY>" "<SKILL_DIR>/scripts/qa.py"`. Fix every failing blocking gate as QA.md says, re-run only the affected steps, then stitch and QA again. When it passes, `state.py set qa done`.
+**22. Write-up.** Write `OUT/writeup.md`, the draft of the Devpost story, from understanding.md and the script. Use exactly these `##` sections, in order: Inspiration, What it does, How we built it, Challenges we ran into, Accomplishments that we're proud of, What we learned, What's next.
+- **What it does** and **How we built it** come from the repo: short plain sentences (bullets are fine), each followed by a source tag, as in script.md (`[src: path:line]` or `[brief: field]`). Name the real stack and the hidden logic; no claim the repo doesn't back.
+- The other five are the team's story, which unveo can't know. Write a sentence only when the repo says it (a hard part the README names, a roadmap section), tagged; otherwise leave one prompt line in italics for them to fill, like `_(Your team's words: what made you build this?)_`. Never invent an inspiration, a lesson or a plan.
+- Run `"<PY>" "<SKILL_DIR>/scripts/script.py" writeup` and fix every error. QA publishes it as `unveo-out/devpost.md` without the tags, with the end card's links.
 
-**23. Review (every mode).** Open the user's folder (`open unveo-out` on macOS, `explorer unveo-out` on Windows, `xdg-open unveo-out` on Linux). Then say, filling in the values:
+**23. QA.** Read `<SKILL_DIR>/QA.md`. Run `"<PY>" "<SKILL_DIR>/scripts/qa.py"`. Fix every failing blocking gate as QA.md says, re-run only the affected steps, then stitch and QA again. When it passes, `state.py set qa done`.
+
+**24. Review (every mode).** Open the user's folder (`open unveo-out` on macOS, `explorer unveo-out` on Windows, `xdg-open unveo-out` on Linux). Then say, filling in the values:
 `unveo-out/demo-video.mp4 · <m:ss> · <size from qa.md> · <LUFS> LUFS · captions burned in.`
 
 Then ask one question, written so the user knows what to look at and what each answer does (fill in the real names and numbers):
 > **Your video is ready. Have a look, then tell me if anything should change.**
-> In unveo-out/ you'll find: demo-video.mp4 (the full video), scenes/ (every scene as its own short file, named like s05-capture.mp4, so you can check them one by one), script.md (everything the voice says), preview.png (one frame per scene) and quality-check.md (the checks it passed). <If there are placeholder cards: "Scenes <ids> show a 'Recording needed' card: record them as your-clips/<names> (see your-clips/what-to-record.md)."> Pick what you'd like changed; I'll redo only those scenes and show you again.
+> In unveo-out/ you'll find: demo-video.mp4 (the full video), scenes/ (every scene as its own short file, named like s05-capture.mp4, so you can check them one by one), script.md (everything the voice says), preview.png (one frame per scene) and quality-check.md (the checks it passed). For the submission: images/ (a 1280×720 thumbnail and 3:2 gallery images for Devpost), devpost.md (the story sections to paste, with prompts where only your team knows the answer), chapters.txt (paste into the YouTube description) and vertical.mp4 (a 9:16 cut of about 40 s for LinkedIn, Instagram, X and Shorts). <If there are placeholder cards: "Scenes <ids> show a 'Recording needed' card: record them as your-clips/<names> (see your-clips/what-to-record.md)."> Pick what you'd like changed; I'll redo only those scenes and show you again.
 > Looks good, I'm done (Recommended) · Change what the voice says (tell me the scene and the new words) · Re-record or change a screen (tell me the scene) · Change the look, colours or animations
 
 - For a change, follow "Changing one thing later", run QA again, and ask this question again.
@@ -265,5 +270,6 @@ Then ask one question, written so the user knows what to look at and what each a
   - Narration changed: `voice.py --scene sNN`, then `plan_timeline.py` and `stitch.py ingest` (recordings follow the new word timings).
   - Recording: fix its steps, `capture.py record` (the whole take, so every scene starts from the right page), then `plan_timeline.py` and `stitch.py ingest`.
   - Animation: `render.py final --scene sNN`.
-  - Then always `score.py`, `mix.py`, `stitch.py final` and `qa.py`.
+  - Then always `score.py`, `mix.py`, `stitch.py final` and `qa.py` (it rebuilds the submission kit too).
+- **The write-up:** edit `OUT/writeup.md`, `script.py writeup`, then `qa.py`.
 - **`resume`:** read `OUT/state.json` and continue from the first step that isn't done or approved.

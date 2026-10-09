@@ -32,4 +32,10 @@ Reported but not blocking:
 - `transitions`: a flat flash (white or one colour, not a blend of the two scenes) inside a cut (the accent wipe, the dip and the flash are drawn that way on purpose and aren't counted). Re-render the scenes on either side, or pick another transition.
 - capture coverage.
 - size: a warning above 500 MB. Only a run that passes every blocking gate is copied to `unveo-out/` (with each scene in `unveo-out/scenes/`), and never a video whose picture is shorter than its sound.
+
+**The submission kit** is published with the video, cut from the film without burned captions (`final-clean.mp4`):
+- `images/thumbnail.jpg` (1280×720, the title over the hook) and up to 6 `images/gallery-NN-sNN.jpg` (3:2, each recording at its result and each explainer before its closing zoom, on the look's ground).
+- `chapters.txt` for the YouTube description: 0:00 first, every chapter 10 s or longer, at least 3, named from the journey and the explainers. A short video gets none (the log says so).
+- `vertical.mp4`: 9:16, 45 s at most: the opening up to a scene boundary, then the close, the film whole-width over a blurred copy of itself, the project's name above and the captions below.
+- `devpost.md`: `writeup.md` without its source tags, plus the end card's links. Missing when `script.py writeup` fails.
 After fixing, re-run only the affected steps, then `stitch.py final` and `qa.py` again.

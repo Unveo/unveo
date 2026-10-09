@@ -121,6 +121,10 @@ class CheckTest(unittest.TestCase):
         self.assertTrue(any("5 s at most" in e for e in check(long)[1]["errors"]))
         late = GOOD.replace("## s06 · close", "## s05b · hook · capture · target 4 s\nNarration: x [src: README.md:3]\n\n## s06 · close")
         self.assertTrue(any("pitch order" in e or "heading" in e for e in check(late)[1]["errors"]))
+        term = hook.replace("hook · capture · target 4 s · steps: s00", "hook · anim:terminal · target 4 s")  # a CLI's result (docs/16 CO1)
+        self.assertEqual([e for e in check(term)[1]["errors"] if "hook" in e], [])
+        card = hook.replace("hook · capture · target 4 s · steps: s00", "hook · anim:kinetic · target 4 s")
+        self.assertTrue(any("the product itself" in e for e in check(card)[1]["errors"]))
 
     def test_a_story_archetype_changes_what_the_script_needs(self):
         demo = GOOD.replace("Limit: 2:00 · Language: en", "Limit: 2:00 · Language: en · Story: demo-first")

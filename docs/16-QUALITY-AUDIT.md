@@ -25,7 +25,7 @@ Each item has an id, the problem, the evidence, the fix, and an effort estimate:
 | 8 | **Blur personal data (R5)** | The survey recording shows the real Google account email in the sign-in button | S |
 | 9 | **Music that changes with the video (AU1)** | One synthesised pad on a 4-chord loop, the same for every video | M |
 | 10 | **Captions that match the look and never cover the app (CA1, CA2)** | One caption style for every look, and full-screen recordings get captions over the UI | S |
-| 11 | **Cover the projects judges actually see (CO1–CO4):** CLI, API-only, mobile, bots, notebooks | Today only web apps get real recordings; everything else becomes "record it yourself" | L |
+| 11 | **Cover the projects judges actually see (CO1–CO3, CO5, CO8):** CLI, API-only, mobile, notebooks, Docker | Today only web apps get real recordings; everything else becomes "record it yourself" | L |
 | 12 | **Hand over what a submission needs (OUT1–OUT3):** a Devpost thumbnail, a vertical cut, a description | The video is one of 4–5 things a team has to upload | S–M |
 
 ---
@@ -58,7 +58,7 @@ Status key: ✅ done · 🔵 part done, the rest is noted · ⛔ not doing.
 | Id | Status | What was built |
 |---|---|---|
 | MO1 | ✅ | 8 motion languages (glide, snap, cinematic, typewriter, draw, blueprint, stack, kinetic) in `core.js`. Every template's entrances, text, its one `**emphasis**` and a camera layer per scene follow the video's `motion_style`. Each look lists the styles that suit it; render.py picks one the last video didn't use and saves it in design.json. The stills sheet names it |
-| MO2 | 🔵 | Cuts follow the motion language, with transitions drawn in the accent colour (accent wipe, the card the recording grows out of, a dip through the accent, a one-frame flash). An explainer after a recording draws over that recording's frozen, blurred last frame. Left: a match cut from an explainer's box to the next scene's card |
+| MO2 | ✅ | Cuts follow the motion language, with transitions drawn in the accent colour (accent wipe, the card the recording grows out of, a dip through the accent, a flash). An explainer after a recording draws over that recording's frozen, blurred last frame, and an explainer into a recording is a match cut: render.py saves the box the explainer ended on (`film/focus-sNN.json`), and stitch.py grows the recording out of it to the full frame |
 | MO3 | ✅ | Explainers keep moving after they're built (a pulse along the pipeline, flowing edges in the system map, examples flowing through model-io, a breathing Σ, a sweep over the clean table) and end with a short zoom into their answer |
 | MO4 | ✅ | New blocks: logo-wall, ticker, chat, code, map-pins, line-chart, donut, phone-stack, terminal |
 | D1 | ✅ | A type scale per look; compose text grows into empty room (up to 1.6×); explainer boxes sized to the canvas; layouts centered-hero, full-type, left-heavy, diagonal, bento; a "too empty" warning below 30% filled |
@@ -75,7 +75,35 @@ Status key: ✅ done · 🔵 part done, the rest is noted · ⛔ not doing.
 | Q5 | ✅ | history.json records look, motion, story and music; QA's `repetition` report flags two or more repeats |
 | Q6 | ✅ | The empty-frame warning (D1) |
 
+**Round C, everyone's projects (done 9 Oct 2026):**
+
+| Id | Status | What was built |
+|---|---|---|
+| CO1 | ✅ | `analyze_repo.py` finds `cli` projects (bin, console scripts, Cargo and Go binaries, argparse/click/typer scripts) and the README's own commands. `outputs.py run` runs one in the project and keeps what it printed (colours stripped, progress bars at their last state, emails, phones and keys masked, `~` for home); `anim:terminal` shows it, typed, then the output with the result line marked. render.py fills the scene from the run, so a terminal is never typed by hand. Dangerous commands (sudo, rm -rf, publish, deploy, `| sh`, `.env`) never run; ones that change data need the user's yes |
+| CO3 | ✅ | `api` projects (a backend with no pages) are started by setup_app.py and called with `outputs.py run -- curl …` (only the project's own server), the JSON answer pretty-printed in a terminal scene. ponytail: a terminal, not a Postman-style card; a request/response block is the upgrade if judges need it |
+| CO2 | ✅ | setup_app.py plans an Expo app's `expo start --web` (with react-native-web) and a Flutter app's `flutter build web`, served at start; every scene records with `"display": "phone"`. React Native with no web target, or no Flutter, is a blocker, and those scenes become clips |
+| CO5 | ✅ | Notebooks are listed (walk() never saw `.ipynb` before). `outputs.py notebook` takes the cells and their saved outputs, images as files, or runs it first with the project's Jupyter (`--execute`, 10 minutes at most); `anim:notebook` shows the chosen cells running, real outputs only |
+| CO8 | ✅ | With Docker running, `start` runs the compose file's services (`up -d --build`) and `stop` runs `down` (volumes kept); an app built in Compose runs there, on its published port. `plan` lists the project's seed commands (npm seed scripts, the Prisma seed, Django migrate, seed.py), run by `seed --yes` |
+
+**Round D, the submission kit (done 9 Oct 2026):** qa.py publishes it with the video, cut from `final-clean.mp4` (the same film without burned captions, written by `stitch.py final`).
+
+| Id | Status | What was built |
+|---|---|---|
+| OUT1 | ✅ | `images/thumbnail.jpg` (1280×720, the title over the hook) and up to 6 `images/gallery-NN-sNN.jpg` (3:2, each recording at its result and each explainer before its closing zoom, padded on the look's ground, never cropped) |
+| OUT3 | ✅ | The agent writes `writeup.md` in Devpost's seven sections; `script.py writeup` requires What it does and How we built it, every sentence cited, and allows a prompt for the team in the others (unveo never invents an inspiration). QA publishes `devpost.md` without tags, with the end card's links |
+| OUT4 | ✅ | `chapters.txt`: 0:00 first, each 10 s or longer, at least 3 (a short chapter takes in the next, both named), from the journey steps and explainer titles; none for a short video |
+| OUT2 | ✅ | `vertical.mp4`: 1080×1920, 45 s at most: the opening up to a scene boundary, a 0.3 s fade into the close, the film whole-width over a blurred copy of itself, the name above and the captions below. ponytail: letterboxed from the 16:9 film; a true 9:16 re-layout (render.py at 1080×1920 with R1's crop) is the upgrade |
+
 **Not doing:** ⛔ AU4 (more narration languages). The ground rule is English and Hindi only.
+
+**Found in the SentinelOS run (9 Oct 2026), open:**
+
+| # | Limit | What it caused | Fix to consider |
+|---|---|---|---|
+| L1 | A demo-first story allows one explainer at most (`script.py` STORIES) | A brief asking for demo-first with two explainers had to be labelled problem-product to pass | Let the focus decide the explainer count for demo-first too, or allow 0–2 |
+| L2 | A hook gets exactly 2.5 s of zoomed footage (`capture.HOOK_HOLD_S`), whatever the step's `hold_s` | "The last 4 s are the zoomed result" isn't possible; the hook used `last_s` 2.5 and held its last frame | Honour the step's `hold_s` (up to the hook's length) |
+| L3 | The hook gate measures the zoom target's own text, not the result in the crop | The target had to be a badge chosen for where it sits, and its 10 px type nearly failed the gate | Measure the largest text inside the cropped area |
+| L4 | A scene's length follows the app's own timing, which can vary with the network (pip-audit took 5–17 s) | The scan scene came out 9–27 s raw between takes | Warm the app's slow calls before the take (`warm`), and report a scene whose raw length changed a lot since the last take |
 
 ---
 
@@ -354,10 +382,7 @@ Today `app_kind` is `web`, `mobile`, `notebook` or `unknown`, but only `web` get
 | CO1 | **CLI tools, scripts** | Run the README's example command in a real terminal (a PTY), capture the output, and render it as an animated terminal scene (xterm-like, typed at a natural pace, the real output). No screen recording needed, so it works in cloud agents too | M |
 | CO2 | **Mobile (Flutter, React Native, Expo)** | Many have a web target (`flutter build web`, `expo start --web`). Record that in a 430×932 phone viewport inside a phone frame (the `phone` display already exists) | M |
 | CO3 | **API-only backends (FastAPI, Express, no UI)** | Call the documented endpoints (from `routes` and README examples) and render a request/response scene, Postman-style, with the real JSON | M |
-| CO4 | **Chat bots (Discord, Telegram, Slack, WhatsApp)** | Render a chat scene from a scripted conversation, with the bot's real replies captured by running the handler locally where possible, otherwise labelled "Example" | M |
 | CO5 | **Notebooks and ML** | Execute the notebook headlessly (`nbconvert --execute`), take the real output cells (tables, charts), and render them as stills in a notebook frame; the `model-io` explainer gets real inputs and outputs | M |
-| CO6 | **Browser extensions** | Launch Chromium with the unpacked extension (`--load-extension`) and record a test page with the popup or sidebar | M |
-| CO7 | **Hardware, IoT, games** | The team's photos, videos or a GIF from the repo (`docs/`, `assets/`), placed in `device` and `annotated-shot` scenes; Ken Burns motion on stills | S |
 | CO8 | **Apps needing a database or Docker** | When Docker is installed, `docker compose up` with the repo's compose file, then the normal flow. Detect seed scripts (`prisma db seed`, `npm run seed`) and offer them | M |
 
 Other coverage gaps:
@@ -376,7 +401,6 @@ Other coverage gaps:
 | OUT2 | **A vertical 9:16 cut** (30–45 s) for LinkedIn, Instagram, X and Shorts, reusing scenes with the R1 content crop and the Kinetic motion | Teams post their project socially, and this is where the "modern" look is expected | M |
 | OUT3 | **A Devpost/README write-up draft:** "What it does / How we built it / Challenges", from understanding.md and the script, every claim cited | The video's facts are already gathered | S |
 | OUT4 | **YouTube chapters** in the description (scene starts from timeline.json) | Free, and helps judges jump to the demo | S |
-| OUT5 | **A 6–10 s GIF or MP4 teaser** of the hook | For the README's top | S |
 
 ---
 

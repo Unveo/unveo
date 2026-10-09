@@ -87,5 +87,14 @@ class PageEngineTest(unittest.TestCase):
             self.assertEqual(shown, 1, t)
 
 
+class FocusExportTest(PageEngineTest):
+    def test_an_explainer_reports_its_answer_box_for_the_match_cut(self):
+        data = {"title": "Why it ranks first", "inputs": [{"name": "s", "label": "Severity", "example": 9, "weight": 0.5}],
+                "expression": "9 x 0.5", "result": {"label": "Score", "example": 4.5}, "beats": [0, 0.3, 0.6, 0.9, 1.2]}
+        pg = self.page(data, "explainer-formula-breakdown", {"look": "editorial", "motion_style": "glide"})
+        x, y, w, h = pg.evaluate("window.__unveoFocus.s01")
+        self.assertTrue(0 <= x < 1920 and 0 <= y < 1080 and 200 < w < 1920 and 100 < h < 1080, (x, y, w, h))
+
+
 if __name__ == "__main__":
     unittest.main()

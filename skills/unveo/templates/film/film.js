@@ -82,6 +82,9 @@
           r.el.style.visibility = "inherit";
           const a = f.getBoundingClientRect(), st = stage.getBoundingClientRect(), k = W / 1920;
           r.focus = { x: (a.left + a.width / 2 - st.left) / k, y: (a.top + a.height / 2 - st.top) / k, z: r.el.__focusZ || 0.1 };
+          // the answer's box at the scene's end (after its zoom), for the match cut into the next recording (docs/16 MO2)
+          const z = 1 + r.focus.z, bw = a.width / k * z, bh = a.height / k * z;
+          (window.__unveoFocus = window.__unveoFocus || {})[r.s.id] = [r.focus.x - bw / 2, r.focus.y - bh / 2, bw, bh].map(v => Math.round(v));
           r.el.style.visibility = "hidden";
         });
         window.seek(0);

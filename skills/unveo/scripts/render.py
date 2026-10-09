@@ -423,6 +423,7 @@ def prepare(out):
             data["credits"] = team
         if s.get("template") == "kinetic":  # big type cut on every spoken word
             data["word_times"] = [round(s.get("lead_s", 0) + w["t0"], 3) for w in words_by.get(s["id"], [])]
+        data = real_output(o, s["id"], s.get("template"), data)
         tpl = s.get("template") if s["visual"] == "anim" else "placeholder"
         if s["visual"] != "anim":
             data = data or {"shot_id": s["id"], "what_to_record": "The recorded app plays here."}
@@ -438,6 +439,38 @@ def prepare(out):
     write_icons(o, film, design, scenes)
     (film / "timeline.js").write_text("window.TIMELINE = " + json.dumps({"fps": FPS, "design": design, "scenes": scenes}, ensure_ascii=False) + ";\n")
     return film, scenes
+
+
+def real_output(o, sid, tpl, data):
+    """A terminal or notebook scene shows exactly what outputs.py saved (docs/16 CO1, CO3, CO5): its "run" (or
+    "notebook") id fills the command, the output and the cells, so nothing on screen is typed by hand. A compose
+    block {"type": "terminal", "props": {"run": "r1"}} is filled the same way."""
+    def load(rid, kind):
+        f = o / "runs" / f"{rid}.json"
+        rec = json.loads(f.read_text(encoding="utf-8")) if rid and f.exists() else None
+        if not rec or rec.get("kind") != kind:
+            emit("render", ok=False, user_action=True, scene=sid,
+                 message=f'{sid}: give it "{"run" if kind == "run" else "notebook"}": the id of an outputs.py {kind} '
+                         f"({'runs/' + str(rid) + '.json is missing' if rid else 'none given'}). It shows only real output.")
+        return rec
+
+    def term(props):
+        r = load(props.get("run"), "run")
+        a, b = props.get("lines") or [1, 14]
+        where = r.get("project", "") + ("" if r.get("cwd", ".") == "." else "/" + r["cwd"])
+        return {**props, "command": r["command"], "output": r["output"][max(0, int(a) - 1):int(b)],
+                "title": props.get("title") or (f"~/{where}" if where else "terminal")}
+    if tpl == "terminal":
+        return term(data)
+    if tpl == "notebook":
+        r = load(data.get("notebook"), "notebook")
+        want = data.get("cells") or [c["index"] for c in r["cells"] if c["type"] == "code" and c["outputs"] and not c["error"]][:2]
+        cells = [c for i in want for c in r["cells"] if c["index"] == i]
+        return {**data, "path": data.get("path", r["path"]), "cells": [{k: c[k] for k in ("n", "source", "outputs")} for c in cells]}
+    if tpl == "compose":
+        return {**data, "blocks": [{**b, "props": term(b["props"])} if b.get("type") == "terminal" and (b.get("props") or {}).get("run")
+                                   else b for b in data.get("blocks", [])]}
+    return data
 
 
 def backdrop(o, film, sid):
@@ -571,6 +604,9 @@ def render_scene(pw, film, sc, path, width, sub):
     enc = subprocess.Popen([ffmpeg_exe(), "-v", "error", "-y", "-f", "image2pipe", "-framerate", str(FPS * sub), "-c:v", "mjpeg",
                             "-i", "-", "-vf", vf, "-r", str(FPS), *ENCODE, "-an", str(path)], stdin=subprocess.PIPE)
     page = Page(pw, film, sc["id"], width)
+    box = page.pg.evaluate(f"(window.__unveoFocus || {{}})[{json.dumps(sc['id'])}] || null")
+    focus = film / f"focus-{sc['id']}.json"  # an explainer's answer box: stitch.py's match cut grows the next scene out of it
+    focus.write_text(json.dumps(box)) if box else focus.unlink(missing_ok=True)
     try:
         for i in range(n):
             for o in offs:
