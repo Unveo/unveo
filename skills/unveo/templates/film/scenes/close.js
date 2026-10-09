@@ -28,7 +28,7 @@ UNVEO.scene("close", {
     const { p, riseWords, rise, drift, E } = CORE;
     riseWords(root.__im, t, 0.15, 0.05, 0.6);
     rise(root.__mo, p(t, 0.6, .8), 14);
-    const t0 = Math.max(1.2, dur - 4.2);  // links arrive as the voice ends, then hold
+    const t0 = Math.max(0.7, dur - 4.2);  // links arrive as the voice ends, then hold; a short close brings them in early
     root.__links.forEach((c, i) => rise(c, p(t, t0 + i * 0.18, .7, E.outExpo), 40));
     rise(root.__ti, p(t, t0 + 0.5, .7), 16);
   },

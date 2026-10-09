@@ -6,10 +6,10 @@ Animated scenes are one HTML page (`OUT/film/index.html`). render.py copies the 
 
 | Template | Data | Notes |
 |---|---|---|
-| `title` | `{"title", "event", "team", "backdrop"?}` | From brief.header. `backdrop`: the hook's scene id, to sit over its last frame |
+| `title` | `{"title", "event", "team", "backdrop"?}` | From brief.header. `backdrop`: the hook's scene id, to sit over its last frame. 1.4 s when silent; with a short spoken line it runs as long as the line |
 | `context` | `{"eyebrow"?, "headline", "points": [≤3], "stat"?: {"value", "label", "source"}}` | headline ≤ 9 words; points ≤ 5 words each; stat only with a real source |
 | `problem` | `{"eyebrow"?, "headline", "pains": [≤3], "stat"?}` | Same limits |
-| `product-intro` | `{"name", "one_liner", "screenshot": "assets/probe.png"}` | The screenshot is the app's probe image; omit it if there's no app. The last second zooms into it, which hands off to the first recording |
+| `product-intro` | `{"name", "one_liner", "screenshot": "assets/probe.png"}` | The screenshot is the app's probe image, shown whole in a box of its own shape over half the frame wide; omit it if there's no app. The last second zooms into it, which hands off to the first recording. The one-liner says what the voice doesn't (who it's for, what it replaces); no stack logos here |
 | `explainer-*` | See EXPLAINERS.md | |
 | `close` | `{"title", "impact_line", "links": [{"label","url"}], "extra_line", "credits"?, "built_with"?}` | `impact_line` and `links` **copied exactly** from brief.close; QA compares them. `credits` defaults to brief.header.team |
 | `kinetic` | `{"text"}` | One short line in huge type, one or two words at a time, cut on the spoken words. For 2–3 s punch scenes and hooks. `**word**` marks the one emphasis |
@@ -20,7 +20,7 @@ Animated scenes are one HTML page (`OUT/film/index.html`). render.py copies the 
 On-screen text summarises; the voice explains. Don't put the narration sentence on screen word for word.
 
 Every scene, any template:
-- **One emphasis:** wrap the key word or words in `**…**` in a headline, heading or text (only the first pair counts). The motion language draws it (an underline, a pill, a ring…). It lands at `"emphasis_at"` (seconds or `"word:<word>"`), by default about 40% in.
+- **One emphasis:** wrap the key word or words in `**…**` in a headline, heading or text (only the first pair counts). The motion language draws it (an underline, a pill, a ring…) as one shape per line; a box, pill or ring only on 3 words or fewer, a longer phrase gets the underline. It lands at `"emphasis_at"` (seconds or `"word:<word>"`), by default about 40% in.
 - **The camera** moves every animated scene a little, by the motion language. `"camera": false` in a scene's data keeps it still.
 - **Explainers** end with a short zoom into their answer, and one that follows a recording draws over that recording's frozen, blurred last frame. `"backdrop": false` turns that off.
 

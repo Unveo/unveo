@@ -82,6 +82,33 @@ def ffmpeg_exe():
     return imageio_ffmpeg.get_ffmpeg_exe()
 
 
+def streams(path, fps=30):
+    """{"frames", "video_s", "audio_s"} of a video file, read by copying each stream to nowhere: the frame count is
+    exact, and each stream's own length is reported, not the container's (which the longer stream sets)."""
+    import re, subprocess
+    out = {"frames": 0, "video_s": 0.0, "audio_s": None}
+    for m in ("v", "a"):
+        err = subprocess.run([ffmpeg_exe(), "-hide_banner", "-i", str(path), "-map", f"0:{m}?", "-c", "copy", "-f", "null", "-"],
+                             capture_output=True, text=True).stderr
+        if m == "v":
+            n = re.findall(r"frame=\s*(\d+)", err)
+            out["frames"] = int(n[-1]) if n else 0
+            out["video_s"] = out["frames"] / fps
+        elif re.search(r"Stream #0:\d+.*?: Audio", err):  # decoded and counted: a copy's time= is its last packet's start
+            pcm = subprocess.run([ffmpeg_exe(), "-v", "quiet", "-i", str(path), "-map", "0:a:0", "-ac", "1", "-ar", "48000", "-f", "s16le", "-"],
+                                 capture_output=True).stdout
+            out["audio_s"] = len(pcm) / 2 / 48000
+    return out
+
+
+def file_sha1(path):
+    h = hashlib.sha1()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def sha1_of(*parts):
     h = hashlib.sha1()
     for part in parts:

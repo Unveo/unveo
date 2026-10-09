@@ -34,12 +34,18 @@ class CutPlanTest(unittest.TestCase):
         self.assertTrue(all(c["dur"] in (0, looks.T_DEFAULT) for c in cuts))
         self.assertEqual(looks.cuts(SCENES, "swiss", {"motion_style": "glide"})[2]["type"], "card")
 
-    def test_a_recording_into_an_explainer_fades_and_a_flash_is_two_frames(self):
+    def test_a_recording_into_an_explainer_fades_and_a_flash_is_a_hard_cut(self):
         rec = [{"id": "s05", "visual": "capture", "template": None}, {"id": "s06", "visual": "anim", "template": "explainer-model-io"},
                {"id": "s07", "visual": "capture", "template": None}]
         cuts = looks.cuts(rec, "terminal", {"motion_style": "typewriter"})
         self.assertEqual(cuts[0]["type"], "fade")         # the explainer draws over the recording's last frame
-        self.assertEqual((cuts[1]["type"], cuts[1]["dur"]), ("flash", round(looks.T_FLASH, 3)))
+        self.assertEqual((cuts[1]["type"], cuts[1]["dur"]), ("flash", 0))  # stitch lays the accent over the cut instead
+
+    def test_every_blend_is_whole_frames_and_at_least_the_minimum(self):
+        for dur in (0.067, 0.45, 0.31):
+            c = looks.cuts(SCENES, "editorial", {"transition": {"type": "fade", "dur": dur}})[1]
+            self.assertGreaterEqual(c["dur"], looks.T_MIN)
+            self.assertAlmostEqual(c["dur"] * 30, round(c["dur"] * 30), places=6)
 
     def test_two_recordings_in_a_row_hard_cut_so_the_app_never_ghosts(self):
         scenes = [{"id": "s05", "visual": "capture", "template": None}, {"id": "s06", "visual": "capture", "template": None},
@@ -61,6 +67,9 @@ class StitchTransitionTest(unittest.TestCase):
     def build(self, design):
         o, total = project()
         (o / "film/design.json").write_text(json.dumps(design))
+        _, handle = looks.plan_for(o)  # the rendered title runs on by exactly its cut's handle
+        subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=navy:s=1920x1080:r=30:d={2.5 + handle['s01']:.4f}",
+                        "-pix_fmt", "yuv420p", "-c:v", "libx264", str(o / "render/segments/s01.mp4")], check=True)
         for step in (("stitch.py", "ingest"), ("score.py",), ("mix.py",), ("stitch.py", "final")):
             code, res = run(step[0], o, *step[1:])
             self.assertEqual(code, 0, (step, res))
@@ -91,16 +100,31 @@ class StitchTransitionTest(unittest.TestCase):
 
 
 class BeatTest(unittest.TestCase):
-    def test_cuts_snap_to_the_beat_only_where_there_is_room(self):
-        scenes = [{"id": f"s0{i}", "segment": "product", "visual": "anim", "template": "compose", "narration": "x"} for i in range(1, 4)]
-        clips = {s["id"]: {"file": "v.mp3", "dur_s": 3.0} for s in scenes}  # 3.7 s scenes: 0.3 s short of a beat
+    def test_segment_changes_snap_to_the_beat_only_where_there_is_room(self):
+        scenes = [{"id": f"s0{i}", "segment": seg, "visual": "anim", "template": "compose", "narration": "x"}
+                  for i, seg in ((1, "context"), (2, "problem"), (3, "product"), (4, "product"))]
+        clips = {s["id"]: {"file": "v.mp3", "dur_s": 3.0} for s in scenes}
         tl = plan_timeline.build(scenes, clips, 60)
         snapped = plan_timeline.snap_to_beat(tl, 120, 60)
-        for s in snapped["scenes"]:
+        for s, nxt in zip(snapped["scenes"], snapped["scenes"][1:] + [None]):
             end = s["start_s"] + s["dur_s"]
-            self.assertAlmostEqual(end / 0.5, round(end / 0.5), delta=0.07)  # every cut on a beat at 120 BPM
+            if nxt and nxt["segment"] != s["segment"]:
+                self.assertAlmostEqual(end / 0.5, round(end / 0.5), delta=0.07)  # a new segment starts on a beat at 120 BPM
+        self.assertEqual(snapped["scenes"][2]["snap_s"], 0)  # inside a segment the voice runs on: no padding
         self.assertEqual(plan_timeline.snap_to_beat(tl, 120, tl["total_s"] / 0.98)["total_s"], tl["total_s"])  # no room: unchanged
         self.assertTrue(all(0 <= s["snap_s"] <= 0.35 + 1 / 30 for s in snapped["scenes"]))  # recorded, so QA can allow for it
+
+
+class GapTest(unittest.TestCase):
+    def test_gaps_follow_the_story_and_a_long_hold_lets_the_next_line_start_early(self):
+        sc = lambda i, seg, vis="anim": {"id": f"s0{i}", "segment": seg, "visual": vis, "template": "compose", "narration": "x"}
+        scenes = [sc(1, "context"), sc(2, "context"), sc(3, "product", "capture"), sc(4, "product")]
+        clips = {s["id"]: {"file": "v.mp3", "dur_s": 2.0} for s in scenes}
+        tl = plan_timeline.build(scenes, clips, 60, needs={"s03": 4.0})["scenes"]
+        gap = lambda a, b: a["tail_s"] + b["lead_s"]
+        self.assertLessEqual(gap(tl[0], tl[1]), 0.45)                 # within a segment: the voice runs on
+        self.assertTrue(0.6 <= gap(tl[1], tl[2]) <= 0.8)              # a new segment: a breath
+        self.assertEqual(tl[3]["lead_s"], -plan_timeline.PRELAP_S)    # s03 held for its recording: s04 speaks over its end
 
 
 class SettleTest(unittest.TestCase):
@@ -109,7 +133,7 @@ class SettleTest(unittest.TestCase):
         clips = {"s05": {"file": "voice/s05.mp3", "dur_s": 3.0}}
         plain = plan_timeline.build(scenes, clips, 60)
         needed = plan_timeline.build(scenes, clips, 60, needs={"s05": 4.6})
-        self.assertAlmostEqual(plain["scenes"][0]["dur_s"], 3.8, places=2)
+        self.assertAlmostEqual(plain["scenes"][0]["dur_s"], 0.15 + 3.0 + 0.35, places=1)
         self.assertGreaterEqual(needed["scenes"][0]["dur_s"], 4.6)
         self.assertGreater(needed["scenes"][0]["tail_s"], plain["scenes"][0]["tail_s"])
 

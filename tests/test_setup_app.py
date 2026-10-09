@@ -87,5 +87,20 @@ class InstallStartStopTest(unittest.TestCase):
             s.close()
 
 
+class OnePerFolderTest(unittest.TestCase):
+    def test_a_built_app_runs_its_production_start_and_an_unbuilt_one_runs_dev(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills/unveo/scripts"))
+        import setup_app
+        run = [{"cwd": "web", "cmd": "npm run dev", "from": "web/package.json"}, {"cwd": "web", "cmd": "npm start", "from": "web/package.json"},
+               {"cwd": "api", "cmd": "uvicorn main:app --port 8000", "from": "README"}]
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "web").mkdir()
+            self.assertEqual([h["cmd"] for h in setup_app.one_per_folder(run, d)], ["npm run dev", "uvicorn main:app --port 8000"])
+            (Path(d) / "web" / ".next").mkdir()  # a dev server's output alone: still dev
+            self.assertEqual(setup_app.one_per_folder(run, d)[0]["cmd"], "npm run dev")
+            (Path(d) / "web" / ".next" / "BUILD_ID").write_text("x")  # built: no dev overlay in the recording, one server
+            self.assertEqual([h["cmd"] for h in setup_app.one_per_folder(run, d)], ["npm start", "uvicorn main:app --port 8000"])
+
+
 if __name__ == "__main__":
     unittest.main()

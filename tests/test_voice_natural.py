@@ -25,28 +25,21 @@ class CatalogueTest(unittest.TestCase):
 
 
 class DeliveryTest(unittest.TestCase):
-    def test_sentences_split_on_end_punctuation_only(self):
-        self.assertEqual(voice.split_sentences("It works. Does it scale? Yes, it does! Done"),
-                         ["It works.", "Does it scale?", "Yes, it does!", "Done"])
+    def test_a_scene_is_one_take_at_one_steady_pace(self):
+        calls = []
 
-    def test_pauses_vary_within_bounds_and_are_repeatable(self):
-        ps = [voice.pause_after(s, "s05", i) for i, s in enumerate(["Short one.", "A much longer sentence with many more words in it.", "Why?"])]
-        self.assertTrue(all(0.28 <= p <= 0.55 for p in ps), ps)
-        self.assertGreater(len(set(ps)), 1)
-        self.assertEqual(ps, [voice.pause_after(s, "s05", i) for i, s in enumerate(["Short one.", "A much longer sentence with many more words in it.", "Why?"])])
-
-    def test_rate_varies_a_little_around_the_chosen_pace(self):
-        rates = [int(voice.vary_rate("+10%", "s05", i).rstrip("%")) for i in range(8)]
-        self.assertTrue(all(7 <= r <= 13 for r in rates), rates)
-        self.assertGreater(len(set(rates)), 1)
-
-    def test_join_offsets_word_timings_and_length_is_the_sum(self):
-        sr = 24000
-        a, b = np.ones(sr), np.ones(sr // 2)
-        audio, words = voice.join_sentences([a, b], [[{"w": "Hi", "t0": 0.1, "t1": 0.5}], [{"w": "There", "t0": 0.0, "t1": 0.3}]], [0.4], sr)
-        self.assertEqual(len(audio), sr + int(0.4 * sr) + sr // 2)
-        self.assertAlmostEqual(words[1]["t0"], 1.4, places=3)
-        self.assertLess(words[0]["t1"], words[1]["t0"])
+        async def fake(text, voice_id, rate, path):  # what edge-tts is asked for, and a short take
+            calls.append((text, rate))
+            subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono:d=0.3", "-f", "lavfi", "-i",
+                            "sine=frequency=220:duration=1:sample_rate=24000", "-filter_complex", "[0][1]concat=n=2:v=0:a=1", str(path)], check=True)
+            return [{"w": "It", "t0": 0.35, "t1": 0.6}, {"w": "works.", "t0": 0.7, "t1": 1.2}]
+        real, voice.edge_clip = voice.edge_clip, fake
+        try:
+            words = voice.edge_scene("s05", "It works. Does it scale? Yes.", "en-US-AvaMultilingualNeural", "+0%", Path(tempfile.mkdtemp()) / "a.mp3")
+        finally:
+            voice.edge_clip = real
+        self.assertEqual(calls, [("It works. Does it scale? Yes.", "+0%")])  # one call, the chosen rate untouched
+        self.assertAlmostEqual(words[0]["t0"], 0.1, delta=0.06)  # timings follow the trimmed lead-in
 
     def test_trim_edges_cuts_leading_and_trailing_silence(self):
         sr = 24000

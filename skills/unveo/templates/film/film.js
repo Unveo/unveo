@@ -37,7 +37,7 @@
         if (s.data && s.data.backdrop_img && s.template !== "title") {  // the recording just shown, frozen behind (MO2)
           el.__bd = document.createElement("div");
           el.__bd.className = "abs";
-          el.__bd.style.cssText = `inset:-40px;background:url(${s.data.backdrop_img}) center/cover`;
+          el.__bd.style.cssText = `inset:0;background:url(${s.data.backdrop_img}) center/cover`;
           el.prepend(el.__bd);
         }
         // the camera layer (docs/16 MO1): everything the scene built moves as one, by the motion language
@@ -58,8 +58,10 @@
         if (r.el.__bd) {
           const k = CORE.p(tt, 0, 0.7, CORE.E.ioC);
           r.el.__bd.style.filter = `blur(${k * 14}px)`;
+          r.el.__bd.style.transform = `scale(${1 + 0.05 * k})`;  // exactly the frame it fades in over, then oversized under the blur
           r.el.__bd.style.opacity = 1 - 0.7 * k;
         }
+        CORE.cursor.reset();
         r.def.draw(tt, d, s.dur_s, r.el);
         const emAt = typeof d.emphasis_at === "number" ? d.emphasis_at : Math.max(1.4, Math.min(s.dur_s * 0.4, 3));
         CORE.emphasis(r.el, CORE.p(tt, emAt, 0.6, CORE.E.ioC));

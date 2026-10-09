@@ -3,6 +3,16 @@
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions: semver.
 
 ## [0.1.0-dev]
+### Fixed
+- Round 9, after the SentinelOS run (its video froze after 0:33 under 68 s of voice, and passed QA):
+  - The join can't hand over a short video: every segment is counted in frames first (a stale or short one stops it, named), scenes and transitions are encoded as separate pieces and joined by the concat demuxer, and final.mp4's video must equal the timeline and the audio. Transitions are whole frames, never under 0.3 s; the flash is a hard cut with the accent over two frames.
+  - QA measures each stream, not the container; new blocking gates: picture (frozen under the voice, black), fresh (final.mp4 older than its sources), hook, pacing. A video shorter than its audio is never published.
+  - A hook that sells: its source scene ends zoomed on its result, held to the end of the take; the hook is cut to end there; the title can speak; script.py warns when the hook names nothing on screen or a claim repeats.
+  - Motion and layout: typewriter types characters but eases everything else, one cursor at most, a slow push; terminal now glides first; emphasis is one shape per line of the whole phrase; one type scale per video; gentler auto-fit; every scene's first block up by 0.25 s; stills at 0.5 s, half way and 90%, with "voiced but empty" and long-heading checks; the product intro shows the whole screenshot, over half the frame, no logos; captions in the body face, white on black, one clause each.
+  - Voice and music: one take per scene at a steady +0% (the new default), gaps by meaning, a 16 dB duck that holds between sentences and clears 2–5 kHz under the voice, no ticking instrument.
+  - Scripts: a list read aloud, a textbook opening, a second rhetorical question and a product shown after the first quarter are errors; PITCH.md has a hook recipe and makes demo-first the default for dev tools.
+  - From the second SentinelOS run: an `upload` step for file inputs (CAPTURE.md); setup_app.py starts one server per folder, the production build when there is one (no dev badge in the video); a title or explainer fades in over the framed segment it follows, exactly aligned (no double image); QA's readable-text check counts the page zoom; a short close brings its links in from 0.7 s; six pipeline stages fit their boxes.
+
 ### Added
 - Round 2 (from your review):
   - Natural, global voice: accents from the system region, Multilingual voices first, sentence-by-sentence delivery with varied pauses, speed asked every run, stiff-wording warnings.

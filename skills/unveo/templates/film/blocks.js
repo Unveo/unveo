@@ -14,8 +14,9 @@
   const B = {
     kicker: { build: pr => T("div", "eyebrow", esc(pr.text)) },
     // the look's type scale (design.css --type-scale) sizes headings; auto-fit still shrinks or grows them to the area
-    heading: { build: pr => T("div", null, rich(pr.text), `font:650 calc(${pr.size || 64}px * var(--type-scale, 1))/1.1 var(--font-display);letter-spacing:-.02em;text-wrap:balance`), fit: true },
-    text: { build: pr => T("div", null, rich(pr.text), "font:450 calc(34px * min(var(--type-scale, 1), 1.2))/1.4 var(--font-body);color:var(--ink);opacity:.86"), fit: true },
+    // the video's type scale (design.css): headings are --h2 (level 1: --h1), in the display face; text is --body
+    heading: { build: pr => T("div", "h", rich(pr.text), `font:650 var(${pr.level === 1 ? "--h1" : "--h2"})/1.1 var(--font-display);letter-spacing:-.02em;text-wrap:balance`), fit: true },
+    text: { build: pr => T("div", null, rich(pr.text), "font:450 var(--body)/1.4 var(--font-body);color:var(--ink);opacity:.86"), fit: true },
     "big-number": {
       build: pr => {
         const el = T("div");
@@ -31,11 +32,11 @@
     list: {
       build: pr => T("div", null, (pr.items || []).slice(0, 5).map((x, i) =>
         `<div class="li" style="display:flex;gap:22px;align-items:baseline;padding:12px 0;border-bottom:1px solid color-mix(in srgb, var(--muted) 22%, transparent)">
-          <span class="mono" style="font:600 22px 'Geist Mono';color:var(--accent)">0${i + 1}</span><span style="font:500 34px/1.3 var(--font-body)">${esc(x)}</span></div>`).join("")),
+          <span class="mono" style="font:600 22px 'Geist Mono';color:var(--accent)">0${i + 1}</span><span style="font:500 var(--body)/1.3 var(--font-body)">${esc(x)}</span></div>`).join("")),
       fit: true,
       draw: (el, k) => [...el.querySelectorAll(".li")].forEach((li, i) => { const q = clamp(k * 1.6 - i * 0.18); li.style.opacity = q; li.style.transform = `translateY(${(1 - q) * 16}px)`; }),
     },
-    card: { build: pr => T("div", "card", `<div style="font:600 34px/1.2 var(--font-display)">${esc(pr.title || "")}</div><div style="margin-top:10px;font:450 28px/1.4 var(--font-body);color:var(--muted)">${esc(pr.text || "")}</div>`, "padding:30px 34px"), fit: true },
+    card: { build: pr => T("div", "card", `<div style="font:600 var(--body)/1.2 var(--font-body)">${esc(pr.title || "")}</div><div style="margin-top:10px;font:450 var(--small)/1.4 var(--font-body);color:var(--muted)">${esc(pr.text || "")}</div>`, "padding:30px 34px"), fit: true },
     chip: { build: pr => T("div", "chip", esc(pr.text), "display:inline-block;align-self:flex-start;padding:12px 22px;border-radius:999px;font:500 26px var(--font-body);border:1.5px solid color-mix(in srgb, var(--muted) 40%, transparent)") },
     bar: {
       build: pr => {
@@ -76,7 +77,7 @@
       draw: (el, k) => { const hl = el.querySelector(".hl"); if (hl) hl.style.opacity = clamp(k * 2 - 1); },
     },
     icon: {
-      build: pr => T("div", null, `${icon(pr.icon, pr.size || 150)}${pr.label ? `<div style="margin-top:18px;font:600 36px/1.2 var(--font-display)">${esc(pr.label)}</div>` : ""}`,
+      build: pr => T("div", null, `${icon(pr.icon, pr.size || 150)}${pr.label ? `<div style="margin-top:18px;font:600 var(--body)/1.2 var(--font-body)">${esc(pr.label)}</div>` : ""}`,
         "display:flex;flex-direction:column;align-items:flex-start"),
       draw: (el, k) => { const i = el.querySelector(".ico"); if (i) i.style.transform = `scale(${0.85 + 0.15 * k})`; },
     },
@@ -105,7 +106,7 @@
         el.innerHTML = `<div class="tl" style="position:absolute;left:0;right:0;top:52px;height:4px;background:var(--accent);transform-origin:0 50%"></div>
           <div style="display:flex;justify-content:space-between;gap:16px">${items.map(x => `<div class="pt" style="flex:1">
           <div style="width:28px;height:28px;border-radius:50%;background:var(--bg);border:4px solid var(--accent)"></div>
-          <div style="margin-top:20px;font:700 32px var(--font-display)">${esc(x.when || "")}</div>
+          <div style="margin-top:20px;font:700 var(--body) var(--font-body)">${esc(x.when || "")}</div>
           <div style="margin-top:6px;font:450 26px/1.3 var(--font-body);color:var(--muted)">${esc(x.what || "")}</div></div>`).join("")}</div>`;
         return el;
       },
@@ -115,7 +116,7 @@
     compare: {
       build: pr => {
         const col = (c, on) => `<div class="col card" style="flex:1;padding:30px 34px;${on ? "box-shadow:inset 0 0 0 3px var(--accent)" : "opacity:.9"}">
-          <div style="font:650 34px var(--font-display);${on ? "color:var(--accent)" : "color:var(--muted)"}">${esc((c || {}).title || "")}</div>
+          <div style="font:650 var(--body) var(--font-body);${on ? "color:var(--accent)" : "color:var(--muted)"}">${esc((c || {}).title || "")}</div>
           ${((c || {}).items || []).slice(0, 4).map(x => `<div style="margin-top:16px;font:500 28px/1.3 var(--font-body)">${on ? "✓" : "–"}&nbsp; ${esc(x)}</div>`).join("")}</div>`;
         return T("div", null, col(pr.before, false) + col(pr.after, true), "display:flex;gap:28px");
       },
@@ -276,12 +277,13 @@
           "border-radius:16px;overflow:hidden;background:#111214;box-shadow:0 24px 60px rgba(0,0,0,.18)");
       },
       fit: true, timed: true,
-      draw: (el, k, pr, s) => {
+      draw: (el, k, pr, s, at) => {
         const c = el.querySelector(".cmd"), full = c.dataset.full, typed = Math.floor(Math.max(0, s) * 24);
         c.textContent = full.slice(0, typed);
-        const done = full.length / 24 + 0.35;
+        const done = full.length / 24 + 0.35, cur = el.querySelector(".cur");
         el.querySelectorAll(".out").forEach((o, i) => { o.style.opacity = s > done + i * 0.07 ? 1 : 0; });
-        el.querySelector(".cur").style.opacity = s < done ? 1 : Math.floor(s * 2) % 2;
+        cur.style.opacity = 0;  // shown while typing and 0.4 s after; the one cursor on screen (core.js cursor)
+        if (s >= 0 && s < done + 0.4) CORE.cursor.claim(at || 0, () => { cur.style.opacity = 1; }, () => { cur.style.opacity = 0; });
       },
     },
   };

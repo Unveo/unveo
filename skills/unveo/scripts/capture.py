@@ -16,8 +16,8 @@ from common import INTERMEDIATE_CRF, emit, ffmpeg_exe, log, out_dir, out_size, r
 VIEWPORT = {"width": 1920, "height": 1080}
 LOGIN_PATH = re.compile(r"/(log-?in|sign-?in|auth)(/|$|\?)", re.I)
 
-ACTIONS = {"goto", "click", "type", "select", "press", "scroll", "hover", "submit", "wait", "pause"}
-NEEDS_TARGET = {"click", "type", "select", "hover", "submit"}
+ACTIONS = {"goto", "click", "type", "select", "press", "scroll", "hover", "submit", "wait", "pause", "upload"}
+NEEDS_TARGET = {"click", "type", "select", "hover", "submit", "upload"}
 TARGET_KEYS = {"role", "name", "label", "placeholder", "text", "testid", "css"}
 WAITS = {"network-idle", "selector", "url", "text", "ms"}
 PAYMENT = re.compile(r"card|cvv|cvc|\bupi\b|checkout|payment|\bpay\b|pay now|purchase|\bbuy\b|billing", re.I)
@@ -140,6 +140,19 @@ MAX_SPEED = 2.5  # stitch.py may play a recording up to this much faster to meet
 
 
 ZOOM_EASE_S, ZOOM_HOLD_S, ZOOM_SCALE = 0.6, 2.0, 1.6
+HOOK_HOLD_S, HOOK_SCALE = 2.5, (1.6, 2.2)  # a hook's source ends zoomed on its result: held this long, this close
+
+
+def hook_sources(steps):
+    """Scene ids a hook reuses: each must end on a zoom into its result (validate), held to the end of the take."""
+    return {sc["reuse"] for sc in (steps.get("scenes") or {}).values() if sc.get("reuse")}
+
+
+# what a zoom frames: its text (script.py checks the hook names it) and its biggest type, in px of a 1920-wide frame
+ZOOM_TEXT_JS = """e => { let px = 0;
+  for (const n of [e, ...e.querySelectorAll('*')]) if ([...n.childNodes].some(c => c.nodeType === 3 && c.textContent.trim()))
+    px = Math.max(px, parseFloat(getComputedStyle(n).fontSize) || 0);
+  return {text: (e.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 400), px: Math.round(px * 1920 / innerWidth * 10) / 10}; }"""
 
 
 def has_zoom(steps):
@@ -204,9 +217,9 @@ def zoom_k(t, zooms):
     for z in zooms:
         t0 = z["t_s"]
         ease, hold = z.get("ease_s", ZOOM_EASE_S), z.get("hold_s", ZOOM_HOLD_S)
-        if t < t0 or t > t0 + 2 * ease + hold:
+        if t < t0 or (t > t0 + 2 * ease + hold and not z.get("to_end")):
             continue
-        k = min(1.0, (t - t0) / ease) if t < t0 + ease + hold else max(0.0, 1 - (t - t0 - ease - hold) / ease)
+        k = min(1.0, (t - t0) / ease) if t < t0 + ease + hold or z.get("to_end") else max(0.0, 1 - (t - t0 - ease - hold) / ease)
         return (4 * k ** 3 if k < 0.5 else 1 - (-2 * k + 2) ** 3 / 2), z
     return 0.0, None
 
@@ -222,6 +235,8 @@ def zoom_crop(t, zooms, W, H, sx=1.0, sy=1.0):
     k, z = zoom_k(t, zooms)
     if z:
         s = 1 + (z["scale"] - 1) * k
+        if z.get("to_end"):  # a hook's result: after settling, keep creeping in (3% over the hold) so it never freezes
+            s *= 1 + 0.03 * min(1.0, max(0.0, t - z["t_s"] - z.get("ease_s", ZOOM_EASE_S)) / z["hold_s"])
         w, h = round(W / s), round(H / s)
         bx, by, bw, bh = frame_box(z["box"], sx, sy)
         x = min(max(0, round(bx + bw / 2 - w / 2)), W - w)
@@ -334,6 +349,7 @@ def validate(steps):
         elif u["for"] in ("url", "text") and "value" not in u:
             e.append(f"login.until for {u['for']} needs a value")
     blocks = [("login", login.get("steps", []))]
+    hooked = hook_sources(steps)
     for sid, sc in scenes.items():
         if sc.get("reuse"):  # a hook: the end of another scene's take, nothing recorded of its own
             src = scenes.get(sc["reuse"]) or {}
@@ -348,10 +364,17 @@ def validate(steps):
         if len(zs) > 1:
             e.append(f"{sid}: only one zoom per scene, so it stays subtle ({len(zs)} found)")
         for st in zs:
-            if not st.get("target"):
+            z = st["zoom"] if isinstance(st["zoom"], dict) else {}
+            if not (st.get("target") or z.get("target")):
                 e.append(f"{sid}: a zoom needs a target to zoom in on")
-            if isinstance(st["zoom"], dict) and not 1.2 <= float(st["zoom"].get("scale", ZOOM_SCALE)) <= 2.0:
-                e.append(f"{sid}: zoom scale must be between 1.2 and 2.0 (more gets blurry)")
+            lo, hi = HOOK_SCALE if sid in hooked else (1.2, 2.0)
+            if z and not lo <= float(z.get("scale", ZOOM_SCALE)) <= hi:
+                e.append(f"{sid}: zoom scale must be between {lo} and {hi}" + (" (the hook shows this result: it has to read)"
+                                                                              if sid in hooked else " (more gets blurry)"))
+        last = (sc.get("steps") or [{}])[-1]
+        if sid in hooked and not (isinstance(last.get("zoom"), dict) and (last["zoom"].get("target") or last.get("target"))):
+            e.append(f"{sid}: the hook reuses this scene, so its last step must zoom on the result it ends on: "
+                     f"\"zoom\": {{\"scale\": 1.8, \"target\": <the result card>}} (CAPTURE.md, A hook)")
         if not re.fullmatch(r"s\d{2}", sid):
             e.append(f"scene id {sid} must look like s05")
         blocks.append((sid, ([sc["start"]] if sc.get("start") else []) + sc.get("steps", [])))
@@ -370,6 +393,8 @@ def validate(steps):
                 e += [f"{where}: {m}" for m in target_errors(st["target"])]
             if do == "goto" and not st.get("url"):
                 e.append(f"{where}: goto needs a url")
+            if do == "upload" and not Path(str(st.get("file", ""))).is_file():
+                e.append(f"{where}: upload needs a file that exists (\"file\": a path from the folder you run in), not {st.get('file')!r}")
             if do == "type" and "text" not in st:
                 e.append(f"{where}: type needs text")
             if do == "select" and not (st.get("value") or st.get("label")):
@@ -421,6 +446,8 @@ def describe(st):
     if do == "type":
         shown = "••••" if st.get("secret") else f"\"{st['text']}\""
         return f"type {shown} into \"{name}\""
+    if do == "upload":
+        return f"upload {st.get('file')} into \"{name}\""
     if do == "select":
         return f"pick \"{st.get('label') or st.get('value')}\" in \"{name}\""
     if do == "press":
@@ -557,6 +584,8 @@ def perform(page, st, base, env, dry):
         loc.fill(substitute(st["text"], env), timeout=to)  # ponytail: dry-run fills at once; record types per key
     elif do == "select":
         loc.select_option(**({"value": st["value"]} if st.get("value") else {"label": st["label"]}), timeout=to)
+    elif do == "upload":
+        loc.set_input_files(st["file"], timeout=to)
     elif do == "press":
         (loc.press(st["key"], timeout=to) if loc else page.keyboard.press(st["key"]))
     elif do == "scroll":
@@ -921,6 +950,8 @@ async def aperform(page, st, base, env):
     do, box = st["do"], None
     if do in ("click", "submit", "hover", "type", "select"):
         box = await glide(page, loc)
+    elif do == "upload" and st.get("near"):  # a file input is usually hidden: the cursor goes to the drop zone instead
+        box = await glide(page, locate(page, st["near"]).first)
     if do == "goto":
         await page.goto(urljoin(base, st["url"]), wait_until="load", timeout=to)
     elif do in ("click", "submit"):
@@ -934,6 +965,8 @@ async def aperform(page, st, base, env):
         await page.keyboard.type(substitute(st["text"], env), delay=st.get("delay_ms", 55))
     elif do == "select":
         await loc.select_option(**({"value": st["value"]} if st.get("value") else {"label": st["label"]}), timeout=to)
+    elif do == "upload":
+        await loc.set_input_files(st["file"], timeout=to)
     elif do == "press":
         await (loc.press(st["key"], timeout=to) if loc else page.keyboard.press(st["key"]))
     elif do == "scroll":
@@ -1180,11 +1213,15 @@ async def record_scenes(out):
                         raise RuntimeError(f"left the app: went outside {base} to {page.url}")
                     if st.get("zoom"):
                         z = st["zoom"] if isinstance(st["zoom"], dict) else {}
-                        box = await locate(page, z.get("target") or st["target"]).first.bounding_box()  # frame a whole card, act on its button
+                        el = locate(page, z.get("target") or st["target"]).first  # frame a whole card, act on its button
+                        box = await el.bounding_box()
                         if box:
+                            # a hook's source ends here: the zoom holds to the end of the take, which runs on HOOK_HOLD_S
+                            to_end = sid in hook_sources(steps) and i == len(sc["steps"]) - 1
                             zooms.append({"t_s": round(time.monotonic() - t0, 2), "scale": float(z.get("scale", ZOOM_SCALE)),
-                                          "hold_s": float(z.get("hold_s", ZOOM_HOLD_S)),
-                                          "box": [round(box[k]) for k in ("x", "y", "width", "height")]})  # frames are CSS-pixel sized
+                                          "hold_s": HOOK_HOLD_S if to_end else float(z.get("hold_s", ZOOM_HOLD_S)),
+                                          "box": [round(box[k]) for k in ("x", "y", "width", "height")],  # frames are CSS-pixel sized
+                                          **({"to_end": True} if to_end else {}), **await el.evaluate(ZOOM_TEXT_JS)})
                 except (PWError, RuntimeError, KeyError) as e:
                     wanted = target_text(st.get("target"))
                     shot = shots / f"{sid}-fail.png"
@@ -1201,7 +1238,7 @@ async def record_scenes(out):
                 after = await content_box()
                 if after:
                     content.append((round(last_end, 2), after))
-            zoom_end = max((z["t_s"] + 2 * ZOOM_EASE_S + z["hold_s"] for z in zooms), default=0.0)
+            zoom_end = max((z["t_s"] + (1 if z.get("to_end") else 2) * ZOOM_EASE_S + z["hold_s"] for z in zooms), default=0.0)
             raw = max(last_end + SETTLE_S, zoom_end, 1.0)  # the scene's natural length: settle after the last action
             await asyncio.sleep(max(0.0, raw - (time.monotonic() - t0)))
             await page.mouse.move(1, 1)  # a fresh frame for the end

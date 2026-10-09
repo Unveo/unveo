@@ -87,7 +87,13 @@ The hook (PITCH.md) reuses the end of a scene that's already in the take, so not
 "s01": {"reuse": "s07", "last_s": 4}
 ```
 
-`last_s` (1–8, default 4) is how much of the end of `s07`'s recording to show. Pick the scene whose last screen shows the result.
+Pick the scene whose last screen shows the result, and **end it on that result**: its last step zooms in on the result element (`capture.py check` requires it), scale 1.6–2.2, with `"target"` inside `zoom` for the card that holds the result:
+
+```json
+{"do": "pause", "ms": 300, "zoom": {"scale": 2.2, "target": {"css": "div.p-5:has-text('Scan Status')"}}}
+```
+
+That zoom never eases back out: it settles, then creeps in 3% while the take records 2.5 s more. The hook is the last `last_s` (1–8, default 4) seconds up to the end of that hold, so the result reads from 1.5 s in; if the hook's line runs longer, its last frame holds. `record.json` keeps the zoom's text and its biggest type, so `script.py check` warns when the hook's line names nothing on screen, and QA's `hook` gate fails unless the result reads at 28 px or more (in a 1080p frame) for 2 s of the first 4. Pick a target with big type: a number, a count, a status.
 
 Two recordings in a row always **hard cut** (the app just carries on); cuts into and out of animations use the look's transition.
 
@@ -103,6 +109,7 @@ Two recordings in a row always **hard cut** (the app just carries on); cuts into
 | `scroll` | `target`, or `by` (pixels) | |
 | `hover` | `target` | |
 | `submit` | `target` (the form's submit button) | |
+| `upload` | `target` (the file input, e.g. `{"css": "input[type=file]"}`), `file` (a path from the folder you run in) | puts a file in an upload field, as dropping an archive would; `near` (a target) is where the cursor goes, since file inputs are usually hidden |
 | `wait` | `for`: `network-idle` · `selector` (+ `target`) · `url` (+ `value`) · `text` (+ `value`) · `ms` (+ `value`) | |
 | `pause` | `ms` | a still moment for the narration |
 

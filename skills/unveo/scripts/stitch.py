@@ -13,7 +13,7 @@ import argparse, json, re, subprocess, sys, tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import FINAL_CRF, INTERMEDIATE_CRF, clips_dir, emit, ffmpeg_exe, log, out_dir, out_size, read_json  # noqa: E402
+from common import FINAL_CRF, INTERMEDIATE_CRF, clips_dir, emit, ffmpeg_exe, file_sha1, log, out_dir, out_size, read_json, streams  # noqa: E402
 
 FF = None
 ENC = ["-c:v", "libx264", "-preset", "medium", "-crf", str(INTERMEDIATE_CRF), "-pix_fmt", "yuv420p", "-r", "30",
@@ -157,22 +157,35 @@ def framed_still(png, spec, folder):
     canvas.save(png)
 
 
+PUSH = 0.03  # every recording pushes in this much across its scene, so a held or idle stretch never freezes
+
+
+def push(n):
+    """A slow push over n frames: sub-pixel (perspective, cubic), so it never jitters; frame i is a pure function of i."""
+    z = f"(1+{PUSH}*in/{max(1, n)})"
+    x, y = f"W*(1-1/{z})/2", f"H*(1-1/{z})/2"
+    return (f"perspective=x0='{x}':y0='{y}':x1='W-{x}':y1='{y}':x2='{x}':y2='H-{y}':x3='W-{x}':y3='H-{y}'"
+            ":interpolation=cubic:eval=frame")
+
+
 def fit(src, dst, dur, w=1920, h=1080, bg="black", frame=None):
-    """Scale/pad to w x h at 30 fps, no audio, exactly `dur` seconds (trim, or hold the last frame).
-    frame (from looks.frame): set the recording in a window or on a floating card over the look's background."""
+    """Scale/pad to w x h at 30 fps, no audio, exactly `dur` seconds (trim, or hold the last frame), with a slow push
+    on the recording itself. frame (from looks.frame): set the recording in a window or on a floating card over the
+    look's background; the frame stays still."""
     have = duration(src)
     hold = max(0.0, dur - have)
-    tail = (f",tpad=stop_mode=clone:stop_duration={hold + 0.1:.3f}" if hold > 0 else "") + ",scale=out_range=tv:out_color_matrix=bt709"
+    move = (f"tpad=stop_mode=clone:stop_duration={hold + 0.1:.3f}," if hold > 0 else "") + push(round(dur * 30))
+    tail = ",scale=out_range=tv:out_color_matrix=bt709"
     dst.parent.mkdir(parents=True, exist_ok=True)
     if not frame:
-        vf = f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color={bg},fps=30,setsar=1" + tail
+        vf = f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color={bg},fps=30,{move},setsar=1" + tail
         subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-i", str(src), "-vf", vf, "-t", f"{dur:.3f}", "-an", *ENC, str(dst)], check=True)
         return
     bg_png, mask_png, x, y, iw, ih = frame_assets(frame, w, h, dst.parent.parent / "frames")
-    t = f"{have + 0.2:.3f}"
+    t = f"{max(have, dur) + 0.2:.3f}"
     fill = "#000000" if frame["kind"] == "phone" else frame["bg"]
     fc = (f"[1:v]scale={iw}:{ih}:force_original_aspect_ratio=decrease,pad={iw}:{ih}:(ow-iw)/2:(oh-ih)/2:color={fill},"
-          f"fps=30,format=rgba[v];[2:v]format=gray[m];[v][m]alphamerge[vm];")
+          f"fps=30,{move},format=rgba[v];[2:v]format=gray[m];[v][m]alphamerge[vm];")
     if frame["kind"] == "tilt":  # a gentle turn to the right: the far edge a little shorter
         P = 8
         W2, H2 = iw + 2 * P, ih + 2 * P
@@ -330,14 +343,18 @@ def retime(o, sid, src, scene):
 
 
 def hook(o, sid, sc):
-    """capture/<sid>.mp4 from the last `last_s` seconds of the reused scene's raw take (its result on screen)."""
+    """capture/<sid>.mp4: the last last_s seconds of the reused scene's take, ending where its zoom on the result has
+    settled and held (record.json), so the result reads from 1.5 s in; fit() holds the last frame if the voice runs longer."""
+    import capture
     src = o / "capture" / f"{sc['reuse']}.mp4"
     if not src.exists():
         return None
     dst = o / "capture" / f"{sid}.mp4"
     last = float(sc.get("last_s", 4.0))
-    start = max(0.0, duration(src) - last)
-    subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-ss", f"{start:.3f}", "-i", str(src), "-t", f"{last:.3f}", "-an", *ENC, str(dst)],
+    held = [z for z in (capture.read_take(o).get(sc["reuse"]) or {}).get("zooms", []) if z.get("to_end")]
+    end = min(duration(src), held[-1]["t_s"] + capture.ZOOM_EASE_S + held[-1]["hold_s"]) if held else duration(src)
+    start = max(0.0, end - last)
+    subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-ss", f"{start:.3f}", "-i", str(src), "-t", f"{end - start:.3f}", "-an", *ENC, str(dst)],
                    check=True)
     return dst
 
@@ -463,7 +480,7 @@ def xfade(cut, offset, accent):
     so q = 1 - P is the progress, and the accent colour is given per plane."""
     kind, dur = cut["type"], cut["dur"]
     head = f"xfade=duration={dur:.3f}:offset={offset:.4f}:transition="
-    if kind not in ("accent-wipe", "card", "dip-accent", "flash"):
+    if kind not in ("accent-wipe", "card", "dip-accent"):
         return head + kind
     Y, U, V = yuv(accent)
     acc = f"if(eq(PLANE,0),{Y},if(eq(PLANE,1),{U},{V}))"
@@ -472,8 +489,6 @@ def xfade(cut, offset, accent):
         e = f"if(lt(X,W*({q}*1.35-0.35)),B,if(lt(X,W*({q}*1.35)),{acc},A))"
     elif kind == "dip-accent":  # out through the accent colour and back in
         e = f"if(lt({q},0.5),A+({acc}-A)*{q}*2,{acc}+(B-{acc})*({q}-0.5)*2)"
-    elif kind == "flash":
-        e = f"if(lt({q},0.34),A,if(lt({q},0.67),{acc},B))"
     else:  # card: the next scene grows out of a card in the middle, as product-intro's screenshot does
         k = f"(0.45+0.55*{q}*{q}*(3-2*{q}))"
         sx, sy = f"(W/2+(X-W/2)/{k})", f"(H/2+(Y-H/2)/{k})"
@@ -497,42 +512,91 @@ def burn_filter(o, w):
 
 
 def concat(o, folder, audio, dst, w, h):
+    """Join the scenes. Every segment is counted first: one that isn't its planned length (scene + handle, within a
+    frame) stops the join (exit 2), since a short one would shift every scene after it. Then each scene's own frames
+    and each transition are encoded as separate short pieces (a transition from the two neighbours' tail and head),
+    joined with the concat demuxer, and encoded once with the captions and the audio. The result is measured: its
+    video must be the timeline's length and the audio's, or nothing is handed over."""
+    import shutil, looks
     tl = read_json(o / "timeline.json")
-    segs = []
-    for s in tl["scenes"]:
+    scenes = tl["scenes"]
+    cuts, handle = looks.plan_for(o)
+    accent = film_accent(o)
+    d = [round(s["dur_s"] * 30) for s in scenes]                    # each scene's frames on the clock
+    hd = [round(handle.get(s["id"], 0.0) * 30) for s in scenes]     # and the frames it runs on under the next one's blend
+    fix = "render.py final --scene {}" if folder == "segments" else "render.py draft --scene {}"
+    for s, n, hh in zip(scenes, d, hd):
         p = o / "render" / folder / f"{s['id']}.mp4"
         if not p.exists():
-            emit("stitch", ok=False, user_action=True, message=f"render/{folder}/{s['id']}.mp4 is missing: render or ingest it first")
-        segs.append(p)
-    total = sum(s["dur_s"] for s in tl["scenes"])
-    import looks
-    cuts, handle = looks.plan_for(o)
-    scenes = tl["scenes"]
-    accent = film_accent(o)
-    # each segment is cut (or held) to exactly its scene plus its handle, then the chain blends at the scene starts:
-    # the next scene starts on time and fades in over the previous one's handle, so the voice stays in sync
-    parts = [f"[{i}:v]fps=30,scale={w}:{h},setsar=1,format=yuv420p,"
-             f"tpad=stop_mode=clone:stop_duration={handle.get(s['id'], 0) + 1:.3f},"
-             f"trim=duration={s['dur_s'] + handle.get(s['id'], 0):.4f},setpts=PTS-STARTPTS,settb=1/30,fps=30[v{i}]" for i, s in enumerate(scenes)]
-    acc, start = "v0", scenes[0]["dur_s"]
-    for i, c in enumerate(cuts, 1):
-        nxt = f"x{i}"
-        if c["dur"] > 0:
-            parts.append(f"[{acc}][v{i}]{xfade(c, start, accent)}[{nxt}]")
-        else:
-            parts.append(f"[{acc}][v{i}]concat=n=2:v=1:a=0,settb=1/30,fps=30[{nxt}]")
-        acc, start = nxt, start + scenes[i]["dur_s"]
-    parts.append(f"[{acc}]null" + burn_filter(o, w) + "[out]")
-    cmd = [ffmpeg_exe(), "-v", "error", "-y"]
-    for p in segs:
-        cmd += ["-i", str(p)]
-    if audio.exists():
-        cmd += ["-i", str(audio), "-map", f"{len(segs)}:a", "-c:a", "aac", "-b:a", "192k", "-ar", "48000"]
+            emit("stitch", ok=False, user_action=True, scene=s["id"], message=f"render/{folder}/{s['id']}.mp4 is missing: render or ingest it first")
+        have = streams(p)["frames"]
+        if abs(have - (n + hh)) > 1:
+            how = "stitch.py ingest" if s["visual"] != "anim" else fix.format(s["id"])
+            emit("stitch", ok=False, user_action=True, scene=s["id"], frames=have, want_frames=n + hh,
+                 message=f"{s['id']}: render/{folder}/{s['id']}.mp4 has {have} frames, but the timeline needs {n + hh} "
+                         f"({s['dur_s']:.2f} s + {hh / 30:.2f} s for the next cut). It's stale or short: run {how}, then stitch again.")
+        if (n + hh - have) / 30 > 0.5:
+            log(f"warning: {s['id']} is padded {(n + hh - have) / 30:.2f} s on its last frame (a stale or short source)")
+    tmp = o / "render" / f"join-{folder}"
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True)
+    piece_enc = [*ENC[:2], "-preset", "veryfast", *ENC[4:]]
+
+    def take(i, a, b):  # frames [a, b) of scene i's segment: frame numbers set the clock, held on the last one if short
+        clock = "settb=1/30,setpts=N,fps=30"  # frame n is at n/30 s, whatever the file's own timestamps say
+        return (f"{clock},scale={w}:{h},setsar=1,format=yuv420p,tpad=stop_mode=clone:stop={d[i] + hd[i]},"
+                f"trim=start_frame={a}:end_frame={b},{clock}")
+
+    pieces = []
+
+    def piece(name, ins, fc, want):
+        path = tmp / f"{name}.mp4"
+        cmd = [ffmpeg_exe(), "-v", "error", "-y"]
+        for i in ins:
+            cmd += ["-i", str(o / "render" / folder / f"{scenes[i]['id']}.mp4")]
+        subprocess.run(cmd + ["-filter_complex", fc, "-map", "[out]", "-an", *piece_enc, str(path)], check=True)
+        got = streams(path)["frames"]
+        if got != want:
+            emit("stitch", ok=False, message=f"the join piece {name} came out {got} frames, not {want}")
+        pieces.append(path)
+
+    flash = f"drawbox=x=0:y=0:w=iw:h=ih:t=fill:color=0x{accent.lstrip('#')}@0.55:enable='lt(n,2)'"
+    for i, s in enumerate(scenes):
+        a = hd[i - 1] if i else 0  # the head already shown inside the incoming blend
+        if d[i] - a < 1:
+            emit("stitch", ok=False, user_action=True, message=f"{s['id']} is shorter than the transition into it")
+        flashed = i and cuts[i - 1]["type"] == "flash"  # a hard cut with the accent over the next scene's first two frames
+        piece(f"{i:02d}-{s['id']}", [i], f"[0:v]{take(i, a, d[i])}" + (f",{flash}" if flashed else "") + "[out]", d[i] - a)
+        if i < len(scenes) - 1 and hd[i]:
+            cut = {**cuts[i], "dur": hd[i] / 30}
+            piece(f"{i:02d}-{s['id']}-cut", [i, i + 1],
+                  f"[0:v]{take(i, d[i], d[i] + hd[i])}[a];[1:v]{take(i + 1, 0, hd[i])}[b];[a][b]{xfade(cut, 0, accent)}[out]", hd[i])
+    (tmp / "list.txt").write_text("".join(f"file '{x.resolve().as_posix()}'\n" for x in pieces))
     final = w >= 1920  # what people see: a careful encode; the draft stays quick
     enc = [*ENC[:2], "-preset", "slow" if final else "veryfast", "-crf", str(FINAL_CRF if final else 20), "-tune", "film", *ENC[6:]]
-    cmd += ["-filter_complex", ";".join(parts), "-map", "[out]", *enc, "-t", f"{total:.3f}", "-movflags", "+faststart", str(dst)]
-    subprocess.run(cmd, check=True)
-    return total
+    cmd = [ffmpeg_exe(), "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(tmp / "list.txt")]
+    if audio.exists():
+        cmd += ["-i", str(audio)]
+    cmd += ["-filter_complex", "[0:v]null" + burn_filter(o, w) + "[out]", "-map", "[out]"]  # video first, then the audio
+    if audio.exists():
+        cmd += ["-map", "1:a", "-c:a", "aac", "-b:a", "192k", "-ar", "48000"]
+    subprocess.run(cmd + [*enc, "-movflags", "+faststart", str(dst)], check=True)
+    shutil.rmtree(tmp, ignore_errors=True)
+    got, total = streams(dst), sum(d)
+    if abs(got["frames"] - total) > 1 or (audio.exists() and abs((got["audio_s"] or 0) - got["video_s"]) > 0.05):
+        emit("stitch", ok=False, user_action=True, frames=got["frames"], want_frames=total, video_s=round(got["video_s"], 3),
+             audio_s=got["audio_s"], message=f"{dst.name} came out wrong: video {got['video_s']:.2f} s ({got['frames']} frames), "
+                                             f"audio {got['audio_s']} s, timeline {total / 30:.2f} s. Nothing was handed over.")
+    return total / 30, got
+
+
+def write_final_json(o, got):
+    """final.json: what final.mp4 was made from, so qa.py can tell when it's out of date (its "fresh" gate)."""
+    tl = read_json(o / "timeline.json")
+    src = {"timeline.json": o / "timeline.json", "audio/mix.wav": o / "audio" / "mix.wav",
+           **{f"render/segments/{s['id']}.mp4": o / "render" / "segments" / f"{s['id']}.mp4" for s in tl["scenes"]}}
+    (o / "final.json").write_text(json.dumps({"frames": got["frames"], "video_s": round(got["video_s"], 3), "audio_s": got["audio_s"],
+                                              "sources": {k: file_sha1(p) for k, p in src.items() if p.exists()}}, indent=1))
 
 
 def main():
@@ -546,10 +610,11 @@ def main():
         ingest(o, a.placeholders)
     audio = o / "audio" / "mix.wav"
     if a.cmd == "draft":
-        total = concat(o, "draft", audio, o / "draft.mp4", 960, 540)
+        total, _ = concat(o, "draft", audio, o / "draft.mp4", 960, 540)
         emit("stitch", outputs=[str(o / "draft.mp4")], total_s=round(total, 2), message="draft.mp4 ready to preview")
-    total = concat(o, "segments", audio, o / "final.mp4", *out_size(o))
-    emit("stitch", outputs=[str(o / "final.mp4")], total_s=round(total, 2),
+    total, got = concat(o, "segments", audio, o / "final.mp4", *out_size(o))
+    write_final_json(o, got)
+    emit("stitch", outputs=[str(o / "final.mp4")], total_s=round(total, 2), video_s=round(got["video_s"], 3), audio_s=got["audio_s"],
          message=f"final.mp4: {int(total // 60)}:{total % 60:04.1f}" + ("" if audio.exists() else " (no audio: run score.py and mix.py)"))
 
 

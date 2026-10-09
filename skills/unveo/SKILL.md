@@ -81,11 +81,11 @@ Ask in **rounds**: put every question of a round in one call. In Claude Code, th
 
 When the probe shows a `login_wall`, or the code shows a sign-in unveo can't type into (Google or GitHub sign-in, OTP, CAPTCHA), add the login question from step 7 as question 5. AskUserQuestion takes at most 4 questions, so leave out question 1 when `--quick` or `--guided` answered it; otherwise send question 5 in a second call straight after. In Quick mode, say when the window will open: "A browser window opens once, in a few minutes, for you to log in. Leave it open; unveo records in the background."
 
-Then run `"<PY>" "<SKILL_DIR>/scripts/brief.py" defaults --mode <quick|guided> --narration <ai|own> --lang <en|hi> --limit <s> [--repo-url <github url>]` (add `--fresh` when starting over). It writes every recommended answer into brief.json (focus balanced, captions burned, the region's best voice at +10%, the app's colours, the name) and keeps anything already there; a flag left out keeps the saved answer. Its `still_needed` list is what you write yourself.
+Then run `"<PY>" "<SKILL_DIR>/scripts/brief.py" defaults --mode <quick|guided> --narration <ai|own> --lang <en|hi> --limit <s> [--repo-url <github url>]` (add `--fresh` when starting over). It writes every recommended answer into brief.json (focus balanced, captions burned, the region's best voice at +0%, the app's colours, the name) and keeps anything already there; a flag left out keeps the saved answer. Its `still_needed` list is what you write yourself.
 
-**4. Voice round (Guided only, one call).** For an AI voice, first make samples: `"<PY>" "<SKILL_DIR>/scripts/voice.py" samples --lang <en|hi> --name "<project name>" --rate +10%` and give the paths (`OUT/voice/samples/*.mp3`).
+**4. Voice round (Guided only, one call).** For an AI voice, first make samples: `"<PY>" "<SKILL_DIR>/scripts/voice.py" samples --lang <en|hi> --name "<project name>" --rate +0%` and give the paths (`OUT/voice/samples/*.mp3`).
 > 1. **Which voice?** (AI only) `<region voice 1>` (Recommended) · `<region voice 2>` · `<another accent>`
-> 2. **How fast?** Brisk, +10% (Recommended) · Normal, +0% · Fast, +20% (own voice: this is the pace the teleprompter guides you at)
+> 2. **How fast?** Normal, +0% (Recommended) · Brisk, +10% · Fast, +20% (own voice: this is the pace the teleprompter guides you at)
 > 3. **What should the video focus on?** Balanced: the product plus 1–2 explanations (Recommended) · The product in detail: every main screen, at most 1 explanation · How it works: a shorter tour, 2–3 explanations
 
 At 60 s add "60 s fits about 3 screens, or 2 screens and 1 explanation." Save `voice.voice_id`, `voice.rate` and `focus` in brief.json.
@@ -128,7 +128,7 @@ At 60 s add "60 s fits about 3 screens, or 2 screens and 1 explanation." Save `v
   "project": {"name": "", "source": {"kind": "local", "path": "<root>"}, "repo_url": "", "app_url": "",
               "login": {"needed": false, "user_env": "UNVEO_LOGIN_USER", "password_env": "UNVEO_LOGIN_PASSWORD"}},
   "limit_s": 120, "language": "en", "focus": "balanced", "captions": "burned", "resolution": "2k",
-  "voice": {"provider": "edge", "voice_id": "<voice>", "rate": "+10%"},
+  "voice": {"provider": "edge", "voice_id": "<voice>", "rate": "+0%"},
   "understanding": {"field": "", "problem": "", "product": "", "journey": ["…"],
     "hidden_logic": [{"id": "H1", "title": "", "pattern": "formula-breakdown", "source": ["path:12-40"],
                       "shown_at_step": 3, "selected": true}],
@@ -148,7 +148,7 @@ At 60 s add "60 s fits about 3 screens, or 2 screens and 1 explanation." Save `v
 ## Phase 2: Write
 
 **9. Script.** Read `<SKILL_DIR>/PITCH.md` now. Write `OUT/script.md` in its exact format:
-- a hook first when a screen of the app says a lot on its own (PITCH.md §1): its result moment, 3–5 s, then the title over it
+- a hook first when a screen of the app says a lot on its own (PITCH.md §1, the hook recipe): its result, zoomed, 3–5 s, with a line under 12 words that names it, then the title over it
 - one capture scene per journey step (or `clip` when `capture_enabled` is false)
 - the selected explainers cut in after their `shown_at_step`
 - the impact line in the close scene
@@ -213,7 +213,7 @@ Then ask:
 **15. Design and scene data.**
 1. Read `<SKILL_DIR>/DESIGN.md`. Write `OUT/film/design.json`: the chosen `look`, the video's one recording frame as `display` (window, laptop, float, tilt, split, full), 2–3 `motifs` from the project's world (`render.py icons --search <word>`), and a one-line concept for this project. Put the real logos in too (DESIGN.md, "Logos"): the tools the story names (`mentioned_tools` in repo_scan.json) as a big `icon-row` when the voice names them, and the stack (`logos`) as `built_with` on the product intro and the end card. The look sets the fonts, colours, motion and how recordings are framed; override a field only with a reason. Compose at least one of the context, problem and product-intro scenes for this story (script.py warns otherwise).
 2. Read `<SKILL_DIR>/ENGINE.md` and `<SKILL_DIR>/EXPLAINERS.md`. Write `OUT/film/data/<id>.json` for every `anim:` scene in timeline.json. Use a template where it fits; compose your own scene (`anim:compose`) where the story needs something the templates don't do.
-3. Set explainer `beats` (required for a voiced explainer) and compose `at` values as `"word:<word>"` keys, picking the words in the narration where each beat should land.
+3. Set explainer `beats` (required for a voiced explainer) and compose `at` values as `"word:<word>"` keys, picking the words in the narration where each beat should land. The first block of a scene is always up by 0.25 s; cue only the later ones.
 
 **16. Stills.** Run `"<PY>" "<SKILL_DIR>/scripts/render.py" stills`.
 - Fix every `page_errors` and `design_issues` item (text out of frame or box), and run it again.

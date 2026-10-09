@@ -4,13 +4,21 @@
 
 | Segment | Share | Scenes, in order | Visual |
 |---|---|---|---|
-| `hook` (optional) | — | `s01`: the single most impressive moment of the app (the result screen, the flagged item), 3–5 s, with one spoken line | `capture` (a `reuse` of a later scene's take, CAPTURE.md) or `clip` |
-| `context` | 10% | the title card (2.5 s, no voice) + 1 context scene | `anim:title`, then `anim:compose` (or `anim:context`) |
+| `hook` (optional) | — | `s01`: the app's result, zoomed, 3–5 s, with one spoken line that names it (the hook recipe below) | `capture` (a `reuse` of a later scene's take, CAPTURE.md) or `clip` |
+| `context` | 10% | the title card (a short spoken line, or 1.4 s silent) + 1 context scene (optional) | `anim:title`, then `anim:compose` (or `anim:context`) |
 | `problem` | 15% | 1–2 problem scenes | `anim:compose` or `anim:problem` |
 | `product` | 65% | 1 `anim:product-intro` (4–6 s), then 1 scene per journey step, with the selected explainers cut in | `capture` (or `clip`) + `anim:explainer-<pattern>` |
 | `close` | 10% | 1 close scene, 4–5 s: the impact line spoken, links and credits held about 1.5 s | `anim:close` |
 
-**Open on the hook when the app has a moment worth showing.** Judges decide in the first 3–5 seconds, and a silent title card wastes them. The hook is the end of a later recording, cut from the same take ("This survey stops fake answers before they're saved."). Give the title after it `"backdrop": "<hook id>"` in its data, so the title sits over the hook's last frame instead of on a separate card. A hook takes its words from the product share. Skip it only when no screen of the app says much on its own.
+**Open on the hook when the app has a moment worth showing.** Judges decide in the first 3–5 seconds, and a silent title card wastes them. The hook is the end of a later recording, cut from the same take. Give the title after it `"backdrop": "<hook id>"` in its data, so the title sits over the hook's last frame instead of on a separate card. A hook takes its words from the product share. Skip it only when no screen of the app says much on its own.
+
+**The hook recipe:**
+1. **The result on screen**: the scene the hook reuses ends on its result (a count, a verdict, a flagged item), not on a page still loading.
+2. **Zoomed**: that scene's last step zooms on the result, 1.6–2.2x, so it reads at 28 px or more (CAPTURE.md, "A hook"; QA's `hook` gate checks).
+3. **A line under 12 words that names it**: "Thirty three vulnerabilities, found in one scan." Say what's on screen, not what the product is ("Six AI agents scan your code" names nothing the judge can see; `script.py check` warns).
+4. **Then the title, with a short line of its own** ("This is SentinelOS."), so there's no silence after the hook. A silent title is 1.4 s, so it only works as the opening card; once the voice has started, nothing before the close is silent for over 1 s (QA's `pacing` gate).
+
+**The context is optional.** Open on a person, a moment or a number, never a textbook definition ("Static analysis is…"; `script.py check` fails it). When the hook and the product say enough, leave the context scene out.
 
 Prefer `anim:compose` for the context, problem and intro beats: it's laid out for this story (DESIGN.md §2). The fixed templates are a fallback; a script that uses only them gets a warning.
 
@@ -28,12 +36,12 @@ Seconds per segment: 60 s → 6 / 9 / 39 / 6 · 90 s → 9 / 14 / 58 / 9 · 2 mi
 
 A scene's `target` is your estimate (words ÷ 2.2). The real length comes from its voice clip later, so keep targets honest: `script.py check` warns when a scene's words need noticeably more time than its target.
 
-**Story archetypes.** The table above is the default, *problem → product*. Pick the structure that fits the project, and not the one the last video used (`script.py check` warns on a repeat). Put it in the header: `Story: demo-first`.
+**Story archetypes.** For a dev tool, or anything with a strong result screen, the default is **demo-first**: the hook on the result, then how we got there. Otherwise it's *problem → product* (the table above). Pick the structure that fits the project, and not the one the last video used (`script.py check` warns on a repeat). Put it in the header: `Story: demo-first`.
 
 | Story | Structure | Needs | Fits |
 |---|---|---|---|
-| `problem-product` (default) | context, problem, the product step by step, explainers, close | product, close | civic, research |
-| `demo-first` | the hook on the result, then "here's how we got there", steps, one explainer, close | hook, product, close (0–1 explainer) | consumer apps, dev tools |
+| `demo-first` (default for dev tools and strong result screens) | the hook on the result, then "here's how we got there", steps, one explainer, close | hook, product, close (0–1 explainer) | dev tools, consumer apps, anything whose result screen says it all |
+| `problem-product` (default otherwise) | context, problem, the product step by step, explainers, close | product, close | civic, research |
 | `day-in-the-life` | a named persona from the README's users, their moment of pain, then the product through their eyes | context, problem, product, close | health, education, community |
 | `before-after` | the old way (an `anim:before-after` scene, or a dull recording), then the product side by side | problem, product, close | productivity, automation |
 | `how-it-works` | a short tour, then 2–3 explainers as the main act | product, close (2–3 explainers) | ML, infrastructure, APIs |
@@ -51,7 +59,7 @@ Only `problem-product` checks the time split above; the others keep the word bud
 
 ## 2. Word budget
 
-`script.py budget --limit <s>` gives it: at a normal pace (+0%), 60 s → 113 words · 90 s → 173 · 2 min → 234 · 3 min → 356 (English and Hindi alike). `script.py check` scales it by the brief's `voice.rate`, so at the default +10% it's about a tenth more (90 s → about 191). Split it by the shares above. `script.py check` fails above budget +5% and warns below 85%.
+`script.py budget --limit <s>` gives it: at the default pace (+0%), 60 s → 115 words · 90 s → 176 · 2 min → 237 · 3 min → 358 (English and Hindi alike). `script.py check` scales it by the brief's `voice.rate`, so at +10% it's about a tenth more (90 s → about 193). Split it by the shares above. `script.py check` fails above budget +5% and warns below 85%.
 
 ## 3. How to write for judges
 
@@ -59,14 +67,18 @@ Only `problem-product` checks the time split above; the others keep the word bud
 - Use contractions: "it's", "you'll", "don't".
 - Mix sentence lengths. A short one. Then a longer one that carries a full thought.
 - Talk to the judge ("you"), not about "the user".
-- Avoid lists read aloud, and "brochure" words like leverage, seamless, utilize, cutting-edge, empower or revolutionize. `script.py check` warns about them.
+- **Never read a list aloud** (three or more items in a sentence: "no fix, no proof, and no idea what to patch"). Say the one that matters, or show the list and say what it means. `script.py check` fails on it.
+- **Say each claim once.** The hook, the product intro and the close each say something new (`script.py check` warns when two share a phrase or most of their words).
+- **One rhetorical question per video at most** ("So what's actually running?" is a setup; say the answer). `script.py check` fails on a second.
+- **Show the product within the first quarter** of the video (a hook does it; otherwise keep the context and problem short). `script.py check` fails when it shows later.
+- Avoid "brochure" words like leverage, seamless, utilize, cutting-edge, empower or revolutionize. `script.py check` warns about them.
 - Read it aloud once in your head: if you wouldn't say it to a person, rewrite it.
 
 - **One idea per scene:** one or two sentences, 6 to 15 s each.
 - **Say what's on screen as it happens.** Capture narration follows the clicks: "Pick a state, and every project shows its risk score."
 - **The explainer bridge:**
   - The scene before an explainer ends on the visible result ("…and this one is flagged high risk.").
-  - The explainer opens with the judge's question ("How is that score calculated?").
+  - The explainer says how it works straight away ("The score weighs how severe a bug is above all.").
   - The next capture scene picks up where we left off.
 - **Concrete over abstract.** Real data, users and numbers from the repo. No buzzwords ("revolutionary", "seamless", "leveraging AI").
 - **Never claim** user counts, accuracy or "used by" without a source.
@@ -78,13 +90,13 @@ Only `problem-product` checks the time split above; the others keep the word bud
 
 ```markdown
 # Script: <project name>
-Limit: 2:00 · Language: en · Budget: 234 words · Story: problem-product
+Limit: 2:00 · Language: en · Budget: 237 words · Story: demo-first
 
 ## s01 · hook · capture · target 4 s · steps: s01
 Narration: <one line on what the judge is seeing>. [src: …]
 
-## s02 · context · anim:title · 2.5 s
-(no narration)
+## s02 · context · anim:title · target 1.5 s
+Narration: This is <project>. [brief: project.name]
 On screen: "<project>" · <event> · <team>
 
 ## s02 · context · anim:context · target 9 s

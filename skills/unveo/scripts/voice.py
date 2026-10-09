@@ -1,10 +1,10 @@
 """Make one voice clip per scene from script.md (docs/09). Free voices only.
 
-  voice.py [--scene sNN] [--provider edge|kokoro|own] [--voice <id>] [--rate +10%] [--out unveo-out/.work]
-  voice.py samples [--accent auto|us|uk|in|au|...] [--lang en|hi] [--name "<project>"] [--rate +10%]
+  voice.py [--scene sNN] [--provider edge|kokoro|own] [--voice <id>] [--rate +0%] [--out unveo-out/.work]
+  voice.py samples [--accent auto|us|uk|in|au|...] [--lang en|hi] [--name "<project>"] [--rate +0%]
 
-edge (default): each sentence is voiced on its own and joined with natural, varied pauses and a slight
-change of pace, so it doesn't read like one flat machine take. Exact word timings.
+edge (default): each scene's narration in one call, at one steady pace, so the voice keeps its own rhythm between
+sentences (a take per sentence, joined with silence, sounds stop-start). Exact word timings.
 kokoro: offline fallback, used for every scene if edge fails, so the voice never changes mid-video.
 own: the team's own approved takes from the teleprompter studio (studio.py), in unveo-out/your-voice/sNN.*.
 Scenes whose text and voice settings are unchanged are skipped.
@@ -20,7 +20,7 @@ import script as scriptmod  # noqa: E402
 
 HOME = Path(os.environ.get("UNVEO_HOME", Path.home() / ".unveo"))
 SR = 24000
-VERSION = "v3"  # bump to re-voice everything when the delivery changes
+VERSION = "v4"  # bump to re-voice everything when the delivery changes
 
 # Free edge-tts voices by accent, the most natural first (Multilingual voices have the most human prosody).
 VOICES = {
@@ -78,42 +78,6 @@ def default_voice(lang):
 
 
 # ---------- natural delivery (pure functions, tested)
-
-def split_sentences(text):
-    return [s for s in re.split(r"(?<=[.!?।])\s+", text.strip()) if s.strip()]
-
-
-def _unit(*parts):
-    return int(sha1_of(*parts)[:8], 16) / 0xFFFFFFFF
-
-
-def pause_after(sentence, sid, i):
-    """0.28-0.55 s: longer after long sentences and questions, a little random so it never ticks like a metronome."""
-    base = 0.30 + min(0.12, 0.006 * len(sentence.split())) + (0.06 if sentence.rstrip().endswith("?") else 0)
-    return round(min(0.55, max(0.28, base + (_unit(sid, i, "pause") - 0.5) * 0.08)), 3)
-
-
-def vary_rate(rate, sid, i):
-    """The chosen pace, shifted up to ±3% per sentence."""
-    m = re.fullmatch(r"([+-]?\d+)%", str(rate or "+0%").strip())
-    base = int(m.group(1)) if m else 0
-    v = base + round((_unit(sid, i, "rate") - 0.5) * 6)
-    return f"{v:+d}%"
-
-
-def join_sentences(clips, words, pauses, sr=SR):
-    """Concatenate sentence audio with silence between; shift each sentence's word timings into the joined clip."""
-    out, all_words, t = [], [], 0.0
-    for k, (a, w) in enumerate(zip(clips, words)):
-        out.append(a)
-        all_words += [{"w": x["w"], "t0": round(x["t0"] + t, 3), "t1": round(x["t1"] + t, 3)} for x in w]
-        t += len(a) / sr
-        if k < len(pauses):
-            gap = np.zeros(int(pauses[k] * sr))
-            out.append(gap)
-            t += len(gap) / sr
-    return np.concatenate(out) if out else np.zeros(0), all_words
-
 
 def trim_edges(x, sr=SR, threshold_db=-45, keep_s=0.05):
     """Cut silence at both ends (keep 50 ms); returns the audio and how much was cut from the start."""
@@ -283,19 +247,13 @@ async def edge_clip(text, voice_id, rate, path):
 
 
 def edge_scene(sid, text, voice_id, rate, path):
-    """Voice each sentence, then join with natural pauses."""
-    sents = split_sentences(text)
-    clips, words = [], []
+    """The scene's whole narration in one take, edges trimmed; its word timings shifted to match."""
     with tempfile.TemporaryDirectory() as tmp:
-        for i, s in enumerate(sents):
-            f = Path(tmp) / f"{i}.mp3"
-            w = asyncio.run(edge_clip(s, voice_id, vary_rate(rate, sid, i), f))
-            a, lead = trim_edges(decode(f))
-            clips.append(a)
-            words.append([{"w": x["w"], "t0": max(0.0, x["t0"] - lead), "t1": max(0.0, x["t1"] - lead)} for x in w])
-    audio, all_words = join_sentences(clips, words, [pause_after(s, sid, i) for i, s in enumerate(sents[:-1])])
-    encode_mp3(audio, path)
-    return all_words
+        f = Path(tmp) / "take.mp3"
+        w = asyncio.run(edge_clip(text, voice_id, rate, f))
+        a, lead = trim_edges(decode(f))
+    encode_mp3(a, path)
+    return [{"w": x["w"], "t0": round(max(0.0, x["t0"] - lead), 3), "t1": round(max(0.0, x["t1"] - lead), 3)} for x in w]
 
 
 _kokoro = None
@@ -368,10 +326,10 @@ def main():
     lang = brief.get("language", "en")
     v = brief.get("voice", {})
     if a.cmd == "samples":
-        samples(o, brief, a.accent, a.rate or v.get("rate", "+10%"))
+        samples(o, brief, a.accent, a.rate or v.get("rate", "+0%"))
     provider = a.provider or v.get("provider", "edge")
     voice_id = a.voice or v.get("voice_id") or default_voice(lang)
-    rate = a.rate or v.get("rate", "+10%")
+    rate = a.rate or v.get("rate", "+0%")
     accent = accent_of(voice_id)
     scenes = [s for s in scriptmod.parse((o / "script.md").read_text(encoding="utf-8")) if s["narration"]]
     if a.scene:

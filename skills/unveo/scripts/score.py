@@ -4,7 +4,7 @@ Free, offline, deterministic.
   score.py [--out unveo-out/.work]   ->  audio/score.wav and audio/sfx.wav (48 kHz stereo, the film's length)
 
 The music follows the motion language (looks.MUSIC): a soft pad, a plucked arpeggio, a slow swell with sub bass,
-a ticking pulse, broken-chord keys, a gated pulse, or a driving arp, on one of six progressions, major on a light
+broken-chord keys, a gated pulse, or a driving arp (no note on the eighths reaches past 2 kHz, where the voice lives), on one of six progressions, major on a light
 look and minor on a dark one. A light pulse from the product segment on, a shimmer on each segment change, a swell
 under each explainer, and a fade over the close.
 The effects sit about 24 dB under the voice: a soft tick on each click (capture/sNN-clicks.json), a whoosh under each
@@ -51,18 +51,17 @@ def lowpass(x, cutoff):
 
 
 def note(buf, at, f, length, kind, amp):
-    """Add one note at `at` seconds: pluck (saw, fast decay), keys (sine and overtones, a piano-like decay), tick."""
+    """Add one note at `at` seconds: pluck (saw, fast decay; its overtones stop under 2 kHz), keys (sine and overtones,
+    a piano-like decay)."""
     a = int(at * SR)
     if a >= len(buf):
         return
     m = min(len(buf) - a, int(length * SR))
     t = np.arange(m) / SR
     if kind == "pluck":
-        w = soft_saw(f, t, 4) * np.exp(-t * 7)
-    elif kind == "keys":
+        w = soft_saw(f, t, max(1, min(4, int(2000 // f)))) * np.exp(-t * 7)
+    else:  # keys
         w = (np.sin(2 * np.pi * f * t) + 0.35 * np.sin(4 * np.pi * f * t) + 0.12 * np.sin(6 * np.pi * f * t)) * np.exp(-t * 3.2)
-    else:  # tick: a short, bright blip
-        w = np.sin(2 * np.pi * f * t) * np.exp(-t * 60)
     w[: min(m, 96)] *= np.linspace(0, 1, min(m, 96))  # no click at the onset
     buf[a:a + m] += w * amp
 
@@ -72,7 +71,7 @@ def instrument_layer(kind, n, total, bpm, chords, rng):
     t = np.arange(n) / SR
     bar, beat = 4 * 60 / bpm, 60 / bpm
     out = np.zeros(n)
-    pad_amp = {"pad": 0.12, "swell": 0.10, "pulse": 0.07, "tick": 0.035, "keys": 0.03, "pluck": 0.035, "drive": 0.04}[kind]
+    pad_amp = {"pad": 0.12, "swell": 0.10, "pulse": 0.07, "keys": 0.03, "pluck": 0.035, "drive": 0.04}[kind]
     for i in range(int(total / bar) + 1):  # every instrument sits on a quiet pad, so the harmony is always there
         a, b = int(i * bar * SR), min(n, int((i + 1) * bar * SR + 0.4 * SR))
         if a >= n:
@@ -88,17 +87,14 @@ def instrument_layer(kind, n, total, bpm, chords, rng):
             out[a:b] += soft_saw(hz(m - 12) * (1 + rng.uniform(-0.002, 0.002)), seg) * env * pad_amp
         if kind == "swell":  # sub bass under the root
             out[a:b] += np.sin(2 * np.pi * hz(chord[0] - 24) * seg) * env * 0.22
-        steps = {"pluck": 8, "drive": 8, "keys": 4, "tick": 8}.get(kind, 0)
-        for k in range(steps):  # arpeggios and ticks, on the beat grid
+        steps = {"pluck": 8, "drive": 8, "keys": 4}.get(kind, 0)
+        for k in range(steps):  # arpeggios, on the beat grid
             at = i * bar + k * bar / steps
             if at >= total:
                 break
-            if kind == "tick":
-                note(out, at, 2400 if k % 2 else 3200, 0.05, "tick", 0.10 if k % 2 == 0 else 0.05)
-            else:
-                m = chord[k % 3] + (12 if (k // 3) % 2 else 0)
-                note(out, at, hz(m), 0.5 if kind != "keys" else 1.4, "keys" if kind == "keys" else "pluck", 0.10 if kind != "drive" else 0.12)
-    return lowpass(out, 1600 if kind in ("pluck", "drive", "tick") else 1200)
+            m = chord[k % 3] + (12 if (k // 3) % 2 else 0)
+            note(out, at, hz(m), 0.5 if kind != "keys" else 1.4, "keys" if kind == "keys" else "pluck", 0.10 if kind != "drive" else 0.12)
+    return lowpass(out, 1600 if kind in ("pluck", "drive") else 1200)
 
 
 def build(tl, light, seed, style="glide"):
@@ -118,7 +114,7 @@ def build(tl, light, seed, style="glide"):
     kt = np.arange(k) / SR
     kick = np.sin(2 * np.pi * (50 * kt + 70 * (1 - np.exp(-kt * 25)) / 25)) * np.exp(-kt * 12) * 0.35
     x = prod
-    while x < close and kind != "tick":  # the product's light pulse (every beat for drive, every other beat otherwise)
+    while x < close:  # the product's light pulse (every beat for drive, every other beat otherwise)
         i = int(x * SR)
         j = min(n, i + k)
         music[i:j] += kick[: j - i]

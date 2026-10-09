@@ -68,9 +68,9 @@ class LookStyleTest(unittest.TestCase):
     def test_karaoke_times_each_word_and_keeps_the_line_break(self):
         c = {"words": ["Pick", "a", "state,", "then", "a", "project."], "times": [1.0, 1.3, 1.4, 2.0, 2.2, 2.3], "start": 0.9, "end": 3.0, "split": 3}
         self.assertEqual(captions.ass_text(c, True, {}), "{\\k10}{\\k30}Pick {\\k10}a {\\k60}state,\\N{\\k20}then {\\k10}a {\\k70}project.")
-        self.assertEqual(captions.ass_text(c, False, {"upper": True, "prefix": "> "}), "> PICK A STATE,\\NTHEN A PROJECT.")
+        self.assertEqual(captions.ass_text(c, False, {}), "Pick a state,\\Nthen a project.")  # no prefix, no capitals
 
-    def test_each_look_gets_readable_colours_in_its_own_style(self):
+    def test_every_look_uses_its_body_face_white_on_a_70_percent_black_box(self):
         d = Path(tempfile.mkdtemp())
         (d / "film").mkdir()
         (d / "brief.json").write_text(json.dumps({"palette": {"tokens": {"bg": "#ffffff", "ink": "#111111", "accent": "#4f46e5", "accent2": "#0ea5e9",
@@ -80,7 +80,15 @@ class LookStyleTest(unittest.TestCase):
             head, folder, st = captions.look_style(d)
             self.assertIn("Style: Default,", head)
             self.assertTrue((folder / "geist-semibold.ttf").exists())
-        self.assertTrue(st["italic"])  # editorial: serif italic
+            self.assertEqual((st["size"], st["text"], st["box"], st["italic"]), (44, "#ffffff", "#000000", 0))
+            self.assertIn(",&H4D000000,", head)  # the box: black, 70% opaque
+        self.assertEqual(st["font"], "Inter")  # editorial's body face, not its display serif
+
+    def test_one_clause_per_caption(self):
+        text = "Drop in a repo, hit Start Scan, and the pipeline runs live."
+        words = [{"w": w, "t0": i * 0.3, "t1": i * 0.3 + 0.25} for i, w in enumerate(text.replace(",", "").replace(".", "").split())]
+        cues = captions.group(captions.align(text, words, {}, 5.0), scene_end=5.0)
+        self.assertEqual([c["words"][-1] for c in cues], ["repo,", "Scan,", "live."])
 
 
 class StitchBurnTest(unittest.TestCase):

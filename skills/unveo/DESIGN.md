@@ -33,23 +33,23 @@ The look sets how a video looks; the **motion language** sets how it moves. Ever
 | `glide` | fade and rise | words rise out of a mask | an underline draws in | slow push to 1.03 | the recording grows out of a card | soft pad, 96 BPM | editorial, civic |
 | `snap` | spring pop | words pop | an accent pill | still | an accent bar wipes across | plucked arp, 116 BPM | swiss, neo-brutal |
 | `cinematic` | out of a blur | the line sharpens, tracking tightens | everything else dims | push to 1.05 and a slow pan | through the accent colour | slow swell, sub bass, 80 BPM | product, civic, soft |
-| `typewriter` | appears line by line | typed, with a block cursor | a box around it | none | a hard cut with one accent frame | tick pulse, 120 BPM | terminal, devtools, APIs |
+| `typewriter` | eases up a little (only typed text steps) | typed a character at a time; one block cursor, on the line being typed and 0.4 s after | a box around it | slow push to 1.02 | a hard cut, the accent over its first two frames | soft pad, 104 BPM | devtools, APIs (terminal's third choice) |
 | `draw` | wipes in left to right | written in | a hand-drawn ring | drifts like paper | page-turn slide | broken-chord keys, 90 BPM | notebook, education |
 | `blueprint` | built top down | labels fade in | a dashed underline | slow pan | a wipe | gated pulse, 100 BPM | blueprint, hardware |
 | `stack` | cards slide in from the right | phrases rise together | lifts in the accent | tracks right | slide | plucked arp, 112 BPM | product, soft, SaaS |
 | `kinetic` | scale in fast | words cut in | inverted | quick push | an accent bar wipes across | driving arp, 124 BPM | poster, events, hooks |
 
-Guard rails: one motion language per video, one emphasis per scene, the camera never moves more than 5% (except an explainer's last zoom into its answer), and nothing moves a recording but its own camera (CAPTURE.md).
+Guard rails: one motion language per video, one emphasis per scene, the camera never moves more than 5% (except an explainer's last zoom into its answer), and nothing moves a recording but its own camera (CAPTURE.md) and a slow 3% push across its scene inside its frame (stitch.py), so a held frame never sits frozen under the voice.
 
 ### Transitions
 
-Every cut blends: the next scene starts on time and comes in over the previous scene's last 0.45 s, so nothing jumps and the voice stays in sync. The motion language picks the kind (table above); between two animations glide, cinematic and blueprint fade, draw dissolves, stack slides, and snap, typewriter and kinetic hard cut. The accent wipe, the card, the dip through the accent and the one-frame flash are drawn in the look's accent colour.
+Every cut blends: the next scene starts on time and comes in over the previous scene's last 14 frames (0.47 s; never under 0.3 s), so nothing jumps and the voice stays in sync. The motion language picks the kind (table above); between two animations glide, cinematic and blueprint fade, draw dissolves, stack slides, and snap, typewriter and kinetic hard cut. The accent wipe, the card, the dip through the accent and the flash (a hard cut with the accent over two frames) are drawn in the look's accent colour.
 
 The title and close always fade, and so does a recording into an explainer (the explainer draws over that recording's last frame). Two recordings in a row always hard cut: the app carries on, and a blend would ghost it. Override with `"transition": {"type": "<xfade or drawn name>", "dur": 0.6}` in design.json; `"dur": 0` gives hard cuts.
 
-### Captions match the look
+### Captions
 
-Burned-in captions use the look's typeface and colours: serif italic on paper for editorial and notebook, mono with a `>` for terminal, heavy capitals on the accent for poster, white boxes for product and soft, and so on (the font is fetched once as TrueType; Geist when offline). Contrast is always at least 4.5:1. `"caption_words": true` in brief.json lights each word as it's spoken, karaoke style.
+Burned-in captions are set in the look's body face at 44 px, white on a 70% black box, one clause per caption, with nothing in front of them (the font is fetched once as TrueType; Geist when offline). `"caption_words": true` in brief.json lights each word as it's spoken, karaoke style.
 
 ### Motifs: the project's own world, not generic shapes
 
@@ -74,7 +74,7 @@ A frame with the tools the story is about reads at a glance, and fills the page 
 Where they go:
 - **The tools a story names:** an `icon-row` with `"size": 140` and `{icon, label}` items, landing on the word that names the first one. When the voice says "Cursor, Copilot, Claude, ChatGPT", show those four logos, not text chips.
 - **Chips and points:** `badge-cloud` items and context/problem `points` take `{text, icon}`.
-- **The stack:** `built_with: [logo ids]` (up to 6) on `product-intro` (a row under the one-liner) and `close` (in place of the motifs).
+- **The stack:** `built_with: [logo ids]` (up to 6) on `close` (in place of the motifs) and as an `anim:built-with` beat. Not on `product-intro`: that's the app's moment.
 - **Explainers:** system-map nodes and the model-io `model` take an `icon` (`logos:postgresql`, `logos:openai-icon`), falling back to the glyph for the kind.
 
 Use a logo only for a tool the project really uses or names (cite it like any claim), never to suggest the brand endorses the project. A logo keeps its colours in every look; use motifs, not logos, for the project's own world.
@@ -132,8 +132,8 @@ The templates (ENGINE.md) are a starting library, not the limit. For any animate
 ```json
 {"layout": "split", "blocks": [
   {"type": "kicker", "area": "left", "props": {"text": "How it works"}},
-  {"type": "heading", "area": "left", "props": {"text": "One answer per developer"}, "at": "word:one"},
-  {"type": "flow", "area": "right", "props": {"steps": ["Browser", "Google", "API", "Postgres"]}, "at": 1.4, "enter": "draw"}]}
+  {"type": "heading", "area": "left", "props": {"text": "One answer per developer"}},
+  {"type": "flow", "area": "right", "props": {"steps": ["Browser", "Google", "API", "Postgres"]}, "at": "word:google", "enter": "draw"}]}
 ```
 with the scene heading `anim:compose` in script.md.
 
@@ -144,9 +144,11 @@ with the scene heading `anim:compose` in script.md.
   - `center`: main
   - `hero`: title, main
 - **Blocks:** `kicker`, `heading`, `text`, `big-number`, `list`, `card`, `chip`, `bar`, `flow`, `diagram`, `screenshot` (with `highlight` as fractions of the image), `quote`, `divider`.
-- **`at`:** seconds into the scene, or `"word:<word>"` to start when that word is spoken.
+- **`at`:** seconds into the scene, or `"word:<word>"` to start when that word is spoken. The scene's first block (in reading order, and a kicker above it) is always on screen by 0.25 s, whatever its `at` says: a scene never opens empty under the voice. Use `word:` cues for the later blocks. Without an `at`, blocks enter in reading order: the layout's areas in the order it lists them (left before right, top before bottom), then top to bottom within an area.
 - **`enter`:** `rise` (default), `fade`, `draw` (bars, flows and dividers grow) or `count` (numbers).
-- **Text auto-fits:** it shrinks to fit its area, so it can't overflow.
+- **One type scale for the video** (design.css: `--h1`, `--h2`, `--body`, `--small`, from the look's type scale): the same kind of text is the same size in every scene. Headings are `--h2` (`"level": 1` for `--h1`) in the display face; text, lists, cards and captions use the body face, clearly smaller.
+- **Text auto-fits:** it shrinks to fit its area, so it can't overflow. It grows into a roomy area only a little (1.2x at most), never past 3 lines or under 2 words a line, and a heading never runs past 3 lines.
+- **Emphasis** (`**…**`): the whole phrase is one shape per line. A box or pill only suits 3 words or fewer; a longer phrase gets the underline.
 
 ## 3. Restraint rules (check them before Checkpoint C; in Quick mode, check them yourself)
 
@@ -163,8 +165,9 @@ Then, in Guided mode, ask the user at Checkpoint C: **"Does anything look automa
 ## 4. What render.py checks for you
 
 `render.py stills` reports:
-- **`design_issues`** (it exits 2 until they're fixed): text that runs out of the frame or out of its box.
-- **`design_warnings`:** low contrast, more than 9 boxes in a scene, a frame less than 30% filled (too empty: bigger type, or `centered-hero`, `full-type`, `bento`), and a look or motion that repeats the last video.
+- Every scene at 0.5 s, half way and 90%, so a scene's start is on the sheet too.
+- **`design_issues`** (it exits 2 until they're fixed): text that runs out of the frame or out of its box, a heading over 3 lines, and **voiced but empty**: under 15% of the frame filled 0.8 s after the voice starts (bring the first block in at once; for an explainer, cue its first beat to an early word). Title and kinetic cards are exempt: a few words in big type is their design.
+- **`design_warnings`:** a product-intro one-liner that repeats the narration, low contrast, more than 9 boxes in a scene, a frame less than 30% filled (too empty: bigger type, or `centered-hero`, `full-type`, `bento`), and a look or motion that repeats the last video.
 - The sheet's header names the look, the motion language and the layout family.
 
 Fix every issue: shorten the text, or move the beat to `compose`, which auto-fits.

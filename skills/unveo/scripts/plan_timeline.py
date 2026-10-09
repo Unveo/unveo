@@ -10,8 +10,10 @@ from common import emit, out_dir, read_json, write_json  # noqa: E402
 import script as scriptmod  # noqa: E402
 
 FPS, W, H = 30, 1920, 1080
-TITLE_S, END_HOLD_S = 2.5, 1.5  # the close is short and moving (docs/16 S4)
-LEAD_S, TAIL_ANIM_S, TAIL_REC_S = 0.3, 0.4, 0.5
+TITLE_S, END_HOLD_S = 1.4, 1.5  # a silent title is a beat, not a pause; the close is short and moving (docs/16 S4)
+# gaps by meaning: within a segment the voice runs on (0.15 s in, 0.25 s out); where the segment changes it takes a
+# breath (0.35 + 0.35 s). After a scene held long for its recording, the next voice may start 0.3 s before the cut
+LEAD_IN, TAIL_IN, LEAD_NEW, TAIL_END, PRELAP_S = 0.15, 0.25, 0.35, 0.35, 0.3
 
 
 def frames(t):
@@ -21,32 +23,38 @@ def frames(t):
 def build(scenes, clips, limit_s, needs=None):
     """needs: scene id -> the shortest a recording can be (its take at the fastest retime speed), from capture."""
     out, start = [], 0.0
-    for s in scenes:
+    for k, s in enumerate(scenes):
         c = clips.get(s["id"])
-        if s["template"] == "title" or not c:
+        same_prev = k > 0 and scenes[k - 1]["segment"] == s["segment"]
+        same_next = k + 1 < len(scenes) and scenes[k + 1]["segment"] == s["segment"]
+        if not c:  # a silent title (a voiced one is timed like any animated scene)
             lead = tail = 0.0
             voice_s, dur = 0.0, TITLE_S
         else:
             voice_s = c["dur_s"]
-            lead = LEAD_S
-            tail = (TAIL_REC_S if s["visual"] in ("capture", "clip") else TAIL_ANIM_S) + (END_HOLD_S if s["template"] == "close" else 0)
+            lead = LEAD_IN if same_prev or k == 0 else LEAD_NEW
+            if same_prev and out[-1]["voice"] and out[-1]["tail_s"] > TAIL_IN + PRELAP_S:
+                lead = -PRELAP_S  # the scene before was held for its recording: start speaking over its last moment
+            tail = (TAIL_IN if same_next else TAIL_END) + (END_HOLD_S if s["template"] == "close" else 0)
             dur = max(lead + voice_s + tail, (needs or {}).get(s["id"], 0.0))
         dur = round(frames(dur), 4)
         out.append({"id": s["id"], "segment": s["segment"], "visual": s["visual"], "template": s["template"],
-                    "voice": c["file"] if c and s["template"] != "title" else None, "voice_s": voice_s,
+                    "voice": c["file"] if c else None, "voice_s": voice_s,
                     "lead_s": lead, "tail_s": round(dur - lead - voice_s, 4), "dur_s": dur, "start_s": round(start, 4)})
         start += dur
     return {"fps": FPS, "width": W, "height": H, "limit_s": limit_s, "total_s": round(start, 3), "scenes": out}
 
 
 def snap_to_beat(tl, bpm, limit_s, most=0.35):
-    """Lengthen scene tails (by at most `most` s) so cuts land on the music's beat (docs/16 AU1); the video still fits
-    the limit, so where there's no room it stays as it was."""
-    beat, start, out = 60 / bpm, 0.0, []
-    for s in tl["scenes"]:
+    """Lengthen the tail of a segment's last scene (by at most `most` s) so the cut into the next segment lands on the
+    music's beat (docs/16 AU1). Cuts inside a segment aren't moved: there the voice runs on. Where the video has no
+    room under the limit it stays as it was."""
+    beat, start, out, sc = 60 / bpm, 0.0, [], tl["scenes"]
+    for i, s in enumerate(sc):
         end = start + s["dur_s"]
         extra = math.ceil(round(end / beat, 6)) * beat - end
-        dur = round(frames(s["dur_s"] + extra), 4) if 0 < extra <= most else s["dur_s"]
+        turn = i + 1 == len(sc) or sc[i + 1]["segment"] != s["segment"]
+        dur = round(frames(s["dur_s"] + extra), 4) if turn and 0 < extra <= most else s["dur_s"]
         out.append({**s, "dur_s": dur, "tail_s": round(s["tail_s"] + dur - s["dur_s"], 4), "start_s": round(start, 4),
                     "snap_s": round(dur - s["dur_s"], 4)})  # QA's sync gate allows for it
         start += dur

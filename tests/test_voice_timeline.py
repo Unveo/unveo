@@ -52,10 +52,10 @@ class UnitTest(unittest.TestCase):
         clips = {"s02": {"file": "voice/s02.mp3", "dur_s": 4.0}, "s03": {"file": "voice/s03.mp3", "dur_s": 2.0}}
         tl = plan_timeline.build(scenes, clips, limit_s=60)
         d = {s["id"]: s for s in tl["scenes"]}
-        self.assertEqual(d["s01"]["dur_s"], 2.5)
-        self.assertAlmostEqual(d["s02"]["dur_s"], 0.3 + 4.0 + 0.5, places=2)
-        self.assertAlmostEqual(d["s03"]["dur_s"], 0.3 + 2.0 + 0.4 + 1.5, places=2)  # the close holds 1.5 s (docs/16 S4)
-        self.assertEqual(d["s02"]["start_s"], 2.5)
+        self.assertEqual(d["s01"]["dur_s"], plan_timeline.TITLE_S)  # a silent title is a beat: 1.4 s
+        self.assertAlmostEqual(d["s02"]["dur_s"], 0.35 + 4.0 + 0.35, places=1)  # a new segment each side: a breath
+        self.assertAlmostEqual(d["s03"]["dur_s"], 0.35 + 2.0 + 0.35 + 1.5, places=1)  # the close holds 1.5 s (docs/16 S4)
+        self.assertEqual(d["s02"]["start_s"], plan_timeline.TITLE_S)
         for s in tl["scenes"]:
             self.assertAlmostEqual(s["dur_s"] * 30, round(s["dur_s"] * 30), places=6)  # whole frames
         self.assertAlmostEqual(tl["total_s"], sum(s["dur_s"] for s in tl["scenes"]), places=3)

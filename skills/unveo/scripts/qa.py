@@ -9,10 +9,17 @@ import argparse, json, os, re, subprocess, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import emit, ffmpeg_exe, out_dir, out_size, public_dir, read_json  # noqa: E402
+from common import emit, ffmpeg_exe, file_sha1, out_dir, out_size, public_dir, read_json, streams  # noqa: E402
 
 FIX = {
-    "duration": "Shorten the narration (PITCH.md), re-voice, and re-run from plan_timeline.py.",
+    "duration": "Over the limit: shorten the narration (PITCH.md), re-voice, and re-run from plan_timeline.py. Video and audio "
+                "streams of different lengths: re-run stitch.py final (it stops on a stale or short segment and names it).",
+    "picture": "A frozen or black stretch: re-render or re-ingest the scene it falls in (stitch.py ingest, render.py final "
+               "--scene sNN), then stitch.py final.",
+    "fresh": "final.mp4 is older than what it's made from: re-run stitch.py final, then qa.py.",
+    "hook": "Zoom the hook's source scene closer on its result, or on a bigger part of it (its last step's zoom, scale up to "
+            "2.2, CAPTURE.md \"A hook\"), then capture.py record and stitch.py ingest.",
+    "pacing": "Give the silent stretch a line (a voiced title, PITCH.md), or shorten the pause, then voice.py and plan_timeline.py.",
     "format": "Re-run stitch.py final.",
     "loudness": "Re-run mix.py, then stitch.py final.",
     "pops": "Re-render the scene with the pop: render.py final --scene sNN, then stitch.py final.",
@@ -117,6 +124,10 @@ def clean_script(o, brief, tl):
 def publish(o, brief, tl):
     """Copy what the person wants to see to the top of unveo-out/, with plain names."""
     import shutil
+    got = streams(o / "final.mp4")
+    if got["audio_s"] and got["video_s"] < got["audio_s"] - 0.05:  # a frozen tail would play under the voice
+        emit("qa", ok=False, user_action=True, message=f"final.mp4's video ({got['video_s']:.2f} s) is shorter than its audio "
+                                                       f"({got['audio_s']:.2f} s): not handed over. Re-run stitch.py final.")
     root = public_dir(o)
     done = []
     for src, name in ((o / "final.mp4", "demo-video.mp4"), (o / "captions.srt", "subtitles.srt"),
@@ -138,6 +149,71 @@ def publish(o, brief, tl):
     return done
 
 
+def voice_spans(tl):
+    """[(t0, t1)] where the voice speaks, on the film's clock."""
+    return [(sc["start_s"] + sc.get("lead_s", 0), sc["start_s"] + sc.get("lead_s", 0) + sc.get("voice_s", 0))
+            for sc in tl["scenes"] if sc.get("voice") and sc.get("voice_s")]
+
+
+def overlap(a, b, spans):
+    return sum(max(0.0, min(b, y) - max(a, x)) for x, y in spans)
+
+
+def picture_problems(final, tl, cuts, end_s):
+    """A frozen picture while the voice speaks (over 2.5 s of it), or black for over 0.3 s outside a transition."""
+    err = subprocess.run([ffmpeg_exe(), "-hide_banner", "-i", str(final), "-an", "-vf",
+                          "scale=640:360,freezedetect=n=0.003:d=2.5,blackdetect=d=0.3:pix_th=0.03", "-f", "null", "-"],
+                         capture_output=True, text=True).stderr
+    starts = [float(x) for x in re.findall(r"freeze_start: ([\d.]+)", err)]
+    ends = [float(x) for x in re.findall(r"freeze_end: ([\d.]+)", err)]
+    out, speech = [], voice_spans(tl)
+    for i, a in enumerate(starts):
+        b = ends[i] if i < len(ends) else end_s
+        if overlap(a, b, speech) > 2.5:
+            out.append(f"frozen {a:.1f}–{b:.1f} s while the voice speaks")
+    fades = [(c["at"] - 0.1, c["at"] + c["dur"] + 0.1) for c in cuts if c["dur"] > 0 and c.get("at") is not None]
+    for a, b in re.findall(r"black_start:([\d.]+) black_end:([\d.]+)", err):
+        a, b = float(a), float(b)
+        if not any(x <= a and b <= y for x, y in fades):
+            out.append(f"black {a:.1f}–{b:.1f} s")
+    return out
+
+
+def voice_gaps(o, tl, before_s, longest=1.0):
+    """[(t0, t1)] longer than `longest` where no word is spoken, between the first word and before_s (a silent opening
+    card before the first word is a beat, not a pause)."""
+    vf = o / "voice" / "voice.json"
+    words = {c["scene"]: c.get("words") or [] for c in read_json(vf)["clips"]} if vf.exists() else {}
+    spans = []
+    for sc in tl["scenes"]:
+        if sc.get("voice") and sc.get("voice_s"):
+            at = sc["start_s"] + sc.get("lead_s", 0)
+            spans += [(at + w["t0"], at + w["t1"]) for w in words.get(sc["id"], [])] or [(at, at + sc["voice_s"])]
+    gaps, t = [], None
+    for a, b in sorted(spans):
+        if a >= before_s:
+            break
+        if t is not None and a - t > longest:
+            gaps.append((round(t, 2), round(a, 2)))
+        t = b if t is None else max(t, b)
+    return gaps
+
+
+def hook_reads(o, tl, steps, take):
+    """(px, seconds): how tall the hook's result text stands in a 1080p frame, and how long it's held settled within
+    the first 4 s; None when there's no hook."""
+    h = next((sc for sc in tl["scenes"] if sc["segment"] == "hook"), None)
+    sc = (steps.get(h["id"]) or {}) if h else {}
+    held = [z for z in (take.get(sc.get("reuse")) or {}).get("zooms", []) if z.get("to_end")]
+    if not h or not sc.get("reuse"):
+        return None
+    if not held:
+        return 0.0, 0.0
+    z = held[-1]
+    settled = max(0.0, float(sc.get("last_s", 4.0)) - z["hold_s"])  # stitch.hook's window ends at the hold's end
+    return z.get("px", 0) * z["scale"] * screen_share(o, h["id"]), max(0.0, min(4.0, h["dur_s"]) - settled)
+
+
 def ff_info(path):
     return subprocess.run([ffmpeg_exe(), "-hide_banner", "-i", str(path)], capture_output=True, text=True).stderr
 
@@ -150,15 +226,19 @@ def main():
     final = o / "final.mp4"
     if not final.exists():
         emit("qa", ok=False, user_action=True, message="final.mp4 doesn't exist yet: run stitch.py final")
+    got = streams(final)
     brief = json.loads((o / "brief.json").read_text(encoding="utf-8"))
     tl = read_json(o / "timeline.json")
     gates = []
     gate = lambda name, ok, detail, blocking=True: gates.append({"gate": name, "ok": bool(ok), "detail": detail, "blocking": blocking})
 
     info = ff_info(final)
-    h, m, s = re.search(r"Duration: (\d+):(\d+):([\d.]+)", info).groups()
-    dur = int(h) * 3600 + int(m) * 60 + float(s)
-    gate("duration", dur <= brief["limit_s"] + 0.05, f"{dur:.2f} s (limit {brief['limit_s']} s)")
+    dur, frame = got["video_s"], 1 / 30  # the video stream's own length: the container's is whichever stream runs longer
+    want = sum(round(sc["dur_s"] * 30) for sc in tl["scenes"]) / 30
+    gate("duration", dur <= brief["limit_s"] + 0.05 and abs(dur - want) <= frame + 1e-6
+         and got["audio_s"] is not None and abs(got["audio_s"] - want) <= frame + 1e-6,
+         f"video {dur:.2f} s, audio {got['audio_s'] if got['audio_s'] is None else round(got['audio_s'], 2)} s, "
+         f"timeline {want:.2f} s (limit {brief['limit_s']} s)")
     v = re.search(r"Video: (\w+).*?, (\w+)\(.*?(\d{3,4})x(\d{3,4}).*?, ([\d.]+) fps", info)
     au = re.search(r"Audio: (\w+).*?, (\d+) Hz", info)
     fmt_ok = bool(v and v.group(1) == "h264" and v.group(2).startswith("yuv420p") and (int(v.group(3)), int(v.group(4))) == out_size(o)
@@ -186,14 +266,21 @@ def main():
         seg = o / "render" / "segments" / f"{sc['id']}.mp4"
         want = sc["dur_s"] + handle.get(sc["id"], 0.0)  # a segment runs on by its handle while the next one blends in
         if seg.exists():
-            d = float(re.search(r"Duration: \d+:\d+:([\d.]+)", ff_info(seg)).group(1))
-            if abs(d - want) > 1.5 / 30:
-                bad.append(f"{sc['id']} is {d:.2f} s, timeline says {want:.2f} s (with its transition)")
+            n = streams(seg)["frames"]
+            if abs(n - round(want * 30)) > 1:
+                bad.append(f"{sc['id']} is {n} frames, timeline says {round(want * 30)} (with its transition)")
         own = sc["dur_s"] - sc.get("snap_s", 0)  # less the bit plan_timeline added to land the cut on the beat
         settling = own <= need.get(sc["id"], 0) + 0.1  # a recording held for its last click to settle
         if sc.get("voice") and sc.get("template") != "close" and not settling and own > sc.get("voice_s", 0) + 1.0 + sc.get("lead_s", 0):
             bad.append(f"{sc['id']} runs {own - sc['voice_s']:.1f} s past its voice")
     gate("sync", not bad, "; ".join(bad) or "every segment matches its voice")
+    cuts, _ = looks.plan_for(o)
+    pic = picture_problems(final, tl, cuts, dur)
+    gate("picture", not pic, "; ".join(pic[:4]) or "nothing frozen while the voice speaks, no black frames")
+    made = json.loads((o / "final.json").read_text()) if (o / "final.json").exists() else {}
+    changed = [k for k, v in (made.get("sources") or {}).items() if not (o / k).exists() or file_sha1(o / k) != v]
+    gate("fresh", made.get("sources") and not changed, f"changed since stitch.py final: {', '.join(changed[:4])}" if changed
+         else "made from the current timeline, mix and segments" if made.get("sources") else "no final.json: run stitch.py final")
 
     take = json.loads(rec.read_text()) if rec.exists() else {}
     blanks = []
@@ -205,6 +292,15 @@ def main():
     probs = [x for v in take.values() for x in v.get("problems", [])]
     shown = [f"{x['scene']}: {x['detail']}" for x in probs if x["kind"] == "on screen"]
     gate("app errors", not shown, "; ".join(shown[:3]) or "no error on screen while recording")
+    sf = o / "capture" / "steps.json"
+    reads = hook_reads(o, tl, json.loads(sf.read_text(encoding="utf-8")).get("scenes", {}) if sf.exists() else {}, take)
+    if reads:
+        gate("hook", reads[0] >= 28 and reads[1] >= 2.0, f"the result reads at {reads[0]:.0f} px for {reads[1]:.1f} s of the first "
+             "4 s (needs 28 px for 2 s)" if reads[0] else "the hook's source scene doesn't end on a zoom into its result")
+    close_at = next((sc["start_s"] for sc in tl["scenes"] if sc.get("template") == "close"), dur)
+    gaps = voice_gaps(o, tl, close_at)
+    gate("pacing", not gaps, "silent for over 1 s at " + ", ".join(f"{a:.1f}–{b:.1f} s" for a, b in gaps[:4]) if gaps
+         else "no silence over 1 s before the close")
     quiet = [f"{x['scene']} {x['kind']}: {x['detail'][:90]}" for x in probs if x["kind"] != "on screen"]
     gate("app warnings", not quiet, f"{len(quiet)} during the take, e.g. " + "; ".join(quiet[:2]) if quiet
          else "no console errors or failed requests", blocking=False)
@@ -214,15 +310,16 @@ def main():
                            if any(n.values()) else "no email, phone number or password on screen") if take else "no recordings",
          blocking=False)
     small = []  # the app's typical text, as tall as it ends up in a 1080p video (docs/16 Q3)
+    steps_all = json.loads((o / "capture" / "steps.json").read_text(encoding="utf-8")) if (o / "capture" / "steps.json").exists() else {}
     for sid, v in take.items():
         if v.get("text_px"):
-            crop_w = (v.get("camera") or [{"box": [0, 0, 1920, 1080]}])[0]["box"][2]
+            page_w = 1920 / float((steps_all.get("viewport") or {}).get("zoom", 1.0))  # CSS px across the page
+            crop_w = (v.get("camera") or [{"box": [0, 0, page_w, 1080]}])[0]["box"][2]
             px = v["text_px"] * 1920 / crop_w * screen_share(o, sid)
             if px < 18:
                 small.append(f"{sid} ~{px:.0f} px")
     gate("readable text", not small, f"app text renders small in {', '.join(small)}: add a zoom on that part, or record "
          "with \"viewport\": {\"zoom\": 1.25}" if small else "the app's text reads at 18 px or more", blocking=False)
-    cuts, _ = looks.plan_for(o)
     flashes = []
     for i, c in enumerate(cuts, 1):
         if c["dur"] > 0 and i < len(tl["scenes"]) and c["type"] not in looks.DRAWN - {"card"}:  # those show the accent on purpose

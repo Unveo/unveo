@@ -4,8 +4,7 @@
 
 brief.captions: "burned" (default) · "srt" (file only) · "off".
 Captions show the real words ("MPLADS"), even when voice.say_as makes the voice say "M P lads".
-They match the look (docs/16 CA1): its typeface and colours (serif italic on paper, mono for terminal, heavy capitals
-for poster…). brief.caption_words = true lights each word as it's spoken (karaoke), from the voice's word timings.
+They're set in the look's body face, white on a 70% black box, one clause per caption. brief.caption_words = true lights each word as it's spoken (karaoke), from the voice's word timings.
 """
 import argparse, json, os, re, sys, urllib.request
 from pathlib import Path
@@ -18,21 +17,8 @@ import voice as voicemod  # noqa: E402
 MAX_LINE, MAX_LINES, MAX_DUR, MIN_DUR = 42, 2, 4.0, 1.2
 FONTS = Path(__file__).resolve().parents[1] / "templates" / "film" / "fonts"
 TTF_HOME = Path(os.environ.get("UNVEO_HOME", Path.home() / ".unveo")) / "fonts" / "ttf"
-# per look: typeface (a Google Font, fetched as .ttf for libass; Geist when offline), size, bold, italic, capitals,
-# and colours from the look's palette: text and box ("ink"/"bg"/"accent"/"on" or a hex)
-STYLES = {
-    "editorial": {"font": "Fraunces", "size": 44, "bold": 0, "italic": 1, "text": "ink", "box": "bg"},
-    "civic": {"font": "Source Serif 4", "size": 42, "bold": 1, "italic": 0, "text": "bg", "box": "ink"},
-    "notebook": {"font": "Instrument Serif", "size": 52, "bold": 0, "italic": 1, "text": "ink", "box": "bg"},
-    "terminal": {"font": "JetBrains Mono", "size": 36, "bold": 0, "italic": 0, "text": "accent", "box": "#0b0c0e", "prefix": "> "},
-    "poster": {"font": "Archivo Black", "size": 38, "bold": 0, "italic": 0, "upper": True, "text": "on", "box": "accent"},
-    "swiss": {"font": "Inter Tight", "size": 40, "bold": 1, "italic": 0, "text": "bg", "box": "ink"},
-    "product": {"font": None, "size": 40, "bold": 1, "italic": 0, "text": "ink", "box": "#ffffff"},
-    "blueprint": {"font": "Space Grotesk", "size": 40, "bold": 0, "italic": 0, "text": "ink", "box": "bg"},
-    "neo-brutal": {"font": "Bricolage Grotesque", "size": 42, "bold": 1, "italic": 0, "text": "#111111", "box": "#fdfa8d"},
-    "soft": {"font": "Nunito", "size": 42, "bold": 1, "italic": 0, "text": "ink", "box": "#ffffff"},
-}
-DEFAULT = {"font": None, "size": 40, "bold": 0, "italic": 0, "text": "#ffffff", "box": "#141414"}
+# one caption style for every look: the look's body face at 44 px, white on a black box at 70%, nothing in front
+STYLE = {"size": 44, "bold": 0, "italic": 0, "text": "#ffffff", "box": "#000000", "box_alpha": 0x4D}
 # BorderStyle 4 (libass): one box behind the whole caption, not a box per line; the outline is transparent and only
 # pads the box. MarginV 26 puts it inside the caption band that framed recordings leave free (looks.CAPTION_BAND).
 ASS_HEAD = """[Script Info]
@@ -83,19 +69,14 @@ def ass_colour(hex_, alpha=0):
 
 def look_style(o):
     """This video's caption style and the folder holding its font (for stitch.py's fontsdir)."""
-    import looks, render
+    import looks
     o = Path(o)
     f = o / "film" / "design.json"
     design = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
     look = design.get("look")
-    st = {**DEFAULT, **STYLES.get(look, {})}
-    tokens = json.loads((o / "brief.json").read_text(encoding="utf-8")).get("palette", {}).get("tokens", {})
-    tokens = looks.palette(tokens, look) if look and "accent" in tokens else tokens
-    on = "#111111" if "accent" in tokens and render.contrast("#111111", tokens["accent"]) >= render.contrast("#ffffff", tokens["accent"]) else "#ffffff"
-    pick = lambda v, fb: v if str(v).startswith("#") else ({"on": on}.get(v) or tokens.get(v) or fb)
-    text, box = pick(st["text"], "#ffffff"), pick(st["box"], "#141414")
-    if render.contrast(text, box) < 4.5:  # never unreadable, whatever the palette does
-        text = "#111111" if render.contrast("#111111", box) >= render.contrast("#ffffff", box) else "#ffffff"
+    font = design.get("body_font") or (looks.LOOKS.get(look) or {}).get("body_font")
+    st = {**STYLE, "font": None if font in (None, "app") else font}
+    text, box = st["text"], st["box"]
     folder = o / "captions-fonts"
     folder.mkdir(exist_ok=True)
     name = "Geist SemiBold"
@@ -104,7 +85,7 @@ def look_style(o):
         (folder / src.name).write_bytes(src.read_bytes())
         name = st["font"]
     (folder / "geist-semibold.ttf").write_bytes((FONTS / "geist-semibold.ttf").read_bytes())
-    head = ASS_HEAD.format(font=name, size=st["size"], text=ass_colour(text), box=ass_colour(box, 0x18),
+    head = ASS_HEAD.format(font=name, size=st["size"], text=ass_colour(text), box=ass_colour(box, st["box_alpha"]),
                            dim=ass_colour(text, 0x80), bold=-1 if st["bold"] and src else 0, italic=-1 if st["italic"] else 0)
     return head, folder, st
 
@@ -164,8 +145,8 @@ def group(toks, scene_end):
             else:
                 flush()
         cur.append(t)
-        if re.search(r"[.!?।]['\")\]]*$", t["w"]):
-            flush()
+        if re.search(r"[.!?।]['\")\]]*$", t["w"]) or (len(cur) >= 3 and re.search(r"[,;:]$", t["w"])):
+            flush()  # one sentence, or one clause, per caption
     flush()
     for i, c in enumerate(cues):  # at least MIN_DUR on screen: grow forward, then backward, never overlapping
         nxt = cues[i + 1]["start"] if i + 1 < len(cues) else scene_end
@@ -179,10 +160,8 @@ def group(toks, scene_end):
 
 
 def ass_text(c, karaoke, st):
-    """One caption in ASS: the look's capitals or prefix, \\N between the lines, and {\\k} word timings for karaoke."""
-    words = [w.upper() if st.get("upper") else w for w in c["words"]]
-    if words and st.get("prefix"):
-        words[0] = st["prefix"] + words[0]
+    """One caption in ASS: \\N between the lines, and {\\k} word timings for karaoke."""
+    words = list(c["words"])
     out = []
     if karaoke:  # each word lights up when it's spoken (secondary = not yet)
         ts = c["times"] + [c["end"]]

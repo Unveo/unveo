@@ -11,9 +11,9 @@ UNVEO.scene("explainer-pipeline-flow", {
     root.append(track);
     root.__track = track; root.__trackW = (n - 1) * (w + gap);
     root.__boxes = st.map((s, i) => {
-      const b = h("div", "abs card", null, `left:${left0 + i * (w + gap)}px;top:${y}px;width:${w}px;height:280px;padding:30px;display:flex;flex-direction:column;gap:10px;z-index:2`);
+      const b = h("div", "abs card", null, `left:${left0 + i * (w + gap)}px;top:${y}px;width:${w}px;height:280px;padding:${n > 5 ? 22 : 30}px;display:flex;flex-direction:column;gap:10px;z-index:2`);
       b.innerHTML = `<div class="mono" style="font:600 24px 'Geist Mono';color:var(--accent)">0${i + 1}</div>
-        <div style="font:600 ${n > 4 ? 36 : 42}px/1.12 var(--font-display)">${esc(s.label || s.name)}</div>
+        <div style="font:600 ${n > 5 ? 30 : n > 4 ? 36 : 42}px/1.12 var(--font-display)">${esc(s.label || s.name)}</div>
         <div class="mono" style="margin-top:auto;font:400 23px 'Geist Mono';color:var(--muted);overflow-wrap:anywhere">${esc(s.tool || s.name || "")}</div>`;
       root.append(b);
       return { b, cx: left0 + i * (w + gap) + w / 2 };
@@ -22,7 +22,7 @@ UNVEO.scene("explainer-pipeline-flow", {
       root.__trig = h("div", "abs", `⏱ ${esc(d.trigger.label)}`, `left:${left0}px;top:${y - 90}px;padding:12px 24px;border-radius:999px;background:var(--ink);color:var(--bg);font:500 26px var(--font-display)`);
       root.append(root.__trig);
     }
-    root.__tok = h("div", "abs mono", "", `top:${y + 330}px;padding:14px 24px;border-radius:16px;background:var(--accent2);color:#fff;font:600 26px 'Geist Mono';white-space:nowrap;transform:translateX(-50%);z-index:3`);
+    root.__tok = h("div", "abs mono", "", `top:${y + 330}px;padding:14px 24px;border-radius:16px;background:var(--accent);color:var(--on-accent);font:600 26px 'Geist Mono';white-space:nowrap;transform:translateX(-50%);z-index:3`);
     root.append(root.__tok);
     root.__pay = (d.payloads || []).map(String);
     // a pulse that keeps travelling the track once it's built, so the scene never freezes (docs/16 MO3)

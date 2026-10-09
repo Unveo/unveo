@@ -80,7 +80,7 @@ class TemplatesTest(unittest.TestCase):
         self.assertEqual(code, 0, res)
         self.assertEqual(res["page_errors"], [])
         self.assertTrue((out / "stills/sheet.png").exists())
-        self.assertEqual(len(res["stills"]), len(DATA))
+        self.assertEqual(len(res["stills"]), 3 * len(DATA))  # every scene at 0.5 s, half way and 90%
 
     def test_works_with_the_default_relative_out_folder(self):
         out = make_out(only={"s01"})
@@ -99,6 +99,7 @@ class TemplatesTest(unittest.TestCase):
 class VideoTest(unittest.TestCase):
     def test_draft_and_final_segments_have_the_right_length_and_format(self):
         out = make_out(dur=1.0, only={"s02", "s05"})
+        (out / "film/design.json").write_text(json.dumps({"motion_style": "glide"}))  # not whatever ~/.unveo/history last used
         code, res = run(out, "draft")
         self.assertEqual(code, 0, res)
         import looks

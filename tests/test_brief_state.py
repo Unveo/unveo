@@ -121,7 +121,7 @@ class DefaultsTest(unittest.TestCase):
             b = json.loads((Path(out) / "brief.json").read_text())
         self.assertEqual(code, 0, res)
         self.assertEqual((b["mode"], b["focus"], b["captions"], b["limit_s"]), ("quick", "balanced", "burned", 120))
-        self.assertEqual((b["voice"]["provider"], b["voice"]["rate"]), ("edge", "+10%"))
+        self.assertEqual((b["voice"]["provider"], b["voice"]["rate"]), ("edge", "+0%"))
         self.assertTrue(b["voice"]["voice_id"].endswith("Neural"))
         self.assertEqual(b["palette"]["name"], "project")
         self.assertEqual(b["resolution"], "2k")
@@ -138,7 +138,7 @@ class DefaultsTest(unittest.TestCase):
         self.assertEqual(code, 0, res)
         self.assertEqual((b["voice"]["provider"], b["language"], b["limit_s"]), ("own", "hi", 90))
         self.assertEqual(b["header"]["event"], "HackX")
-        self.assertEqual(b["voice"]["rate"], "+10%")
+        self.assertEqual(b["voice"]["rate"], "+0%")
 
     def test_left_out_flags_keep_saved_answers_and_fresh_forgets_them(self):
         with tempfile.TemporaryDirectory() as out:

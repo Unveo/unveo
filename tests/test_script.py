@@ -11,21 +11,21 @@ REPO = ROOT / "tests/fixtures/next-crud"
 GOOD = """# Script: Civic Watch
 Limit: 2:00 · Language: en
 
-## s01 · context · anim:title · 2.5 s
+## s01 · context · anim:title · 1.4 s
 (no narration)
 On screen: "Civic Watch"
 
-## s02 · context · anim:context · target 9 s
+## s02 · context · anim:context · target 5 s
 Narration: Public works projects often run late and over budget. [src: README.md:3] Citizens rarely see which ones are stuck. [understanding: confirmed]
 
-## s03 · problem · anim:problem · target 12 s
+## s03 · problem · anim:problem · target 4 s
 Narration: Civic Watch tracks every project in one place. [src: README.md:3]
 
-## s04 · product · capture · target 11 s · steps: s04
+## s04 · product · capture · target 14 s · steps: s04
 Narration: Pick a state, and each project shows its risk score. [src: app/dashboard/[state]/page.tsx:1-7]
 
 ## s05 · product · anim:explainer-formula-breakdown · target 12 s · logic: H1
-Narration: The score weighs delay, cost overrun and missing documents. [src: lib/score.ts:2-8]
+Narration: The score weighs how late a project runs more than anything else. [src: lib/score.ts:2-8]
 
 ## s06 · close · anim:close · target 8 s
 Narration: Now anyone can see where public money is stuck. [brief: close.impact_line]
@@ -48,13 +48,48 @@ def check(text, brief=BRIEF, shots=None):
         return p.returncode, json.loads(p.stdout.strip().splitlines()[-1])
 
 
+class TellingTest(unittest.TestCase):
+    def test_a_list_read_aloud_is_an_error_but_two_clauses_are_not(self):
+        bad = GOOD.replace("Pick a state, and each project shows its risk score.", "You get the delay, the overrun, and the missing papers.")
+        code, out = check(bad)
+        self.assertEqual(code, 2)
+        self.assertTrue(any("s04: a list read aloud" in e for e in out["errors"]), out["errors"])
+        code, out = check(GOOD)  # "Pick a state, and each project shows its risk score." is two clauses, not a list
+        self.assertEqual(code, 0, out["errors"])
+
+    def test_a_textbook_opening_and_two_rhetorical_questions_are_errors(self):
+        bad = GOOD.replace("Public works projects often run late and over budget.", "Public works tracking is the practice of following budgets.")
+        bad = bad.replace("Now anyone can see where public money is stuck.", "Where is the money? Now anyone can see where public money is stuck.")
+        bad = bad.replace("[src: lib/score.ts:2-8]", "How is it scored? [src: lib/score.ts:2-8]", 1)
+        code, out = check(bad)
+        self.assertTrue(any("opens on a definition" in e for e in out["errors"]), out["errors"])
+        self.assertTrue(any("2 rhetorical questions" in e for e in out["errors"]), out["errors"])
+
+    def test_the_product_shows_within_the_first_quarter(self):
+        code, out = check(GOOD.replace("anim:problem · target 4 s", "anim:problem · target 14 s"))
+        self.assertTrue(any("product first shows" in e for e in out["errors"]), out["errors"])
+
+    def test_a_hook_that_names_nothing_it_shows_and_a_repeated_claim_warn(self):
+        scenes = [{"id": "s01", "segment": "hook", "template": None, "narration": "Six AI agents fix your code. [src: a:1]"},
+                  {"id": "s05", "segment": "product", "template": "product-intro", "narration": "It hands every finding to six AI agents. [src: a:1]"}]
+        with tempfile.TemporaryDirectory() as o:
+            (Path(o) / "capture").mkdir()
+            (Path(o) / "capture/steps.json").write_text(json.dumps({"scenes": {"s01": {"reuse": "s07"}}}))
+            (Path(o) / "capture/record.json").write_text(json.dumps({"s07": {"zooms": [{"to_end": True, "text": "33 Vulnerabilities Found 66 FILES"}]}}))
+            w = script.claim_warnings(o, scenes)
+            self.assertTrue(any("names nothing its result shows" in x for x in w), w)
+            self.assertTrue(any("same claim" in x for x in w), w)
+            scenes[0]["narration"] = "Thirty three vulnerabilities, found in one scan. [src: a:1]"
+            self.assertFalse(any("names nothing" in x for x in script.claim_warnings(o, scenes)))
+
+
 class BudgetTest(unittest.TestCase):
     def test_budget_words_match_the_spec_table(self):
-        self.assertEqual([script.budget_words(s) for s in (60, 90, 120, 180)], [113, 173, 234, 356])
+        self.assertEqual([script.budget_words(s) for s in (60, 90, 120, 180)], [115, 176, 237, 358])
 
     def test_faster_voice_fits_more_words(self):
-        self.assertEqual(script.budget_words(120, "en", "+10%"), 257)
-        self.assertEqual(script.budget_words(120, "en", "+0%"), 234)
+        self.assertEqual(script.budget_words(120, "en", "+10%"), 260)
+        self.assertEqual(script.budget_words(120, "en", "+0%"), 237)
         self.assertEqual(script.rate_factor("-5%"), 0.95)
 
 
@@ -65,7 +100,7 @@ class ParseTest(unittest.TestCase):
         s5 = scenes[4]
         self.assertEqual((s5["segment"], s5["visual"], s5["template"], s5["logic"]), ("product", "anim", "explainer-formula-breakdown", "H1"))
         self.assertEqual(scenes[3]["steps"], "s04")
-        self.assertEqual(scenes[0]["target_s"], 2.5)
+        self.assertEqual(scenes[0]["target_s"], 1.4)
         self.assertEqual(script.spoken(scenes[1]["narration"]),
                          "Public works projects often run late and over budget. Citizens rarely see which ones are stuck.")
 
@@ -75,7 +110,7 @@ class CheckTest(unittest.TestCase):
         code, out = check(GOOD)
         self.assertEqual(code, 0, out)
         self.assertEqual(out["errors"], [])
-        self.assertEqual(out["budget"], 113)
+        self.assertEqual(out["budget"], 115)
 
     def test_a_hook_may_open_before_the_title(self):
         hook = GOOD.replace("## s01 · context · anim:title", "## s00 · hook · capture · target 4 s · steps: s00\n"
@@ -96,7 +131,7 @@ class CheckTest(unittest.TestCase):
         self.assertTrue(any("isn't one of" in e for e in out["errors"]))
 
     def test_flat_rhythm_is_a_warning_and_a_punch_scene_fixes_it(self):
-        flat = GOOD.replace("target 9 s", "target 11 s").replace("target 12 s", "target 11 s")
+        flat = GOOD.replace("target 5 s", "target 11 s").replace("target 4 s", "target 11 s").replace("target 14 s", "target 11 s").replace("target 12 s", "target 11 s")
         _, out = check(flat)
         self.assertTrue(any("rhythm is flat" in w for w in out["warnings"]), out["warnings"])
         punchy = flat.replace("## s03 · problem · anim:problem · target 11 s", "## s03 · problem · anim:kinetic · target 3 s")
@@ -144,7 +179,7 @@ class CheckTest(unittest.TestCase):
         self.assertTrue(any("dash" in e for e in out["errors"]))
 
     def test_clip_scene_needs_a_shot(self):
-        clip = GOOD.replace("## s04 · product · capture · target 11 s · steps: s04", "## s04 · product · clip · target 11 s")
+        clip = GOOD.replace("## s04 · product · capture · target 14 s · steps: s04", "## s04 · product · clip · target 14 s")
         _, out = check(clip)
         self.assertTrue(any("shots.md" in e for e in out["errors"]))
         code, out = check(clip, shots="## shot-01 → scene s04 · target 12 s · save as clips/shot-01.mp4\n")
@@ -155,7 +190,7 @@ class CheckTest(unittest.TestCase):
         self.assertEqual(out["errors"], [])
 
     def test_scene_longer_than_its_target_is_a_warning(self):
-        _, out = check(GOOD.replace("## s03 · problem · anim:problem · target 12 s", "## s03 · problem · anim:problem · target 2 s"))
+        _, out = check(GOOD.replace("## s03 · problem · anim:problem · target 4 s", "## s03 · problem · anim:problem · target 2 s"))
         self.assertTrue(any(w.startswith("s03:") for w in out["warnings"]), out["warnings"])
 
     def test_stiff_wording_gets_a_warning(self):

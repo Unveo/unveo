@@ -163,6 +163,21 @@ def answers(url):
         return False
 
 
+def one_per_folder(run, repo):
+    """One server per folder: npm run dev and npm start in the same folder would race for its port. A built app
+    (.next/BUILD_ID, dist or build; a dev server's .next alone isn't a build) runs its production start, so no dev
+    overlay ends up in the video; otherwise dev."""
+    by = {}
+    for h in run:
+        by.setdefault(h["cwd"], []).append(h)
+    out = []
+    for cwd, hs in by.items():
+        prod = [h for h in hs if re.search(r"\b(npm|yarn|pnpm)( run)? start\b|\bnext start\b", h["cmd"])]
+        built = any((Path(repo) / cwd / d).exists() for d in (".next/BUILD_ID", "dist", "build"))
+        out.append((prod if built and prod else [h for h in hs if h not in prod] or hs)[0])
+    return out
+
+
 def start(repo, o):
     p = plan(repo)
     if p["blockers"]:
@@ -172,9 +187,8 @@ def start(repo, o):
     logs = o / "app"
     logs.mkdir(parents=True, exist_ok=True)
     procs, urls = [], []
-    for i, h in enumerate(p["run"]):
-        if h["from"] == "README" and any(x["cwd"] == h["cwd"] and x["from"] != "README" for x in p["run"]):
-            continue  # package.json already covers this folder
+    run = [h for h in p["run"] if not (h["from"] == "README" and any(x["cwd"] == h["cwd"] and x["from"] != "README" for x in p["run"]))]
+    for i, h in enumerate(one_per_folder(run, repo)):  # README hints only where package.json says nothing
         cwd = (repo / h["cwd"]).resolve()
         port = h.get("port") or 0
         env = dict(os.environ)

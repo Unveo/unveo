@@ -4,7 +4,10 @@
 html, body { background: #000; overflow: hidden; text-wrap: pretty; }  /* no one-word last lines */
 #stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: hidden; transform-origin: 0 0;
   background: var(--bg); color: var(--ink); font-family: var(--font-body, "Geist"), system-ui, sans-serif; font-feature-settings: "tnum"; }
-:root { --font-display: "Geist"; --font-body: "Geist"; --motion-speed: 1; }
+:root { --font-display: "Geist"; --font-body: "Geist"; --motion-speed: 1;
+  /* one type scale for the whole video (design.css sets it from the look): the same kind of text is the same size in
+     every scene. The display face is for headings only; lists, cards and captions use the body face, smaller */
+  --h1: 104px; --h2: 64px; --body: 34px; --small: 26px; }
 /* background treatments (design.json "background"): plain is the default; nothing glows */
 #stage.bg-paper { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
 #stage.bg-app-shot::before { content: ""; position: absolute; inset: -40px; background: url("assets/probe.png") center/cover; filter: blur(28px) saturate(.6); opacity: .14; }
@@ -17,7 +20,8 @@ html, body { background: #000; overflow: hidden; text-wrap: pretty; }  /* no one
 .mono { font-family: "Geist Mono", ui-monospace, monospace; }
 .w { display: inline-block; white-space: pre; }
 .mask { display: inline-block; overflow: hidden; vertical-align: bottom; padding-bottom: .08em; position: relative; }
-.em { display: inline-block; }
+/* the one emphasis: inline, so a phrase that wraps gets its box or underline drawn once per line (core.js emphasis) */
+.em { display: inline; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 /* the typewriter's block cursor rides the letter being typed (core.js riseWords "type") */
 .mask.cur::after { content: ""; position: absolute; left: calc(var(--f, 1) * 100%); top: .12em; bottom: .14em; width: .45em; background: var(--accent); }
 .cam { position: absolute; inset: 0; transform-origin: 0 0; }

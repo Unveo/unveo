@@ -7,12 +7,12 @@ Each explainer scene gets `OUT/film/data/<scene>.json`, filled **from the code y
 - `example_data: true` whenever a number isn't real data shown on screen. The template then shows an "Example data" tag.
 - Outside APIs stay black boxes: what goes in, what comes back.
 - More than 5 inputs or 6 stages: show the biggest and say "+ N more" in the narration. Never invent.
-- `title` is the judge's question, matching the narration ("How is Priority calculated?").
-- `beats`: **required when the scene is voiced**, one per beat. Each is a time in seconds inside the scene, or `"word:<word>"` to start just as that word is spoken, e.g. `[0, "word:google", "word:every"]`. `render.py stills` stops with a `sync` issue when a voiced explainer has none, or a `word:` isn't in the narration. Without beats the animation spreads evenly and drifts from the voice.
+- `title` names what the explainer shows, as a short heading or a question on screen ("How Priority is calculated"). The voice says the answer, not the question (one rhetorical question per video at most, `script.py check`).
+- `beats`: **required when the scene is voiced**, one per beat. Each is a time in seconds inside the scene, or `"word:<word>"` to start just as that word is spoken, e.g. `[0, "word:google", "word:every"]`. The first beat (the heading) is always on by 0.25 s; cue the second to an early word, so the scene isn't empty under the voice. `render.py stills` stops with a `sync` issue when a voiced explainer has none, or a `word:` isn't in the narration. Without beats the animation spreads evenly and drifts from the voice.
 
 ## formula-breakdown (scores, rankings, indices). Beats: question · inputs · weights · combine · result
 ```json
-{"title": "How is Priority calculated?", "source": ["engine/score.py:52-87"], "example_data": true,
+{"title": "How Priority is calculated", "source": ["engine/score.py:52-87"], "example_data": true,
  "inputs": [{"name": "strength", "label": "Finding strength", "example": 0.62, "weight": 1},
             {"name": "exposure", "label": "Money at stake", "example": 0.8, "weight": 0.5}],
  "expression": "priority = 100 × s × (0.5 + 0.5 × E)",

@@ -46,7 +46,7 @@ LOOKS = {
 STYLE = {
     "editorial": {"motion": ["glide", "cinematic", "draw"], "type_scale": 1.15, "layout_family": "editorial"},
     "swiss": {"motion": ["snap", "stack", "kinetic"], "type_scale": 1.4, "layout_family": "grid", "background": "dots"},
-    "terminal": {"motion": ["typewriter", "snap", "blueprint"], "type_scale": 1.2, "layout_family": "grid"},
+    "terminal": {"motion": ["glide", "stack", "typewriter"], "type_scale": 1.2, "layout_family": "grid"},
     "notebook": {"motion": ["draw", "glide", "stack"], "type_scale": 1.2, "layout_family": "editorial"},
     "poster": {"motion": ["kinetic", "snap", "cinematic"], "type_scale": 1.6, "layout_family": "centered"},
     "product": {"motion": ["stack", "cinematic", "glide"], "type_scale": 1.25, "layout_family": "grid", "background": "radial"},
@@ -57,7 +57,7 @@ STYLE = {
 }
 MOTION_STYLES = ("glide", "snap", "cinematic", "typewriter", "draw", "blueprint", "stack", "kinetic")
 # the score for each motion language (docs/16 AU1): score.py's instrument and its tempo; plan_timeline snaps cuts to the beat
-MUSIC = {"glide": ("pad", 96), "snap": ("pluck", 116), "cinematic": ("swell", 80), "typewriter": ("tick", 120),
+MUSIC = {"glide": ("pad", 96), "snap": ("pluck", 116), "cinematic": ("swell", 80), "typewriter": ("pad", 104),
          "draw": ("keys", 90), "blueprint": ("pulse", 100), "stack": ("pluck", 112), "kinetic": ("drive", 124)}
 
 
@@ -83,11 +83,12 @@ FITS = {
 }
 
 
-T_DEFAULT = 0.45  # seconds a transition overlaps the next scene
+T_DEFAULT = 14 / 30  # seconds a transition overlaps the next scene: whole frames, so every piece of the join is exact
+T_MIN = 0.3  # the shortest blend: a shorter one has no frames to spare when a segment is a frame off
 # per motion language (docs/16 MO2): the cut into or out of a recording, and the cut between two animations
 # (None = a hard cut). Besides ffmpeg's xfade names, stitch.py draws its own: accent-wipe (a bar in the accent colour
 # sweeps across), card (the next scene grows out of a card in the middle), dip-accent (through the accent colour),
-# flash (a hard cut with one accent frame)
+# flash (a hard cut; stitch.py lays the accent over the first two frames of the next scene)
 TRANSITIONS = {
     "glide": {"rec": "card", "anim": "fade"},
     "snap": {"rec": "accent-wipe", "anim": None},
@@ -99,7 +100,6 @@ TRANSITIONS = {
     "kinetic": {"rec": "accent-wipe", "anim": None},
 }
 DRAWN = {"accent-wipe", "card", "dip-accent", "flash"}
-T_FLASH = 2 / 30
 
 
 def motion_of(look, design=None):
@@ -125,8 +125,9 @@ def cuts(scenes, look, design=None):
         else:
             kind = rule["rec"]
         kind = over.get("type", kind)
-        dur = float(over.get("dur", T_FLASH if kind == "flash" else T_DEFAULT)) if kind else 0.0
-        out.append({"type": kind or "fade", "dur": round(dur, 3), "at": b.get("start_s")})
+        dur = float(over.get("dur", T_DEFAULT)) if kind and kind != "flash" else 0.0
+        dur = max(T_MIN, round(dur * 30) / 30) if dur > 0 else 0.0
+        out.append({"type": kind or "fade", "dur": dur, "at": b.get("start_s")})
     return out
 
 

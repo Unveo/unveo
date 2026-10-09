@@ -14,9 +14,8 @@
     ioC: k => (k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2),
     outExpo: k => (k >= 1 ? 1 : 1 - Math.pow(2, -10 * k)),
     outBack: k => { const c = 1.70158, c3 = c + 1; return 1 + c3 * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2); },
-    steps: k => Math.ceil(k * 5) / 5,
     // a spring with no overshoot (critically damped), mapped onto 0..1
-    soft: k => (k >= 1 ? 1 : 1 - (1 + 6 * k) * Math.exp(-6 * k)) / (1 - 7 * Math.exp(-6)),
+    soft: k => (k >= 1 ? 1 : (1 - (1 + 6 * k) * Math.exp(-6 * k)) / (1 - 7 * Math.exp(-6))),  // exactly 1 at the end
   };
   // closed-form spring 0 -> 1 (underdamped), t in seconds since start
   const spring = (t, f = 2.0, z = 0.6) => (t <= 0 ? 0 : 1 - Math.exp(-z * 2 * Math.PI * f * t) * Math.cos(2 * Math.PI * f * Math.sqrt(1 - z * z) * t));
@@ -31,16 +30,17 @@
   const STYLES = {
     glide: { speed: 1, ease: null, text: "rise", emph: "underline",
       enter: (k, dy) => ({ o: k * 1.4, tf: `translateY(${(1 - k) * dy * 0.7}px)` }),
-      cam: q => ({ s: 1 + 0.03 * E.ioC(q) }) },
+      cam: q => ({ s: 1 + 0.03 * q }) },  // a steady push: an eased one barely moves for the first quarter of a long scene
     snap: { speed: 1.45, ease: E.outExpo, text: "pop", emph: "pill",
       enter: k => ({ o: k * 2.5, tf: `scale(${0.92 + 0.08 * E.outBack(k)})` }),
       cam: () => ({ s: 1 }) },
     cinematic: { speed: 0.72, ease: E.ioC, text: "blur", emph: "spot",
       enter: (k, dy) => ({ o: k * 1.2, tf: `translateY(${(1 - k) * dy * 0.3}px)`, filter: `blur(${(1 - k) * 12}px)` }),
       cam: q => ({ s: 1 + 0.05 * E.ioC(q), x: 10 - 20 * q }) },
-    typewriter: { speed: 1.2, ease: E.steps, text: "type", emph: "box",
-      enter: k => ({ o: k > 0.01 ? 1 : 0, clip: `inset(0 0 ${(1 - k) * 100}% 0)` }),
-      cam: () => ({ s: 1 }) },
+    // typed text steps a character at a time; everything else eases in like the rest (a stepped card looks broken)
+    typewriter: { speed: 1.2, ease: E.outC, text: "type", emph: "box",
+      enter: (k, dy) => ({ o: k * 1.6, tf: `translateY(${(1 - k) * dy * 0.5}px)` }),
+      cam: q => ({ s: 1 + 0.02 * q }) },
     draw: { speed: 0.95, ease: E.outC, text: "wipe", emph: "circle",
       enter: k => ({ o: k * 3, clip: `inset(-4% ${(1 - k) * 104}% -4% -4%)` }),
       cam: (q, t) => ({ s: 1.01, x: Math.sin(t * 0.5) * 6, y: Math.cos(t * 0.4) * 4 }) },
@@ -69,34 +69,37 @@
     return el;
   };
   const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  // text with its one emphasis: **the key words** become <span class="em"> (CORE.emphasis draws it)
+  // text with its one emphasis: **the key words** become one <span class="em"> (CORE.emphasis draws it)
   const rich = s => esc(String(s == null ? "" : s)).replace(/\*\*(.+?)\*\*/, '<span class="em">$1</span>').replace(/\*\*/g, "");
-  // word-by-word text: build once, then animate per frame. **marked** words get .em
+  // word-by-word text: build once, then animate per frame. The **marked** phrase is one .em around its words, so its
+  // box or underline is one shape per line, not one per word
   function words(el, text) {
-    const marked = String(text == null ? "" : text)  // \u0001 marks each word of the first **group**
-      .replace(/\*\*(.+?)\*\*/, (_, g) => g.split(/\s+/).map(w => "\u0001" + w).join(" ")).replace(/\*\*/g, "");
-    el.innerHTML = marked.split(/\s+/).filter(Boolean).map(w =>
-      `<span class="mask"><span class="w${w[0] === "\u0001" ? " em" : ""}">${esc(w.replace("\u0001", ""))}</span></span>`).join(" ");
+    const word = w => `<span class="mask"><span class="w">${esc(w)}</span></span>`;
+    const run = t => t.split(/\s+/).filter(Boolean).map(word).join(" ");
+    const m = String(text == null ? "" : text).match(/^([\s\S]*?)\*\*(.+?)\*\*([\s\S]*)$/);
+    el.innerHTML = m ? [run(m[1]), `<span class="em">${run(m[2])}</span>`, run(m[3].replace(/\*\*/g, ""))].filter(Boolean).join(" ")
+      : run(String(text == null ? "" : text).replace(/\*\*/g, ""));
     el.__w = [...el.querySelectorAll(".w")];
     el.__ls = el.style.letterSpacing || "0em";
     return el;
   }
   function riseWords(el, t, t0, stagger = 0.055, d = 0.55) {
     const mode = style().text, W = el.__w;
-    if (mode === "type") {  // typed at speech pace; a block cursor rides the last letter
-      const cps = 30 * speed(), lens = W.map(w => w.textContent.length + 1);
-      let n = Math.max(0, (t - t0) * cps), cur = null;
+    if (mode === "type") {  // typed a character at a time at speech pace; a block cursor rides the line being typed
+      const cps = 30 * speed(), lens = W.map(w => w.textContent.length + 1), all = lens.reduce((a, b) => a + b, 0);
+      let n = Math.max(0, Math.floor((t - t0) * cps)), cur = null;
       W.forEach((w, i) => {
         const f = clamp(n / lens[i]);
         n -= lens[i];
         w.style.opacity = f > 0 ? 1 : 0;
-        w.style.clipPath = f < 1 ? `inset(0 ${(1 - f) * 100}% 0 0)` : "";
+        w.style.clipPath = f < 1 ? `inset(-10% ${(1 - f) * 100}% -10% 0)` : "";
         w.parentElement.classList.remove("cur");
         if (f > 0 && f < 1) cur = [w, f];
       });
-      const done = (t - t0) * cps >= lens.reduce((a, b) => a + b, 0);
-      if (!cur && done && Math.floor((t - t0) * 2) % 2 === 0 && t - t0 < 30) cur = [W[W.length - 1], 1];
-      if (cur) { cur[0].parentElement.classList.add("cur"); cur[0].parentElement.style.setProperty("--f", cur[1]); }
+      const left = t - t0 - all / cps;  // seconds since the line finished: the cursor stays 0.4 s, then goes
+      if (!cur && left >= 0 && left < 0.4) cur = [W[W.length - 1], 1];
+      if (cur) cursor.claim(t0, () => { cur[0].parentElement.classList.add("cur"); cur[0].parentElement.style.setProperty("--f", cur[1]); },
+                            () => cur[0].parentElement.classList.remove("cur"));
       return;
     }
     if (mode === "blur") {  // the line sharpens out of a blur while its letter-spacing tightens
@@ -134,41 +137,53 @@
     });
   }
   function rise(el, k, dy = 36) { sfx(el, k, dy, style().enter(k, dy)); }
-  // the scene's one emphasis (docs/16 MO1): drawn on every .em once it has arrived; k 0..1
+  // one cursor on screen at most: the line that started typing last keeps it (film.js resets this every frame).
+  // key: when it started, in scene seconds (bigger = later)
+  const cursor = {
+    owner: null,
+    reset() { this.owner = null; },
+    claim(key, show, hide) {
+      if (this.owner && this.owner.key > key) return hide();
+      if (this.owner) this.owner.hide();
+      this.owner = { key, hide };
+      show();
+    },
+  };
+  // the scene's one emphasis (docs/16 MO1): drawn on the .em phrase once it has arrived; k 0..1. The .em is inline,
+  // and box-decoration-break: clone gives a phrase that wraps one clean shape per line. A box or pill only suits
+  // a few words: a longer phrase gets the underline
   function emphasis(root, k) {
     const ems = [...root.querySelectorAll(".em")];
     if (!ems.length) return;
-    const kind = style().emph, acc = "var(--accent)";
-    if (kind === "spot") root.querySelectorAll(".w:not(.em)").forEach(w => { w.style.opacity = Math.min(Number(w.style.opacity || 1), 1 - 0.3 * k); });
+    const acc = "var(--accent)", mix = (c, a) => `color-mix(in srgb, ${c} ${Math.round(clamp(a) * 100)}%, transparent)`;
     ems.forEach((em, i) => {
-      if (k > 0 && em.parentElement.classList.contains("mask")) em.parentElement.style.overflow = "visible";
+      let kind = style().emph;
+      if (["box", "pill", "invert", "circle"].includes(kind) && em.textContent.trim().split(/\s+/).length > 3) kind = "underline";
       const s = em.style;
+      if (kind === "spot") root.querySelectorAll(".w").forEach(w => { if (!w.closest(".em")) w.style.opacity = Math.min(Number(w.style.opacity || 1), 1 - 0.3 * k); });
       if (kind === "underline" || kind === "dash") {
         s.backgroundImage = kind === "dash" ? `repeating-linear-gradient(90deg, ${acc} 0 .3em, transparent .3em .5em)` : `linear-gradient(${acc}, ${acc})`;
-        s.backgroundRepeat = "no-repeat"; s.backgroundPosition = "0 96%"; s.backgroundSize = `${clamp(k * ems.length - i) * 100}% .08em`;
+        s.backgroundRepeat = "no-repeat"; s.backgroundPosition = "0 100%"; s.backgroundSize = `${clamp(k) * 100}% .08em`;
+      } else if (kind === "box") {  // a ring drawn with box-shadow: unlike outline, it follows each line of the phrase
+        s.boxShadow = `0 0 0 .08em ${mix(acc, k * 3)}`;
+        s.borderRadius = ".08em";
       } else if (kind === "pill" || kind === "invert") {
         const c = kind === "pill" ? acc : "var(--ink)";
-        s.backgroundColor = `color-mix(in srgb, ${c} ${Math.round(k * 100)}%, transparent)`;
-        s.color = k > 0.5 ? (kind === "pill" ? "var(--on-accent)" : "var(--bg)") : "";
+        s.backgroundColor = mix(c, k);
+        s.boxShadow = `0 0 0 .12em ${mix(c, k)}`;
         s.borderRadius = kind === "pill" ? ".18em" : "0";
-        s.boxShadow = `0 0 0 .08em color-mix(in srgb, ${c} ${Math.round(k * 100)}%, transparent)`;
-        if (kind === "pill") s.transform = (s.transform || "") + ` scale(${1 + 0.06 * Math.sin(Math.PI * clamp(k * 1.3))})`;
+        s.color = k > 0.5 ? (kind === "pill" ? "var(--on-accent)" : "var(--bg)") : "";
       } else if (kind === "spot" || kind === "lift") {
         s.color = `color-mix(in srgb, ${acc} ${Math.round(k * 100)}%, var(--ink))`;
-        if (kind === "lift") s.transform = (s.transform || "") + ` translateY(${-0.08 * k}em)`;
-      } else if (kind === "box") {
-        s.outline = `.07em solid color-mix(in srgb, ${acc} ${Math.round(clamp(k * 3) * 100)}%, transparent)`;
-        s.outlineOffset = ".1em";
-        s.clipPath = "";
-      } else if (kind === "circle" && i === 0) {  // a hand-drawn ring around the first word
+        if (kind === "lift") { s.position = "relative"; s.top = `${-0.08 * k}em`; }
+      } else if (kind === "circle" && i === 0) {  // a hand-drawn ring around the phrase
         let svg = em.__ring;
         if (!svg) {
           svg = em.__ring = document.createElementNS("http://www.w3.org/2000/svg", "svg");
           svg.setAttribute("viewBox", "0 0 100 40"); svg.setAttribute("preserveAspectRatio", "none");
-          // the svg box is exactly the word's (no layout overflow); the ring is drawn past its edges as ink
-          svg.style.cssText = "position:absolute;left:0;top:0;width:" + (100 * ems.length) + "%;height:100%;overflow:visible;pointer-events:none";
+          svg.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none";
           svg.innerHTML = `<path d="M-4 22 C -6 0, 74 -6, 102 8 C 114 18, 92 46, 46 45 C 2 44, -12 30, 4 6" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round" pathLength="1" stroke-dasharray="1" vector-effect="non-scaling-stroke"/>`;
-          em.style.position = "relative";
+          em.style.position = "relative"; em.style.display = "inline-block";  // ≤ 3 words: one line, so the ring has one box
           em.append(svg);
         }
         svg.firstChild.style.strokeDashoffset = 1 - k;
@@ -201,11 +216,11 @@
     if (data.example_data) root.append(h("div", "tag", "Example data"));
   }
   function question(root, text) {
-    const q = h("div", "abs", null, "left:120px;top:96px;width:1500px;font:600 calc(64px * min(var(--type-scale, 1), 1.15))/1.12 var(--font-display);letter-spacing:-.02em");
+    const q = h("div", "abs h", null, "left:120px;top:96px;width:1500px;font:600 var(--h2)/1.12 var(--font-display);letter-spacing:-.02em");
     words(q, text || "");
     root.append(q);
     return q;
   }
   window.CORE = { clamp, lerp, inv, E, spring, p, h, esc, rich, words, riseWords, rise, emphasis, camera, drift, num, beat, exampleTag,
-                  question, STYLES, style };
+                  question, cursor, STYLES, style };
 })();

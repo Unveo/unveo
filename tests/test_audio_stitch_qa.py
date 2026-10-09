@@ -89,6 +89,23 @@ class AudioTest(unittest.TestCase):
         self.assertAlmostEqual(d, total, delta=0.05)
 
 
+class DuckTest(unittest.TestCase):
+    def test_the_bed_stays_down_between_sentences_and_sits_15_db_under(self):
+        import numpy as np
+        import mix
+        sr = mix.SR
+        t = np.arange(sr * 6) / sr
+        line = lambda a, b: ((t >= a) & (t < b)) * 0.3 * np.sin(2 * np.pi * 220 * t)
+        v = np.stack([line(0.5, 2.0) + line(2.6, 4.0)] * 2, axis=1)  # two sentences, a 0.6 s pause between them
+        active = np.abs(v).max(axis=1) > 10 ** (-40 / 20)
+        env = mix.envelope(active)
+        self.assertGreater(env[int(2.3 * sr)], 0.99)    # held down through the pause: no swell
+        self.assertLess(env[int(5.9 * sr)], 0.5)         # and back up once the voice is done
+        music = np.random.default_rng(1).normal(0, 0.06, (len(t), 2))
+        bed = music * (1 - (1 - 10 ** (-mix.DUCK_DB / 20)) * env)[:, None]
+        self.assertGreaterEqual(mix.bed_under_speech(v, bed, active), 15)
+
+
 class VoiceLevelTest(unittest.TestCase):
     def test_quiet_and_loud_lines_come_out_at_the_same_level(self):
         o, total = project()
@@ -126,6 +143,13 @@ class StitchQaTest(unittest.TestCase):
         cap = next(g for g in res["gates"] if g["gate"] == "captions")
         self.assertTrue(cap["ok"], cap)
         self.assertTrue((o / "captions.srt").exists())
+        for name in ("picture", "fresh", "duration"):
+            self.assertTrue(next(g for g in res["gates"] if g["gate"] == name)["ok"], name)
+        with open(o / "audio/mix.wav", "ab") as f:  # the mix changes after the stitch: that video is out of date
+            f.write(b"\0" * 4)
+        code, res = run("qa.py", o)
+        self.assertEqual(code, 2, res)
+        self.assertFalse(next(g for g in res["gates"] if g["gate"] == "fresh")["ok"])
 
     def test_a_finished_run_leaves_only_the_public_files_on_top(self):
         import shutil

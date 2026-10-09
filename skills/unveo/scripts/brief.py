@@ -103,8 +103,8 @@ def defaults(o, mode, narration, lang, limit, repo_url, fresh=False):
                      "login": {"needed": False, "user_env": "UNVEO_LOGIN_USER", "password_env": "UNVEO_LOGIN_PASSWORD"}},
          "limit_s": limit or readme.get("video_limit_s") or 120, "language": lang, "focus": "balanced", "captions": "burned",
          "resolution": "2k",
-         "voice": {"provider": "own", "voice_id": "own", "rate": "+10%"} if narration == "own"
-         else {"provider": "edge", "voice_id": voice.default_voice(lang), "rate": "+10%"},
+         "voice": {"provider": "own", "voice_id": "own", "rate": "+0%"} if narration == "own"
+         else {"provider": "edge", "voice_id": voice.default_voice(lang), "rate": "+0%"},
          "palette": {"name": "project", "tokens": render.project_palette(scan.get("palette_candidates", []), o / "capture" / "probe.png")},
          "header": {"title": name, "event": "", "team": ""},
          "close": {"impact_line": "", "links": [{"label": "Source code", "url": repo_url}] if repo_url else [], "extra_line": ""},

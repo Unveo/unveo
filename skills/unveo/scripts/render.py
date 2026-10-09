@@ -335,7 +335,9 @@ def design_css(film, design):
             lines.append(f'@font-face {{ font-family: "{name}"; src: url("fonts/{f.name}") format("woff2"); font-weight: {weight.replace("_", " ")}; }}')
         families[role] = name
     speed = {"calm": 1.0, "lively": 1.25}.get(design.get("motion", "calm"), 1.0)
+    ts = min(1.3, max(1.0, float(design.get("type_scale", 1.2))))  # one type scale for the video: H1, H2, body, small
     lines.append(":root {\n"
+                 f"  --h1: {round(92 * ts)}px; --h2: {round(60 * ts)}px; --body: 34px; --small: 26px;\n"
                  f'  --font-display: "{families["display_font"]}", "Geist";\n'
                  f'  --font-body: "{families["body_font"]}", "Geist";\n'
                  f"  --motion-speed: {speed};\n"
@@ -357,6 +359,8 @@ def resolve_word_times(data, words, lead):
         b["at"] = when(b.get("at"))
     if "beats" in data:
         data["beats"] = [when(v) for v in data["beats"]]
+        if data["beats"] and isinstance(data["beats"][0], (int, float)):  # the scene's first thing is up by 0.25 s
+            data["beats"][0] = min(data["beats"][0], 0.25)
     if isinstance(data.get("emphasis_at"), str):  # the one emphasis (**word**) lands on its word too
         data["emphasis_at"] = when(data["emphasis_at"])
     return data
@@ -440,7 +444,9 @@ def backdrop(o, film, sid):
     """The last frame of scene sid's recording (a hook's: the end of the scene it reuses) as film/assets/backdrop-sid.png."""
     f = o / "capture" / "steps.json"
     reuse = ((json.loads(f.read_text(encoding="utf-8")).get("scenes", {}) if f.exists() else {}).get(sid) or {}).get("reuse")
-    src = next((f for f in (o / "capture" / f"{sid}-timed.mp4", o / "capture" / f"{reuse or sid}.mp4") if f.exists()), None)
+    # the fitted segment first: framed exactly as the cut before shows it, so a fade into this backdrop doesn't ghost
+    src = next((f for f in (o / "render" / "segments" / f"{sid}.mp4", o / "capture" / f"{sid}-timed.mp4",
+                            o / "capture" / f"{reuse or sid}.mp4") if f.exists()), None)
     if not src:
         return None
     (film / "assets").mkdir(exist_ok=True)
@@ -457,6 +463,19 @@ def scene_hash(film, sc, mode):
     tpl = "".join((film / "scenes" / n).read_text(encoding="utf-8") for n in dict.fromkeys(own) if (film / "scenes" / n).exists())
     return sha1_of(code, tpl, json.dumps(sc, sort_keys=True), mode)
 
+
+# how much of a 48x27 grid over the frame holds text, a picture or a card (0..1), in the scene on show
+FILL_JS = r"""() => {
+  const sc = [...document.querySelectorAll('#stage .scene')].find(s => s.style.visibility !== 'hidden');
+  if (!sc) return 0;
+  const shown = el => { for (let e = el; e && e !== sc; e = e.parentElement) { const cs = getComputedStyle(e); if (cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity < 0.05) return false; } return true; };
+  const cells = new Set(), mark = r => { for (let x = Math.max(0, Math.floor(r.left / 40)); x <= Math.min(47, Math.floor((r.right - 1) / 40)); x++)
+    for (let y = Math.max(0, Math.floor(r.top / 40)); y <= Math.min(26, Math.floor((r.bottom - 1) / 40)); y++) cells.add(x + ',' + y); };
+  for (const el of sc.querySelectorAll('.card, .chip, img, svg, canvas, .ico')) if (shown(el)) { const r = el.getBoundingClientRect(); if (r.width > 8 && r.height > 8) mark(r); }
+  const tw = document.createTreeWalker(sc, NodeFilter.SHOW_TEXT);
+  for (let n; (n = tw.nextNode());) if (n.data.trim() && shown(n.parentElement)) { const rg = document.createRange(); rg.selectNodeContents(n); for (const r of rg.getClientRects()) if (r.width > 1) mark(r); }
+  return cells.size / (48 * 27);
+}"""
 
 DESIGN_CHECK_JS = r"""() => {
   const sc = [...document.querySelectorAll('#stage .scene')].find(s => s.style.visibility !== 'hidden');
@@ -484,7 +503,8 @@ DESIGN_CHECK_JS = r"""() => {
       if (card && sc.contains(card)) {
         const rg = document.createRange(); rg.selectNodeContents(el);
         const t = rg.getBoundingClientRect(), c = card.getBoundingClientRect();
-        if (t.width && (t.right > c.right + 2 || t.left < c.left - 2 || t.bottom > c.bottom + 2))
+        const fs = parseFloat(getComputedStyle(el).fontSize);  // an inline run's font box overhangs a tight line-height a little
+        if (t.width && (t.right > c.right + 2 || t.left < c.left - 2 || t.bottom > c.bottom + 2 + 0.3 * fs))
           issues.push({what: label(el), issue: 'text runs out of its card'});
       }
     }
@@ -496,19 +516,22 @@ DESIGN_CHECK_JS = r"""() => {
       if (ratio < (big ? 3 : 4.5)) warnings.push({what: label(el), issue: `low contrast ${ratio.toFixed(1)}:1`});
     }
   }
+  for (const el of sc.querySelectorAll('.h')) if (shown(el) && el.textContent.trim()) {  // a heading reads in 3 lines or fewer
+    const lh = parseFloat(getComputedStyle(el).lineHeight) || parseFloat(getComputedStyle(el).fontSize) * 1.2, n = Math.round(el.offsetHeight / lh);
+    if (n > 3) issues.push({what: label(el), issue: `heading runs to ${n} lines: shorten it, or give it a wider area`});
+  }
   const blocks = [...sc.querySelectorAll('.block, .card, .chip')].filter(shown).length;
   if (blocks > 9) warnings.push({what: 'scene', issue: `${blocks} boxes on screen at once: crowded, cut some`});
-  // too empty (docs/16 D1, Q6): how much of a 48x27 grid over the frame holds text, a picture or a card
-  const cells = new Set(), mark = r => { for (let x = Math.max(0, Math.floor(r.left / 40)); x <= Math.min(47, Math.floor((r.right - 1) / 40)); x++)
-    for (let y = Math.max(0, Math.floor(r.top / 40)); y <= Math.min(26, Math.floor((r.bottom - 1) / 40)); y++) cells.add(x + ',' + y); };
-  for (const el of sc.querySelectorAll('.card, .chip, img, svg, canvas, .ico')) if (shown(el)) { const r = el.getBoundingClientRect(); if (r.width > 8 && r.height > 8) mark(r); }
-  const tw = document.createTreeWalker(sc, NodeFilter.SHOW_TEXT);
-  for (let n; (n = tw.nextNode());) if (n.data.trim() && shown(n.parentElement)) { const rg = document.createRange(); rg.selectNodeContents(n); for (const r of rg.getClientRects()) mark(r); }
-  const filled = cells.size / (48 * 27);
+  // too empty (docs/16 D1, Q6), measured as FILL_JS does
+  const filled = (FILL)();
   if (filled < 0.3 && sc.dataset.template !== 'kinetic') warnings.push({what: 'scene', issue: `only ${Math.round(filled * 100)}% of the frame has anything in it: too empty; use bigger type or a layout that fills the canvas (centered-hero, full-type, bento)`});
   if (cam) cam.style.transform = moved;
   return {issues, warnings};
 }"""
+
+
+DESIGN_CHECK_JS = DESIGN_CHECK_JS.replace("(FILL)", "(" + FILL_JS + ")")
+EMPTY_FILL, EMPTY_S = 0.15, 0.8  # "voiced but empty": under 15% of the frame filled once the voice has spoken 0.8 s
 
 
 class Page:
@@ -704,11 +727,8 @@ def stills_cmd(out, at=None, every=False):
         for g in at:
             s = next((x for x in scenes if x["start_s"] <= g < x["start_s"] + x["dur_s"]), scenes[-1])
             picks.append((s, min(s["dur_s"] - 0.01, g - s["start_s"]) if len(scenes) > 1 or g >= s["start_s"] else g))
-    else:
-        anims = anim_scenes(scenes)
-        chosen = anims if every else [anims[round(i * (len(anims) - 1) / 3)] for i in range(min(4, len(anims)))] if anims else []
-        picks = [(s, s["dur_s"] * 0.8) for s in dict.fromkeys(s["id"] for s in chosen) for s in [next(x for x in anims if x["id"] == s)]]
-        picks += [(s, s["dur_s"] / 2) for s in scenes if s["visual"] in ("capture", "clip")]
+    else:  # every scene at 0.5 s, half way and 90%: its start is where an empty frame under the voice shows up
+        picks = [(s, min(s["dur_s"] - 0.01, t)) for s in scenes for t in (0.5, s["dur_s"] * 0.5, s["dur_s"] * 0.9)]
     files, errors, warnings = [], [], []
     issues = sync_issues(scenes, {s["id"]: s["data"] for s in scenes})
     issues += json.loads((film / "icon-issues.json").read_text()) if (film / "icon-issues.json").exists() else []
@@ -732,30 +752,66 @@ def stills_cmd(out, at=None, every=False):
     if odd:  # one frame per video: an older steps.json's per-scene frame is ignored (looks.display_for), not an error
         warnings.append({"scene": ",".join(odd), "kind": "frame", "detail": "their display in steps.json is ignored: the frame is set "
                          "once in film/design.json (\"display\"); a scene may only use phone or spotlight"})
+    tl_scenes = {x["id"]: x for x in read_json(o / "timeline.json")["scenes"]}
+    pages, seen = {}, set()
     with sync_playwright() as pw:
         for i, (s, t) in enumerate(picks):
             f = d / f"still-{i:02d}-{s['id']}.png"
             if s["visual"] == "anim" or (s["visual"] == "clip" and not stitch.find_clip(o, stitch.shots_map(o).get(s["id"], f"shot-{s['id'][1:]}"))):
-                page = Page(pw, film, s["id"], 1920)  # animated scene, or the placeholder card for a missing clip
+                page = pages.get(s["id"])
+                if not page:  # animated scene, or the placeholder card for a missing clip: one page for its three stills
+                    for old in pages.values():
+                        old.close()
+                    pages = {s["id"]: Page(pw, film, s["id"], 1920)}
+                    page = pages[s["id"]]
+                    sc = tl_scenes.get(s["id"]) or {}
+                    # a title or a kinetic line is a few words in big type by design: not "empty"
+                    if sc.get("voice") and sc.get("lead_s", 0) + EMPTY_S < s["dur_s"] and s["template"] not in ("title", "kinetic"):
+                        page.shot(sc.get("lead_s", 0) + EMPTY_S)
+                        fill = page.pg.evaluate(FILL_JS)
+                        if fill < EMPTY_FILL:
+                            issues.append({"scene": s["id"], "what": "scene", "issue": f"voiced but empty: {fill:.0%} of the frame is filled "
+                                           f"{EMPTY_S} s after the voice starts; bring the first block in at once (its \"at\" 0.1)"})
                 page.shot(t, f)
                 errors += page.errors
                 chk = page.pg.evaluate(DESIGN_CHECK_JS)
-                issues += [{"scene": s["id"], **x} for x in chk["issues"]]
-                warnings += [{"scene": s["id"], **x} for x in chk["warnings"]]
-                page.close()
+                for kind, out in (("issues", issues), ("warnings", warnings)):
+                    for x in chk[kind]:
+                        if (s["id"], x["what"], x["issue"]) not in seen:
+                            seen.add((s["id"], x["what"], x["issue"]))
+                            out.append({"scene": s["id"], **x})
             else:
-                src = o / "capture" / f"{s['id']}.mp4"
+                src, at = o / "render" / "segments" / f"{s['id']}.mp4", t  # the fitted segment runs on the scene's clock
+                from common import streams
+                if not src.exists() or abs(streams(src)["frames"] - round((s["dur_s"] + s.get("handle_s", 0)) * FPS)) > 1:  # stale: the take
+                    src = o / "capture" / f"{s['id']}.mp4"
+                    if src.exists():
+                        at = t / s["dur_s"] * stitch.duration(src)
                 if s["visual"] == "clip":  # the clip recorded for this scene, by its shot name in shots.md
                     src = stitch.find_clip(o, stitch.shots_map(o).get(s["id"], f"shot-{s['id'][1:]}"))
                 if not src or not src.exists():
                     continue
-                subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-ss", f"{t:.2f}", "-i", str(src), "-frames:v", "1", str(f)], check=True)
+                framed = src.parent.name == "segments"
+                subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-ss", f"{at:.2f}", "-i", str(src), "-frames:v", "1", "-vf", "scale=1920:-2", str(f)], check=True)
+                if framed:
+                    files.append((f, f"{s['id']} · {s['visual']} · {t:.1f} s"))
+                    continue
                 if s["visual"] == "capture" and "accent" in tokens:
                     stitch.framed_still(f, looks.display_spec(looks.display_for(cap_steps.get(s["id"]), look, design), look, tokens,
                                                               cap_steps.get(s["id"], {}).get("label", ""), cap_ids.index(s["id"]) + 1,
                                                               band=burned, design=design),
                                         o / "render" / "frames")
             files.append((f, f"{s['id']} · {s['template'] if s['visual'] == 'anim' else s['visual']} · {t:.1f} s"))
+        for page in pages.values():
+            page.close()
+    import script as scriptmod  # the intro's one-liner is read on screen while the voice says something else
+    narr = {x["id"]: x["narration"] for x in scriptmod.parse((o / "script.md").read_text(encoding="utf-8"))} if (o / "script.md").exists() else {}
+    for s in scenes:
+        if s["template"] == "product-intro" and s["data"].get("one_liner") and narr.get(s["id"]):
+            a, b = set(scriptmod.content_words(s["data"]["one_liner"])), set(scriptmod.content_words(narr[s["id"]]))
+            if a and len(a & b) > len(a) / 2:
+                warnings.append({"scene": s["id"], "kind": "repeat", "detail": "the one-liner repeats the narration; put on screen "
+                                 "what the voice doesn't say (who it's for, or what it replaces)"})
     cols, w, h, top = 3, 640, 360, 56
     rows = max(1, -(-len(files) // cols))
     sheet = Image.new("RGB", (cols * w, top + rows * (h + 44)), "white")

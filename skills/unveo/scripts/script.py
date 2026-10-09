@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from common import emit  # noqa: E402
 
 RATE = {"en": 2.2, "hi": 2.2}  # words per second, measured in M0 (docs/06 §2)
-SILENT_S = 4.0                  # 2.5 s title card + 1.5 s end-card hold
+SILENT_S = 2.9                  # a silent 1.4 s title + the 1.5 s end-card hold
 SEGMENTS = ["hook", "context", "problem", "product", "close"]  # hook: an optional cold open before the title (docs/16 S1)
 SHARE = {"context": 0.10, "problem": 0.15, "product": 0.65, "close": 0.10}
 FOCUS = {  # brief.focus: the time split and how many explainers (docs/15 A8)
@@ -124,7 +124,8 @@ CONTRACTION = re.compile(r"\b\w+'(s|re|ve|ll|d|t|m)\b", re.I)
 
 
 def style_warnings(scenes):
-    """Things that make narration sound written by a machine (docs/15 B6). Warnings only: the writer decides."""
+    """Things that make narration sound written by a machine (docs/15 B6). Warnings: the writer decides (lists read
+    aloud, textbook openings and stacked questions are errors: telling_errors)."""
     w = []
     for s in scenes:
         for m in STIFF.finditer(spoken(s["narration"])):
@@ -137,6 +138,117 @@ def style_warnings(scenes):
     if len(lens) >= 5 and (sum((n - sum(lens) / len(lens)) ** 2 for n in lens) / len(lens)) ** 0.5 < 3:
         w.append("every sentence is about the same length; mix short ones with longer ones so it doesn't tick like a metronome")
     return w
+
+
+STOP = set("""a an the and or but so to of in on for with by from at as is are was were be been it its this that these those
+your you we our they their them then than into out up all any each every no not just only also can will would could should
+has have had do does did here there what which who how why when where it's that's here's there's you're we're one new get gets
+see now way""".split())
+ONES = "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen".split()
+TENS = "twenty thirty forty fifty sixty seventy eighty ninety".split()
+
+
+def content_words(text):
+    """The words that carry meaning, in order, plurals folded and spoken numbers as digits ("sixty six" -> "66")."""
+    out, words = [], re.findall(r"[a-z0-9]+", spoken(text).lower().replace("\u2019", "'"))
+    i = 0
+    while i < len(words):
+        w = words[i]
+        if w in TENS:
+            n = 20 + 10 * TENS.index(w)
+            if i + 1 < len(words) and words[i + 1] in ONES[1:10]:
+                n, i = n + ONES.index(words[i + 1]), i + 1
+            w = str(n)
+        elif w in ONES[2:]:  # "one" is too common to mean a number
+            w = str(ONES.index(w))
+        if w not in STOP and (len(w) > 1 or w.isdigit()):
+            out.append(w[:-1] if len(w) > 4 and w.endswith("s") and not w.endswith("ss") else w)
+        i += 1
+    return out
+
+
+def claim_warnings(o, scenes):
+    """The hook names what it shows (docs: PITCH.md, hook recipe), and the hook, the intro and the close don't all say
+    the same thing."""
+    w = []
+    hook = next((s for s in scenes if s["segment"] == "hook"), None)
+    f = Path(o) / "capture" / "steps.json"
+    reuse = ((json.loads(f.read_text(encoding="utf-8")).get("scenes", {}) if f.exists() else {}).get(hook["id"]) or {}).get("reuse") if hook else None
+    rec = Path(o) / "capture" / "record.json"
+    zooms = (json.loads(rec.read_text()).get(reuse) or {}).get("zooms", []) if reuse and rec.exists() else []
+    seen = " ".join(z.get("text", "") for z in zooms if z.get("to_end"))
+    if hook and seen and not set(content_words(hook["narration"])) & set(content_words(seen)):
+        w.append(f"{hook['id']}: the hook's line names nothing its result shows (\"{seen[:80]}\"): say what's on screen, "
+                 "e.g. the number it found")
+    lines = [s for s in scenes if s["segment"] == "hook" or s["template"] in ("product-intro", "close") and s["narration"]]
+    for i, a in enumerate(lines):
+        for b in lines[i + 1:]:
+            a_, b_ = content_words(a["narration"]), content_words(b["narration"])
+            A, B = set(a_), set(b_)
+            phrase = set(zip(a_, a_[1:])) & set(zip(b_, b_[1:]))  # the same two words in a row: "six AI agents" again
+            if A and B and (len(A & B) > min(len(A), len(B)) / 2 or phrase):
+                said = " ".join(sorted(phrase)[0]) if phrase else ", ".join(sorted(A & B)[:5])
+                w.append(f"{a['id']} and {b['id']} make the same claim (\"{said}\"): say each claim once")
+    return w
+
+
+def sentences(narration):
+    return [x.strip() for x in re.split(r"(?<=[.!?।])\s+", spoken(narration)) if re.search(r"\w", x)]
+
+
+def read_as_list(sentence):
+    """The run of list items in a sentence ("no fix, no proof and no idea" / "scan, analyze, patch, report"):
+    three or more short phrases (the last up to 8 words) split by commas, "and" or "or", with at least one comma."""
+    best = run = []
+    for part in re.split(r"[:;]", sentence.rstrip(".!?")):
+        if "," not in part:
+            continue
+        run = []
+        for item in re.split(r",\s*(?:and\s+|or\s+|then\s+)?|\s+(?:and|or)\s+", part):
+            n = len(item.split())
+            if 1 <= n <= 4 or (n <= 8 and len(run) >= 2):  # the last item of a list may run longer
+                run.append(item.strip())
+                best = max(best, run, key=len)
+            if not 1 <= n <= 4:
+                run = []
+    return best if len(best) >= 3 else []
+
+
+PRONOUN = {"this", "that", "it", "here", "there", "we", "you", "i", "they", "these", "those", "so", "but", "and"}
+
+
+def opens_on_a_definition(sentence):
+    """"Static analysis finds security bugs by …", "A linter is a tool that …": a textbook line, not a story."""
+    m = re.match(r"(?:an?\s+|the\s+)?([\w-]+(?:\s+[\w-]+){0,3}?)\s+(is|are|finds|means|refers to|describes|helps)\b", sentence, re.I)
+    return bool(m) and m.group(1).split()[0].lower() not in PRONOUN
+
+
+def telling_errors(scenes):
+    """Scripts that sound written by a person (PITCH.md §3): no list read aloud, no textbook opening, one rhetorical
+    question at most, and the product on screen within the first quarter."""
+    e = []
+    for x in scenes:
+        for sent in sentences(x["narration"]):
+            items = read_as_list(sent)
+            if items:
+                e.append(f"{x['id']}: a list read aloud ({' / '.join(items[:4])}): say the one that matters, or show the list "
+                         "and say what it means")
+    ctx = next((x for x in scenes if x["segment"] == "context" and x["template"] != "title" and x["narration"]), None)
+    first = sentences(ctx["narration"])[:1] if ctx else []
+    if first and opens_on_a_definition(first[0]):
+        e.append(f"{ctx['id']}: the context opens on a definition (\"{first[0][:60]}\"): open on a person, a moment or a number instead")
+    asks = [f"{x['id']}: \"{q}\"" for x in scenes for q in sentences(x["narration"]) if q.endswith("?")]
+    if len(asks) > 1:
+        e.append(f"{len(asks)} rhetorical questions ({'; '.join(asks[:3])}): keep one at most, say the answer instead")
+    total, t = sum(x["target_s"] for x in scenes), 0.0
+    for x in scenes:
+        if x["visual"] in ("capture", "clip") or x["template"] == "product-intro":
+            if t > 0.25 * total:
+                e.append(f"the product first shows at about {t:.0f} s of {total:.0f} s ({x['id']}): show it within the first quarter "
+                         "(a hook, or a shorter context and problem)")
+            break
+        t += x["target_s"]
+    return e
 
 
 def has_field(d, dotted):
@@ -228,7 +340,8 @@ def check(out):
             warnings.append(f"{sid}: {s['words']} words take about {need:.0f} s, but the target is {s['target_s']:g} s; "
                             "the voice length wins, so shorten the line or raise the target")
 
-    warnings += style_warnings(scenes)
+    warnings += style_warnings(scenes) + claim_warnings(o, scenes)
+    errors += telling_errors(scenes)
     budget = budget_words(brief.get("limit_s", 120), brief.get("language", "en"), brief.get("voice", {}).get("rate", "+0%"))
     total = sum(s["words"] for s in scenes)
     if total > budget * 1.05:

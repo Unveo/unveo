@@ -5,9 +5,10 @@
 ## What makes it sound like a person
 
 1. **The script** (PITCH.md §3): contractions, mixed sentence lengths, talking to the judge. `script.py check` warns about stiff wording.
-2. **Delivery:** each sentence is voiced on its own and joined with pauses of 0.28–0.55 s. Pauses are longer after long sentences and questions, and the pace drifts ±3% between sentences, so it never ticks like a metronome.
-3. **The voice:** the most natural free voices come first (the "Multilingual" US and Australian voices).
-4. **Your own voice:** the most natural of all, and free (below). Always optional.
+2. **Delivery:** each scene's narration is voiced in one take, at one steady pace, so the voice keeps its own rhythm between sentences. (A take per sentence joined with silence sounds stop-start.) The recordings are retimed to the voice later, so a sentence never has to be split to land on a click.
+3. **The gaps** (plan_timeline.py) follow the story: inside a segment the voice starts 0.15 s into a scene and leaves 0.25 s after it, so it runs on; where the segment changes it takes a breath of about 0.7 s. After a scene held long for its recording, the next line may start up to 0.3 s before the cut. QA's `pacing` gate fails any silence over 1 s between the first word and the close.
+4. **The voice:** the most natural free voices come first (the "Multilingual" US and Australian voices).
+5. **Your own voice:** the most natural of all, and free (below). Always optional.
 
 ## Voices (edge-tts, free, no key)
 
@@ -23,7 +24,7 @@
 - **Default accent:** the user's system region: `en_GB` gives UK voices first, `en_IN` India, and AU, CA, IE, NZ, ZA and SG their own; anything else gives US. Nothing is forced. Changing the language picks a voice that speaks it.
 - `voice.py samples` makes a short clip for each voice of that accent plus the best voice of each other accent.
 - **Change voice:** `voice.py --voice en-GB-SoniaNeural` re-voices every scene. Save the choice in brief.json → `voice.voice_id`.
-- **Pace:** `voice.rate` is chosen in the Guided voice round (+0%, +10% or +20%; default +10%). Quick mode takes +10% and doesn't ask; the Review offers faster or slower. In Guided mode, after the first clip, offer faster or slower.
+- **Pace:** `voice.rate` is chosen in the Guided voice round (+0%, +10% or +20%; default +0%). Quick mode takes +0% and doesn't ask; the Review offers faster or slower. In Guided mode, after the first clip, offer faster or slower.
 - **Fitting:** if the timeline is a little over (≤ 5%), add up to `+5%` to the chosen rate before cutting words. Never above `+30%`.
 - **Pronunciation:** `voice.say_as` in brief.json, for example `{"MPLADS": "M P lads"}`. It changes only what's spoken; captions show the real word.
 - **Fallback:** if edge-tts fails 3 times, voice.py switches **every** scene to Kokoro (offline), so the voice never changes mid-video, and says so.
