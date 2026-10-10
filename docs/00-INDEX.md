@@ -28,6 +28,7 @@ Markers used in every doc:
 | 14 | [Decisions](14-DECISIONS.md) | Why each decision was made (ADR log) | Draft |
 | 15 | [Weak points](15-WEAK-POINTS.md) | What still hurts, ranked, with status after the first two real videos | Draft |
 | 16 | [Quality audit](16-QUALITY-AUDIT.md) | What to improve in the video itself before launch: motion languages, recordings, story, audio, coverage | Draft |
+| 17 | [Similar skills](17-SIMILAR-SKILLS.md) | Which skills on skills.sh do what unveo does, the closest four side by side, and what to take from them | Draft |
 | — | [README](../README.md) | Public README draft | Draft |
 
 Owner of all docs: Sambhav Jain. Status values: **Draft** (written, not reviewed), **Reviewed** (your changes applied), **Frozen** (the build depends on it; changes need a new ADR).
